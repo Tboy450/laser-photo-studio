@@ -1,0 +1,409 @@
+"""Material presets, print styles and workpieces, with plain-English explanations.
+
+Three kinds of settings, always labelled in the app:
+  PROVEN  - burned on this Tronxy U20 and judged by the operator (LASER-AUTOMATION-BRIEF.md,
+            WOOD-ENGRAVING-REFERENCE.md, LID-ETCHING-REFERENCE.md, outputs/anodized-cards-2026-11-01).
+  START   - published starting points for ~20 W diode lasers (Snapmaker's tested 20 W table, community charts).
+            Not tested on this machine: this U20 needed about 3x Snapmaker's energy on pine, so run a test grid.
+  MINE    - presets you saved yourself (usually from a test grid).
+Power is in Grbl S units: S1000 = 100% because the controller is set to $30=1000.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
+
+def _documents() -> Path:
+    """The real Documents folder (OneDrive moves it on this PC)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:
+            return Path(buf.value)
+    except Exception:
+        pass
+    return Path.home() / "Documents"
+
+
+DATA_DIR = _documents() / "Laser Photo Studio"
+
+# ---------------------------------------------------------------------------------------------------------------
+# Print styles: how a picture becomes laser marks.
+STYLES = {
+    "layers": dict(
+        name="Layered shading (wood)",
+        what="Builds tone in thin, shrinking passes on interlaced rows instead of one heavy pass.",
+        why="Each row cools before its neighbour burns and later layers stay inside the shapes, so darks don't "
+            "turn into scorched blobs and edges stay sharp. This is the dragon test 12 / North Pole recipe.",
+        best="Pine and other woods where power shades all burn about the same."),
+    "floyd": dict(
+        name="Classic dots (Floyd-Steinberg)",
+        what="Turns tones into tiny dots; more dots = darker.",
+        why="The standard photo dot pattern with good detail. Proven on your black anodized card.",
+        best="Anodized aluminum, slate, tile, cardboard, general photos."),
+    "jarvis": dict(
+        name="Smooth dots (Jarvis)",
+        what="Dots spread over a wider area for smoother tones.",
+        why="Less grainy than classic dots; skin and skies look softer.",
+        best="Photos on light woods (basswood, maple, birch), slate, anodized aluminum."),
+    "stucki": dict(
+        name="Crisp dots (Stucki)",
+        what="Like smooth dots but slightly sharper.",
+        why="Keeps faces and edges defined while still blending tones.",
+        best="Portraits on slate, tile, leather and wood."),
+    "atkinson": dict(
+        name="Bright dots (Atkinson)",
+        what="Fewer dots in light areas, punchy contrast.",
+        why="Leaves more bare material so marks that spread don't fill in; gives a retro look.",
+        best="Materials where burns spread (dark woods, leather) or high-contrast pictures."),
+    "bayer": dict(
+        name="Grid dots (ordered)",
+        what="An even, regular cross-hatch dot pattern.",
+        why="Spreads heat evenly and is very predictable, but looks mechanical on photos.",
+        best="Graphics, simple shading, materials with uneven grain."),
+    "halftone": dict(
+        name="Halftone (newspaper dots)",
+        what="Round dots on a fixed grid that grow bigger as the picture gets darker.",
+        why="Single tiny dots may not mark at all while solid areas bloom; bigger spaced dots sit in between.",
+        best="Coated steel lids, glass, tile, comic/vintage looks."),
+    "grayscale": dict(
+        name="Grayscale power",
+        what="One pass where laser power follows the darkness of each spot.",
+        why="Smoothest tones when the material darkens evenly with power. On your pine the shades S200-S350 "
+            "burned nearly alike, which is why the layered method exists.",
+        best="Basswood, maple, birch plywood, leather, cardboard."),
+    "threshold": dict(
+        name="Black & white",
+        what="Every spot is fully on or off; no dots.",
+        why="Clean solid marks; no photo tones.",
+        best="Logos, text, line art, silhouettes."),
+    "centerline": dict(
+        name="Thin lines (centerlines)",
+        what="Dark strokes are burned as 1-cell-wide centerlines.",
+        why="Char spreads about 0.1 mm per side, so a centerline grows back to the stroke's true width instead "
+            "of smearing. Proven for lettering on the pine plank (max S300).",
+        best="Lettering, signatures, line drawings on wood."),
+    "sketch": dict(
+        name="Pencil sketch",
+        what="Turns a photo into drawn outline strokes.",
+        why="Keeps the shapes and edges, drops flat areas: fast, bold and forgiving.",
+        best="Most materials; a good first look at a new photo."),
+}
+
+LOOKS = {  # preview colours: (bare material RGB, fully marked RGB)
+    "pine": ((233, 203, 156), (66, 38, 22)),
+    "lightwood": ((240, 220, 182), (78, 48, 28)),
+    "darkwood": ((150, 100, 64), (40, 24, 14)),
+    "anodized": ((26, 26, 30), (206, 206, 212)),
+    "steel": ((200, 182, 128), (110, 110, 112)),
+    "slate": ((54, 57, 61), (178, 180, 182)),
+    "leather": ((196, 150, 104), (64, 36, 18)),
+    "cardboard": ((196, 166, 124), (60, 40, 24)),
+    "tile": ((242, 242, 238), (28, 28, 28)),
+    "glass": ((210, 222, 222), (40, 44, 44)),
+    "acrylic": ((16, 16, 18), (150, 150, 152)),
+}
+
+
+@dataclass
+class Material:
+    key: str
+    name: str
+    badge: str                      # PROVEN | START | EXPERIMENTAL | MINE
+    style: str                      # key of STYLES
+    look: str                       # key of LOOKS
+    summary: str                    # one plain sentence
+    notes: list = field(default_factory=list)
+    pitch: float = 0.1              # row spacing / dot size, mm
+    feed: int = 2250                # burn speed, mm/min
+    power: int = 500                # S for dot/line styles; grayscale maximum
+    power_min: int = 0              # grayscale minimum (lightest burned tone)
+    tone_power: tuple = (250, 300, 350)       # layers: light / mid / dark
+    tone_cuts: tuple = (110, 78, 48)          # lightness cut points: bare | light | mid | dark
+    layer_rule: tuple = ((1, 0), (1, 1), (3, 2))   # per layer: (lightest tone burned, shrink in cells)
+    interlace: int = 5              # layers: row groups; other styles: 1 = in order, 5 = cooler row order
+    widen_gaps: bool = True
+    thin_pass: bool = True
+    thin_cap: int = 300
+    halftone_cell: float = 0.5
+    negative: bool = False
+    sharpen: int = 0
+    contrast: int = 0
+    brightness: int = 0
+    gamma: float = 1.0
+    autolevel: bool = False
+    runup: float = 4.0              # laser-off run-up/out at each row end, mm (raised automatically for speed)
+    feature_runup: float = 1.0
+    row_feed: int = 600             # laser-off move to the next row
+    hop_feed: int = 3000            # laser-off hops and parking
+    passes: int = 1
+    test_power: tuple = (40, 80)    # suggested test-grid range, %
+    test_speed: tuple = (3000, 6000)
+    piece: str = ""                 # suggested workpiece
+    based_on: str = ""              # my presets: the built-in preset they were saved from (for its photos)
+
+    def copy(self, **changes) -> "Material":
+        d = asdict(self)
+        d.update(changes)
+        return Material(**d)
+
+    @staticmethod
+    def from_dict(d: dict) -> "Material":
+        names = {f.name for f in fields(Material)}
+        clean = {k: (tuple(tuple(x) if isinstance(x, list) else x for x in v) if isinstance(v, list)
+                     and k in ("tone_power", "tone_cuts", "layer_rule", "test_power", "test_speed") else v)
+                 for k, v in d.items() if k in names}
+        return Material(**clean)
+
+
+BUILTIN = [
+    # ---------------------------------------------------------------- proven on this machine
+    Material(
+        key="pine-layers", name="Pine plank - layered photo", badge="PROVEN", style="layers", look="pine",
+        summary="Your best wood result: 3 shrinking layers at 25/30/35% power, 2250 mm/min, 0.1 mm rows.",
+        notes=["Proven on dragon test 12 and the North Pole plank.",
+               "Lightest tones stay bare wood; white gaps are widened 0.1 mm so char doesn't close them.",
+               "Layer 1 burns every 5th row over all tones, layer 2 the next rows 0.1 mm smaller, "
+               "layer 3 only the darks 0.2 mm smaller.",
+               "Thin lettering is burned as centerlines, max 30%.",
+               "Don't add a heavy line pass over dark areas: it only adds scorch (test 7).",
+               "Take a photo after each layer; the app pauses for it."],
+        sharpen=70, piece="plank76"),
+    Material(
+        key="pine-layer-count", name="Pine plank - tone by layer count", badge="PROVEN", style="layers",
+        look="pine",
+        summary="Same proven recipe, but light = 1 layer, mid = 2, dark = 3 (as written in the brief).",
+        notes=["Slightly lighter overall than the plank recipe: light tones get a single row in five.",
+               "Use it when the plank recipe looks too dark on a lighter photo."],
+        layer_rule=((1, 0), (2, 1), (3, 2)), sharpen=70, piece="plank76"),
+    Material(
+        key="pine-lettering", name="Pine - lettering & line art", badge="PROVEN", style="centerline", look="pine",
+        summary="Text and drawings as 1-cell centerlines at 30% power, 2250 mm/min.",
+        notes=["Proven on the North Pole sign letters (centerlines, capped at S300).",
+               "For black-on-white artwork, not photos."],
+        power=300, feed=2250, piece="plank76"),
+    Material(
+        key="pine-sketch", name="Pine - sketch outlines", badge="PROVEN", style="sketch", look="pine",
+        summary="A photo as drawn outlines at 40% power, 3000 mm/min.",
+        notes=["A lone thin line at 3000 mm/min only showed at 40% on pine; below 25% it is faint.",
+               "Outlines over already-dark shading add scorch; use on bare wood."],
+        power=400, feed=3000, runup=4.0, piece="plank76"),
+    Material(
+        key="anodized-dots", name="Black anodized aluminum - photo dots", badge="PROVEN", style="floyd",
+        look="anodized",
+        summary="Silver dots on black: 50% power, 2500 mm/min, 0.1 mm rows, one pass.",
+        notes=["Good result on the heart card (Floyd-Steinberg dots, 1.8 mm run-up). The engineering card ran the same "
+               "settings in LaserGRBL: 10 min 37 s, 0 errors.",
+               "The laser makes LIGHT marks, so photos are engraved as a negative to look right. Turn Negative "
+               "off for black-on-white artwork that should be marked exactly as drawn.",
+               "Marks too dim or grey? This is only 50% power: raise power first (60-75%), or slow down "
+               "(about 1800 mm/min). Extra passes are the last resort - they blur the dots.",
+               "Too much energy makes dots bloom together and can turn the coating grey/brown.",
+               "Coatings vary between suppliers; try a spare card or a test grid first."],
+        power=500, feed=2500, runup=1.8, negative=True, interlace=1, piece="card-portrait",
+        test_power=(30, 70), test_speed=(2000, 4000)),
+    Material(
+        key="anodized-crisp", name="Black anodized aluminum - crisp dots", badge="START", style="stucki",
+        look="anodized",
+        summary="Proven 50% / 2500 mm/min energy with sharper Stucki dots for faces and small text.",
+        notes=["Same power and speed as the proven card; only the dot pattern changes.",
+               "Community 20 W charts suggest Stucki or Atkinson for anodized photos."],
+        power=500, feed=2500, runup=1.8, negative=True, interlace=1, piece="card-portrait",
+        test_power=(30, 70), test_speed=(2000, 4000)),
+    Material(
+        key="lid-halftone", name="Coated steel jar lid - halftone", badge="EXPERIMENTAL", style="halftone",
+        look="steel",
+        summary="Bigger spaced dots (0.5 mm grid) at 100% power, 2500 mm/min. Untested: run a test grid first.",
+        notes=["Lid findings: lone 0.1 mm dots barely mark at 2500 mm/min, and dense dot areas bloom to "
+               "0.25-0.3 mm and merge into a frosted silhouette.",
+               "Halftone keeps dots large and spaced so they mark without merging.",
+               "Keep raster art inside the 49 mm flat face. Focus matters more than speed on lids.",
+               "Proven lid LINE setting (vector, not photos): S570 at 300 mm/min. Etched lids are decorative only."],
+        power=1000, feed=2500, runup=1.8, halftone_cell=0.5, interlace=1, piece="lid76",
+        test_power=(60, 100), test_speed=(1000, 2500)),
+    # ---------------------------------------------------------------- published starting points
+    Material(
+        key="basswood-gray", name="Basswood / birch plywood - grayscale", badge="START", style="grayscale",
+        look="lightwood",
+        summary="Smooth one-pass shading: 0-35% power at 4000 mm/min.",
+        notes=["Snapmaker's tested 20 W fill on basswood plywood is 20% at 4200 mm/min, 0.1 mm lines.",
+               "Light, even woods darken smoothly with power, so grayscale works where pine didn't.",
+               "Test 20-50%: your U20 needed about 3x Snapmaker's energy on pine."],
+        power=350, power_min=0, feed=4000, runup=6.0, sharpen=40, interlace=1, piece="square100",
+        test_power=(20, 60), test_speed=(3000, 6000)),
+    Material(
+        key="basswood-dots", name="Basswood / maple / birch - smooth dots", badge="START", style="jarvis",
+        look="lightwood",
+        summary="Photo dots at 35% power, 3500 mm/min.",
+        notes=["Jarvis dots give smooth skin tones on light woods.",
+               "Sand to ~220 grit; species matter (maple and birch hold detail best, oak grain breaks it up)."],
+        power=350, feed=3500, runup=5.0, sharpen=40, interlace=1, piece="square100",
+        test_power=(20, 60), test_speed=(3000, 6000)),
+    Material(
+        key="slate", name="Slate coaster - photo", badge="START", style="stucki", look="slate",
+        summary="Light marks on dark stone: 50% power, 3500 mm/min, engraved as a negative.",
+        notes=["Community 20 W charts: 40-60% at 3500-4000 mm/min, Stucki or Jarvis dots.",
+               "Slate turns pale grey where lasered, so Negative is on.",
+               "Wipe off dust afterwards; a light oil makes the dark areas richer."],
+        power=500, feed=3500, runup=5.0, negative=True, sharpen=30, interlace=1, piece="coaster100",
+        test_power=(30, 70), test_speed=(3000, 5000)),
+    Material(
+        key="leather", name="Leather (real veg-tan) - photo", badge="START", style="stucki", look="leather",
+        summary="35% power at 4500 mm/min with crisp dots.",
+        notes=["Community 20 W charts: 30-40% at 4000-5000 mm/min.",
+               "Real leather only. Never laser PVC or faux leather: it releases chlorine gas.",
+               "Leather scorches easily: keep air assist on and test on an offcut."],
+        power=350, feed=4500, runup=6.0, sharpen=30, interlace=1, piece="square100",
+        test_power=(20, 50), test_speed=(3000, 6000)),
+    Material(
+        key="cardboard", name="Cardboard / paper - photo", badge="START", style="floyd", look="cardboard",
+        summary="Light touch: 20% power at 6000 mm/min.",
+        notes=["Community 20 W charts: 15-30% at 5000-6000 mm/min.",
+               "Catches fire easily. Never leave it running and keep air assist on."],
+        power=200, feed=6000, runup=11.0, interlace=1, piece="square100",
+        test_power=(10, 40), test_speed=(4000, 6000)),
+    Material(
+        key="tile", name="White tile (Norton paint method) - photo", badge="START", style="stucki", look="tile",
+        summary="Paint a white tile black, engrave at 90% / 2500 mm/min, then wash the loose paint off.",
+        notes=["The laser fuses the paint into the glaze where it marks; the rest washes away.",
+               "Community 20 W charts: 80-100% at 2000-3000 mm/min, Stucki or Jarvis dots."],
+        power=900, feed=2500, runup=4.0, interlace=1, piece="tile108",
+        test_power=(60, 100), test_speed=(1500, 3500)),
+    Material(
+        key="glass", name="Glass (painted or taped) - photo", badge="START", style="halftone", look="glass",
+        summary="90% at 3000 mm/min through a coat of paint or masking; bigger dots mark more reliably.",
+        notes=["Diode light passes straight through clear glass: coat it (tempera paint or tape) first.",
+               "Community 20 W charts: 80-100% at 2500-3500 mm/min."],
+        power=900, feed=3000, runup=5.0, halftone_cell=0.4, interlace=1, piece="square100",
+        test_power=(60, 100), test_speed=(2000, 4000)),
+    Material(
+        key="stainless", name="Stainless steel (with marking spray)", badge="START", style="floyd",
+        look="steel",
+        summary="90% at 1200 mm/min with a marking spray for dark, permanent marks.",
+        notes=["Snapmaker's tested 20 W fill on stainless is 90% at 1200 mm/min, 0.1 mm lines.",
+               "Bare stainless barely marks with a diode; a marking spray bonds dark marks."],
+        power=900, feed=1200, runup=2.0, interlace=1, piece="card-landscape",
+        test_power=(70, 100), test_speed=(800, 2000)),
+    Material(
+        key="acrylic-black", name="Black cast acrylic - photo", badge="START", style="floyd", look="acrylic",
+        summary="50% at 4000 mm/min; marks come out light, so Negative is on.",
+        notes=["Clear or blue acrylic doesn't absorb diode light; black or opaque cast acrylic does.",
+               "Ventilate: acrylic smells strongly when engraved."],
+        power=500, feed=4000, runup=6.0, negative=True, interlace=1, piece="square100",
+        test_power=(30, 70), test_speed=(3000, 6000)),
+    Material(
+        key="logo-wood", name="Logo / text on light wood (black & white)", badge="START", style="threshold",
+        look="lightwood",
+        summary="Solid black-and-white artwork at 40% power, 3000 mm/min.",
+        notes=["For crisp logos and signs. Photos look harsh in this style."],
+        power=400, feed=3000, runup=4.0, interlace=1, piece="square100",
+        test_power=(20, 60), test_speed=(2000, 5000)),
+]
+
+PIECES = {
+    "plank76": dict(name="Pine plank 7 x 6 in (twine holes at top)", shape="rect", w=177.8, h=152.4,
+                    origin="lower-left", margins=(6.0, 6.0, 6.0, 16.0), corner=0.0,
+                    keepouts=[dict(kind="circle", x=44.45, y=144.4, r=5.0),
+                              dict(kind="circle", x=133.35, y=144.4, r=5.0)]),
+    "card-portrait": dict(name="Card 2 x 4 in, portrait", shape="rect", w=50.8, h=101.6, origin="lower-left",
+                          margins=(2.0, 2.0, 2.0, 2.0), corner=0.0, keepouts=[]),
+    "card-landscape": dict(name="Card 4 x 2 in, landscape", shape="rect", w=101.6, h=50.8, origin="lower-left",
+                           margins=(4.0, 2.0, 4.0, 2.0), corner=0.0, keepouts=[]),
+    "lid76": dict(name="Jar lid 3 in (flat face 49 mm)", shape="circle", w=76.2, h=76.2, origin="center",
+                  margins=(13.6, 13.6, 13.6, 13.6), corner=0.0, keepouts=[]),
+    "coaster100": dict(name="Slate coaster 100 mm, rounded", shape="rect", w=100.0, h=100.0,
+                       origin="lower-left", margins=(5.0, 5.0, 5.0, 5.0), corner=8.0, keepouts=[]),
+    "tile108": dict(name="Tile 4.25 in (108 mm)", shape="rect", w=108.0, h=108.0, origin="lower-left",
+                    margins=(5.0, 5.0, 5.0, 5.0), corner=0.0, keepouts=[]),
+    "square100": dict(name="Square 100 x 100 mm", shape="rect", w=100.0, h=100.0, origin="lower-left",
+                      margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
+    "custom": dict(name="Custom size", shape="rect", w=100.0, h=100.0, origin="lower-left",
+                   margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
+}
+
+BADGES = {
+    "PROVEN": "Proven on your U20",
+    "START": "Starting point - test first",
+    "EXPERIMENTAL": "Experimental - test first",
+    "MINE": "My preset",
+}
+
+
+def user_presets_path() -> Path:
+    return DATA_DIR / "my-presets.json"
+
+
+def load_materials() -> list:
+    out = list(BUILTIN)
+    p = user_presets_path()
+    if p.exists():
+        try:
+            for d in json.loads(p.read_text(encoding="utf-8")):
+                m = Material.from_dict(d)
+                m.badge = "MINE"
+                out.append(m)
+        except Exception:
+            pass
+    return out
+
+
+def save_user_material(m: Material) -> None:
+    p = user_presets_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    items = []
+    if p.exists():
+        try:
+            items = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            items = []
+    items = [d for d in items if d.get("key") != m.key]
+    d = asdict(m)
+    d["badge"] = "MINE"
+    items.append(d)
+    p.write_text(json.dumps(items, indent=1), encoding="utf-8")
+
+
+def delete_user_material(key: str) -> None:
+    p = user_presets_path()
+    if p.exists():
+        items = [d for d in json.loads(p.read_text(encoding="utf-8")) if d.get("key") != key]
+        p.write_text(json.dumps(items, indent=1), encoding="utf-8")
+
+
+def auto_runup(feed: float, accel: float = 500.0, minimum: float = 1.0) -> float:
+    """Laser-off distance the head needs to reach full speed (v^2 / 2a) plus margin, so row ends don't over-burn."""
+    v = feed / 60.0
+    return round(max(minimum, v * v / (2.0 * accel) * 1.1 + 0.2), 1)
+
+
+def energy(m: Material) -> float:
+    """Relative laser energy per mm: power / speed x passes. More energy = darker, deeper marks."""
+    power = m.tone_power[2] if m.style == "layers" else m.power
+    return power / max(1, m.feed) * max(1, m.passes)
+
+
+LG_DITHER = {"floyd": "Floyd-Steinberg", "jarvis": "Jarvis", "stucki": "Stucki", "atkinson": "Atkinson"}
+
+
+def lasergrbl_recipe(m: Material) -> str:
+    """The same settings in LaserGRBL's picture import."""
+    q = f"Quality {1 / m.pitch:g} lines/mm"
+    nxt = f"in the next window: Engraving speed {m.feed} mm/min, Laser mode M4"
+    neg = " Press LaserGRBL's invert (negative) button, because Negative is on here." if m.negative else ""
+    if m.style in LG_DITHER:
+        return (f"choose '1bit BW Dithering' > {LG_DITHER[m.style]}, {q}; {nxt}, S-MIN 0, S-MAX {m.power} "
+                f"(= {m.power / 10:g}%).{neg}")
+    if m.style == "grayscale":
+        return (f"choose 'Line To Line Tracing', {q}; {nxt}, S-MIN {m.power_min}, S-MAX {m.power} "
+                f"(= {m.power_min / 10:g}-{m.power / 10:g}%).{neg}")
+    if m.style == "threshold":
+        return (f"choose 'Line To Line Tracing' with Threshold ticked, {q}; {nxt}, S-MIN 0, S-MAX {m.power} "
+                f"(= {m.power / 10:g}%).{neg}")
+    if m.style == "centerline":
+        return f"choose 'Centerline' (close, not identical); {nxt}, S-MAX {m.power} (= {m.power / 10:g}%)."
+    if m.style == "layers":
+        return ("nothing matches: LaserGRBL's picture import makes a single pass, so it can't do layers. Open this "
+                "app's layer files (01, 02, ...) in LaserGRBL one at a time, or run the job from this app.")
+    return "nothing matches this style. Save the job here, then File > Open its .nc file in LaserGRBL."

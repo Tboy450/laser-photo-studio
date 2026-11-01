@@ -1,0 +1,277 @@
+{
+ "version": 1,
+ "built": "2026-11-01",
+ "samples": {
+  "pine-ladder": {
+   "file": "pine-ladder.jpg",
+   "kind": "test",
+   "title": "Ladder test on pine",
+   "caption": "Six 3 mm swatches at 3000 mm/min, from 2% up to 40% (labelled on the photo). 2-10% left no mark, 20% barely, 30% light brown, 40% the darkest - and the only one where a lone thin line showed.",
+   "date": "2026-10-28",
+   "source": "goku-pine-plaque-7x6/pine-ladder-results-reference.png"
+  },
+  "pine-grid-chart": {
+   "file": "pine-grid-chart.png",
+   "kind": "chart",
+   "title": "Power x speed chart",
+   "caption": "The plan for the grid test: 25, 30, 35 and 40% across, 3000, 2250 and 1500 mm/min down. Each cell is a small swatch plus a short line; the names G11-G34 match the result photo.",
+   "date": "2026-10-29",
+   "source": "goku-pine-plaque-7x6/box7-power-speed-grid-reference.png"
+  },
+  "pine-grid": {
+   "file": "pine-grid.jpg",
+   "kind": "test",
+   "title": "Power x speed result",
+   "caption": "Slower rows mark fuller and darker: at 3000 mm/min the marks are light and incomplete, at 1500 every power fills in and short lines show clearly. Neighbouring powers look alike - power alone gives little shading on pine, which is why the layered style was developed.",
+   "date": "2026-10-29",
+   "source": "goku-pine-plaque-7x6/latest-grid-result-numbered.png"
+  },
+  "dragon-chart": {
+   "file": "dragon-chart.jpg",
+   "kind": "chart",
+   "title": "12 ways to burn one dragon",
+   "caption": "After the mural's dragon filled in, the same 52 mm dragon was prepared 12 ways: pauses, row order, separated tiles, a lighter tone map, no outlines over darks, interlaced layers and shrinking layers. The thumbnails show what each one burns.",
+   "date": "2026-10-30",
+   "source": "goku-pine-plaque-7x6/backside-mural/dragon-retest-52mm/twelve-test-reference.png"
+  },
+  "dragon-compare": {
+   "file": "dragon-compare.jpg",
+   "kind": "test",
+   "title": "Dragon tests side by side",
+   "caption": "Burned on pine. The one-pass versions (tests 6 and 7) come out dark and heavy; the interlaced layers (tests 4 and 10) build the tone gradually and keep more detail. You liked the layered ones best.",
+   "date": "2026-10-30",
+   "source": "goku-pine-plaque-7x6/backside-mural/dragon-retest-52mm/comparison-so-far.png"
+  },
+  "dragon-source": {
+   "file": "dragon-source.jpg",
+   "kind": "source",
+   "title": "Original dragon art",
+   "caption": "The 52 mm square cut from the mural art. Every test used it unchanged, so only the burning method changed.",
+   "date": "2026-10-29",
+   "source": "goku-pine-plaque-7x6/backside-mural/dragon-retest-52mm/dragon-original-size.png"
+  },
+  "dragon-test12": {
+   "file": "dragon-test12.jpg",
+   "kind": "test",
+   "title": "Winner: shrinking layers",
+   "caption": "Test 12 after 3 layers - 'pretty freaking good'. Each layer burns every 5th row and the same shapes 0.1 mm smaller, so the insides get darker while the edges stay sharp. This became the pine recipe. (The strip along the top is an older test.)",
+   "date": "2026-10-30",
+   "source": "goku-pine-plaque-7x6/backside-mural/dragon-retest-52mm/photos/timelapse-test12/03-after-layer3.jpg"
+  },
+  "mural-whole": {
+   "file": "mural-whole.jpg",
+   "kind": "result",
+   "title": "Goku mural (pine backside)",
+   "caption": "Shading at 20-35% / 2250 mm/min, one pass per section, plus outline passes at 40% / 3000 mm/min. Overall a success; the dragon (top right) lost its detail.",
+   "date": "2026-10-29",
+   "source": "goku-pine-plaque-7x6/backside-mural/result-20261029/1000047295.jpg"
+  },
+  "mural-lesson": {
+   "file": "mural-lesson.jpg",
+   "kind": "lesson",
+   "title": "What went wrong: the dragon",
+   "caption": "All shades in one pass plus 40% outlines on top: the dark areas filled in and the dragon's detail disappeared. That's why the layered style burns thin interlaced layers and never adds heavy lines over dark areas.",
+   "date": "2026-10-29",
+   "source": "goku-pine-plaque-7x6/backside-mural/result-20261029/1000047297.png"
+  },
+  "np-source": {
+   "file": "np-source.jpg",
+   "kind": "source",
+   "title": "North Pole art",
+   "caption": "The picture used for the plank. The 'Pine plank - layered photo' preset rebuilds the plank's exact layer plan from it.",
+   "date": "2026-10-30",
+   "source": "north-pole-mural/operator-design.webp"
+  },
+  "np-l1": {
+   "file": "np-l1.jpg",
+   "kind": "result",
+   "title": "After layer 1",
+   "caption": "Layer 1 burns every 5th row over all tones. Light, but the whole picture already reads: 'this looks awesome so far'.",
+   "date": "2026-10-30",
+   "source": "north-pole-mural/photos/timelapse/01-after-L1.jpg"
+  },
+  "np-l2": {
+   "file": "np-l2.jpg",
+   "kind": "result",
+   "title": "After layer 2",
+   "caption": "Layer 2 burns the next rows over the same shapes, 0.1 mm smaller: darker, without blurring the edges.",
+   "date": "2026-10-30",
+   "source": "north-pole-mural/photos/timelapse/02-after-L2.jpg"
+  },
+  "np-final": {
+   "file": "np-final.jpg",
+   "kind": "result",
+   "title": "Finished North Pole plank",
+   "caption": "Layered shading, the lettering pass, snowflakes and the scroll border. 165.8 x 110.5 mm of art on a 7 x 6 in pine plank.",
+   "date": "2026-10-31",
+   "source": "north-pole-mural/photos/20261031_020709.jpg"
+  },
+  "np-sign": {
+   "file": "np-sign.jpg",
+   "kind": "result",
+   "title": "Close-up: sign and trees",
+   "caption": "Sign letters burned as 1-dot centerlines (max 30%) stay readable next to the layered shading. Close up you can see the fine rows; softening them is on the ideas list.",
+   "date": "2026-10-30",
+   "source": "north-pole-mural/finishing-review/photos/1000047419.jpg"
+  },
+  "card-eng-source": {
+   "file": "card-eng-source.jpg",
+   "kind": "source",
+   "title": "Card artwork (laser input)",
+   "caption": "Black-on-white art: black = where the laser fires and makes silver. It's already 'marked as drawn', so Negative stays off.",
+   "date": "2026-11-01",
+   "source": "anodized-cards-2026-11-01/engineering-kab-IMPORT.png"
+  },
+  "card-eng": {
+   "file": "card-eng.jpg",
+   "kind": "result",
+   "title": "Engineering card, 4 x 2 in",
+   "caption": "Classic dots, 50% (S500), 2500 mm/min, 10 lines/mm, one pass - converted in LaserGRBL with exactly these settings, 10 min 37 s. Bright silver on black.",
+   "date": "2026-11-01",
+   "source": "C:/Users/Heemi/Downloads/Mobile Devices/20261101_050846.heic"
+  },
+  "card-heart": {
+   "file": "card-heart.jpg",
+   "kind": "result",
+   "title": "Heart card while engraving",
+   "caption": "Same settings on the 2 x 4 in heart card: the script and fine dots come out bright silver. (Taken during the resumed run after a USB dropout.)",
+   "date": "2026-11-01",
+   "source": "anodized-cards-2026-11-01/recovery/20261101_033016.jpg"
+  },
+  "lid-ladder-chart": {
+   "file": "lid-ladder-chart.jpg",
+   "kind": "chart",
+   "title": "Lid line ladder",
+   "caption": "Before the full lid: short strokes at 40, 60 and 80% at 300 mm/min (red, bottom). Orange marks are earlier tests.",
+   "date": "2026-10-27",
+   "source": "saiyan-can/fullbody-aura-v7/selected-ladder300-preview.png"
+  },
+  "lid-test-marks": {
+   "file": "lid-test-marks.jpg",
+   "kind": "test",
+   "title": "Line tests on the lid",
+   "caption": "At 300 mm/min: 40% a tad light, 57-60% fine and visible, 80% browning. The brown oval is a slow 95% test that blistered the inside coating. 57% became the line setting.",
+   "date": "2026-10-27",
+   "source": "saiyan-can/fullbody-aura-v7/operator-photo-2026-10-27-test-marks.jpg"
+  },
+  "lid-raster-swatches": {
+   "file": "lid-raster-swatches.jpg",
+   "kind": "test",
+   "title": "Photo-dot swatches on a lid",
+   "caption": "2 mm dot swatches at 2500 mm/min: 50% barely marks, 55% a thin strip, 60% a full light square. Below about 80% the result changed from spot to spot (focus).",
+   "date": "2026-10-28",
+   "source": "saiyan-can/raster-test-5/photos/left-end-labelled.jpg"
+  },
+  "lid-raster-lesson": {
+   "file": "lid-raster-lesson.jpg",
+   "kind": "lesson",
+   "title": "What went wrong: first lid photo",
+   "caption": "Dense 0.1 mm dots at 100% / 2500 mm/min merged into a frosted silhouette (left) and lost all the detail of the preview (right). That's why the lid photo preset uses bigger, spaced halftone dots - and why it needs a test first.",
+   "date": "2026-10-28",
+   "source": "saiyan-can/raster-job-F1-ink-39/photos/print-vs-preview.jpg"
+  },
+  "lid-source": {
+   "file": "lid-source.jpg",
+   "kind": "source",
+   "title": "Goku + Vegeta line art",
+   "caption": "Line art with power tiers at 300 mm/min: aura 60%, characters 57%, lightning 50% (blue). Marks already tested were skipped (orange).",
+   "date": "2026-10-27",
+   "source": "saiyan-can/fullbody-aura-v7/full-job/full-job-preview.png"
+  },
+  "lid-gv": {
+   "file": "lid-gv.jpg",
+   "kind": "result",
+   "title": "Goku + Vegeta lid",
+   "caption": "Vector lines at 300 mm/min, about 8 minutes - still the best line work so far. Made with LINE settings, not this preset's halftone photo style.",
+   "date": "2026-10-27",
+   "source": "saiyan-can/fullbody-aura-v7/full-job/finished-lid-photo-2026-10-27-lighting.jpg"
+  },
+  "lid-kame": {
+   "file": "lid-kame.jpg",
+   "kind": "result",
+   "title": "Kamehameha lid",
+   "caption": "Lines at 45-57%: a tad light, and one side of the 45% border didn't etch fully. 45% has little margin above the 'too light' point.",
+   "date": "2026-10-28",
+   "source": "saiyan-can/goku-kamehameha-lid/photos/1000047168.jpg"
+  }
+ },
+ "sets": {
+  "pine-layers": {
+   "items": [
+    "pine-ladder",
+    "pine-grid",
+    "dragon-chart",
+    "dragon-test12",
+    "np-source",
+    "np-final",
+    "np-l1",
+    "np-l2",
+    "np-sign",
+    "pine-grid-chart",
+    "dragon-compare",
+    "dragon-source",
+    "mural-lesson"
+   ],
+   "note": "The ladder and grid tests, the dragon tests that led to this recipe, and the North Pole plank made with it."
+  },
+  "pine-layer-count": {
+   "items": [
+    "pine-ladder",
+    "pine-grid",
+    "dragon-chart",
+    "dragon-compare",
+    "dragon-test12",
+    "pine-grid-chart",
+    "dragon-source"
+   ],
+   "note": "The tests behind the layered recipe. No full piece has been burned with this exact variation yet; the North Pole plank used the plank recipe."
+  },
+  "pine-lettering": {
+   "items": [
+    "np-sign",
+    "np-final",
+    "np-source",
+    "pine-ladder",
+    "pine-grid"
+   ],
+   "note": "The North Pole sign lettering was burned with this setting."
+  },
+  "pine-sketch": {
+   "items": [
+    "pine-ladder",
+    "pine-grid",
+    "pine-grid-chart",
+    "mural-whole",
+    "mural-lesson"
+   ],
+   "note": "Outlines at 40% / 3000 mm/min were the line passes on the Goku mural."
+  },
+  "anodized-dots": {
+   "items": [
+    "card-eng-source",
+    "card-eng",
+    "card-heart"
+   ],
+   "note": "No ladder test on anodized yet: these settings come from the card jobs. Try a spare card or a test grid before changing them."
+  },
+  "anodized-crisp": {
+   "items": [
+    "card-eng",
+    "card-heart"
+   ],
+   "note": "These show the proven classic dots at the same power and speed. Crisp (Stucki) dots haven't been burned yet."
+  },
+  "lid-halftone": {
+   "items": [
+    "lid-raster-swatches",
+    "lid-raster-lesson",
+    "lid-ladder-chart",
+    "lid-test-marks",
+    "lid-source",
+    "lid-gv",
+    "lid-kame"
+   ],
+   "note": "Photo halftones on lids are untested. These are the lid tests and the line-art lids (made with LINE settings)."
+  }
+ }
+}
