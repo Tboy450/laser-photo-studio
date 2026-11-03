@@ -20,6 +20,7 @@ from lps.imaging import load_color  # noqa: E402
 OUTPUTS = APP.parents[1] / "outputs"
 LASER = Path.home() / "Documents" / "01 Projects" / "Laser & CNC"   # phone photos sorted by day, finished pieces
 HOT_WHEELS = LASER / "Hot Wheels (what not to do)"
+PHONE_ARCHIVE = Path.home() / "Documents" / "04 Phone Uploads Archive"   # originals from the phone, by month
 OUT = APP / "assets" / "samples"
 MAX_SIDE = 1400
 Image.MAX_IMAGE_PIXELS = None
@@ -124,7 +125,8 @@ SAMPLES = {
         date="2026-11-01", title="Goku 'Kamehameha' card",
         caption="Run from this app: Classic dots, 60% (S600), 2400 mm/min, 0.1 mm rows, one pass, Negative on. "
                 "93 x 46.5 mm of art, 17 minutes, no errors. Even, bright silver with the fine hair and beam lines "
-                "kept. (Made with your own copy of this preset, 'Black anodized aluminum - photo dots'.)"),
+                "kept. (Made with your own copy of this preset, 'Black anodized aluminum - photo dots'. The G-code "
+                "is 'goku black card.nc' in Documents\\01 Projects\\Laser & CNC.)"),
     "hw-art": dict(
         src=str(HOT_WHEELS / "grok_1793609202885.jpg"), kind="source", date="2026-11-02",
         crop=(0.1, 0.48, 0.93, 0.72), title="Hot Wheels roof art",
@@ -235,6 +237,8 @@ def build_one(sid: str, spec: dict) -> str | None:
     if not src.is_absolute():
         src = OUTPUTS / src
     old = [OUT / f"{sid}{e}" for e in (".png", ".jpg") if (OUT / f"{sid}{e}").exists()]
+    if not src.exists() and PHONE_ARCHIVE.exists():   # project folders hold copies; the phone original is kept here
+        src = next(PHONE_ARCHIVE.rglob(src.name), src)
     if not src.exists():
         if old:
             print(f"  {sid}: source missing, keeping the existing copy")
