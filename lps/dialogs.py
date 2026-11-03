@@ -199,7 +199,7 @@ class HelpWindow(tk.Toplevel):
         self.txt.tag_configure("p", spacing3=4)
         self.txt.tag_configure("li", lmargin1=14, lmargin2=32, spacing3=3)
         self.txt.tag_configure("title", font=("Segoe UI", 16, "bold"), spacing3=6)
-        self._img = None
+        self._imgs = []
         self.show_topic(topic)
 
     def show_topic(self, topic=None):
@@ -214,6 +214,7 @@ class HelpWindow(tk.Toplevel):
         t = self.txt
         t.configure(state="normal")
         t.delete("1.0", "end")
+        self._imgs = []
         t.insert("end", title + "\n", "title")
         for line in text.splitlines():
             s = line.strip()
@@ -240,9 +241,9 @@ class HelpWindow(tk.Toplevel):
         im = Image.open(path)
         width = max(300, self.txt.winfo_width() - 60) if self.txt.winfo_width() > 100 else 700
         im.thumbnail((width, 2000), Image.Resampling.LANCZOS)
-        self._img = ImageTk.PhotoImage(im)
+        self._imgs.append(ImageTk.PhotoImage(im))
         self.txt.insert("end", "\n")
-        self.txt.image_create("end", image=self._img, padx=4, pady=6)
+        self.txt.image_create("end", image=self._imgs[-1], padx=4, pady=6)
         self.txt.insert("end", "\n")
 
 

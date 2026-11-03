@@ -3,6 +3,7 @@ zones, laser-off run-up area, the origin, perimeter dots and the live head posit
 from __future__ import annotations
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk
 
 from PIL import Image, ImageTk
@@ -38,6 +39,12 @@ class PreviewPanel(ttk.Frame):
         self.canvas.pack(fill="both", expand=True, pady=(6, 4))
         self.info = wrap_label(self, "", style="Muted.TLabel", width=900)
         self.info.pack(fill="x")
+        self.warn = wrap_label(self, "", width=900, foreground=COLORS["warn"])
+        self.key = tk.Canvas(self, height=1, highlightthickness=0,
+                             background=ttk.Style(self).lookup("TFrame", "background") or COLORS["bg"])
+        self.key.pack(fill="x", pady=(2, 0))
+        self.key.bind("<Configure>", lambda e: self._draw_key())
+        self._key_items = []
         self.legend = wrap_label(self, "", style="Small.TLabel", width=900)
         self.legend.pack(fill="x")
         self.canvas.bind("<Configure>", lambda e: self._schedule())
@@ -224,6 +231,8 @@ class PreviewPanel(ttk.Frame):
                                 f"Y {app.gfile['burn_bbox'][1]:.1f}..{app.gfile['burn_bbox'][3]:.1f} mm"
                                 if app.gfile.get("burn_bbox") else "")
             self.legend.configure(text="")
+            self._set_warning("")
+            self._set_key(self._overlay_items())
             return
         g = job.geom
         txt = (f"Art {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.1f}..{g.x1:.1f}, Y {g.y0:.1f}..{g.yt:.1f} from the "
@@ -231,16 +240,118 @@ class PreviewPanel(ttk.Frame):
         if app.report:
             txt += f"  |  about {fmt_dur(job.est_s)}"
         self.info.configure(text=txt)
-        if self.view.get() == "map":
-            self.legend.configure(text="Colours: orange = layer 1, red = layer 2, dark red = layer 3, blue = thin "
-                                       "lines/labels, black = dots. Pink = no-burn area.")
-        elif self.view.get() == "lgrbl":
-            self.legend.configure(text="How LaserGRBL draws the .nc (its default dark theme): light = laser on, "
-                                       "brighter = more power. It doesn't invert anything - wood jobs just look "
-                                       "like negatives there. 'Looks like' shows the real result.")
+        self._set_warning(
+            "Heads-up: the picture burns right to the edge of its box all the way round, so it comes out as a "
+            "filled rectangle. Fine for a photo that fills the piece. If the art should be a shape (a sticker, logo "
+            "or stripes), its background is burning: see Guide > Backgrounds & stickers."
+            if simulate.edge_burn(job) >= 0.6 else "")
+        view = self.view.get()
+        self._set_key(self._view_items(view) + self._overlay_items())
+        self.legend.configure(text={
+            "look": "Roughly how the finished piece will look on the material. Not a laser input.",
+            "map": "Each pass in its own colour; later passes are drawn on top. Anything coloured gets the laser, "
+                   "white is never touched.",
+            "lgrbl": "How LaserGRBL draws the .nc (its default dark theme). It doesn't invert anything - wood jobs "
+                     "just look like negatives there. 'Looks like' shows the real result.",
+            "pic": "The picture after your adjustments, before it becomes laser moves. Darker = more burning "
+                   + ("(Negative is on, so it's already flipped)." if job.material.negative else "."),
+        }.get(view, ""))
+
+    # ---------------------------------------------------------------- colour key
+    def _set_warning(self, text):
+        self.warn.configure(text=text)
+        if text:
+            self.warn.pack(fill="x", before=self.key)
         else:
-            self.legend.configure(text="Blue dashes = art box, grey dashes = usable area and laser-off run-ups, "
-                                       "red = keep-out zones and the origin.")
+            self.warn.pack_forget()
+
+    def _view_items(self, view):
+        """Key entries for what the art itself shows in this preview mode."""
+        job = self.app.job
+        if view == "look":
+            bare, mark = (hexrgb(c) for c in LOOKS.get(job.material.look, LOOKS["pine"]))
+            return [("fill", bare, "untouched material"), ("ramp", (bare, mark), "lighter to fuller marks"),
+                    ("fill", mark, "fullest mark")]
+        if view == "lgrbl":
+            bg, fg = hexrgb(simulate.LASERGRBL_BG), hexrgb(simulate.LASERGRBL_LINE)
+            return [("fill", bg, "laser off"), ("ramp", (bg, fg), "laser on: brighter = more power")]
+        if view == "pic":
+            return [("fill", "#ffffff", "no burn"), ("ramp", ("#ffffff", "#000000"), "darker = more burning")]
+        sel = self.selected_passes()
+        groups = {}
+        for p in job.passes:
+            if sel is None or p.key in sel:
+                groups.setdefault(simulate.PASS_COLOURS.get(p.key, (25, 25, 25)), []).append(p.title)
+        items = [("fill", "#ffffff", "no laser")]
+        for col, titles in groups.items():
+            text = titles[0] if len(titles) == 1 else f"{titles[0]} to {titles[-1]} (same dots each time)"
+            items.append(("fill", hexrgb(col), f"{text}: laser fires"))
+        if job.allowed is not None and not job.allowed.all():
+            items.append(("fill", hexrgb((236, 225, 225)), "no-burn area (margins, keep-outs)"))
+        return items
+
+    def _overlay_items(self):
+        """Key entries for the lines and markers drawn over the art."""
+        app = self.app
+        items = []
+        if app.job is not None:
+            items += [("dash", "#3b82f6", "art box"), ("dash", "#9a8f80", "usable area")]
+            if app.report and app.report.get("travel"):
+                items.append(("dash", "#7c8aa0", "laser-off run-ups"))
+            if (app.job.piece or {}).get("keepouts"):
+                items.append(("keepout", COLORS["bad"], "keep-out zone"))
+        if app.gfile and app.gfile.get("burn_bbox"):
+            items.append(("box", COLORS["accent"], "where the .nc file burns"))
+        items.append(("cross", COLORS["bad"], "origin 0,0 (where the head starts)"))
+        if app.perim_points:
+            items.append(("dot", COLORS["accent"], "perimeter check points"))
+        if app.head_position():
+            items.append(("head", COLORS["blue"], "head now (red while the laser is on)"))
+        return items
+
+    def _set_key(self, items):
+        if items != self._key_items:
+            self._key_items = items
+            self._draw_key()
+
+    def _draw_key(self):
+        """Swatches with words, wrapped to the panel width."""
+        k = self.key
+        k.delete("all")
+        font = ("Segoe UI", 9)
+        W = max(200, k.winfo_width())
+        x, y, row_h, sw = 2, 3, 20, 14
+        fnt = tkfont.Font(font=font)
+        for kind, col, text in self._key_items:
+            w = sw + 6 + fnt.measure(text) + 16
+            if x > 2 and x + w > W:
+                x, y = 2, y + row_h
+            x0, y0, x1, y1 = x, y + 2, x + sw, y + 2 + sw
+            cy = (y0 + y1) / 2
+            if kind == "fill":
+                k.create_rectangle(x0, y0, x1, y1, fill=col, outline="#8a8278")
+            elif kind == "ramp":
+                c0, c1 = (tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in col)
+                for i in range(sw):
+                    t = i / (sw - 1)
+                    k.create_line(x0 + i, y0, x0 + i, y1, fill=hexrgb([a + (b - a) * t for a, b in zip(c0, c1)]))
+                k.create_rectangle(x0, y0, x1, y1, outline="#8a8278")
+            elif kind == "dash":
+                k.create_rectangle(x0, y0, x1, y1, outline=col, dash=(3, 2))
+            elif kind == "box":
+                k.create_rectangle(x0, y0, x1, y1, outline=col, width=2)
+            elif kind == "keepout":
+                k.create_rectangle(x0, y0, x1, y1, outline=col, width=2, fill="#f3c7c7", stipple="gray50")
+            elif kind == "cross":
+                k.create_line(x0, cy, x1, cy, fill=col, width=2)
+                k.create_line((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, fill=col, width=2)
+            elif kind == "dot":
+                k.create_oval(x0 + 1, y0 + 1, x1 - 1, y1 - 1, fill="#ffffff", outline=col, width=2)
+            elif kind == "head":
+                k.create_oval(x0 + 1, y0 + 1, x1 - 1, y1 - 1, outline=col, width=2)
+            k.create_text(x1 + 6, cy, text=text, anchor="w", font=font, fill=COLORS["ink"])
+            x += w
+        k.configure(height=y + row_h + 2 if self._key_items else 1)
 
 
 def fmt_dur(sec: float) -> str:

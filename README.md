@@ -27,13 +27,16 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
    pieces made with them (click to enlarge). Add your own test photos to any preset, and save your own presets.
 3. **Size & placement.** Piece size, origin (lower-left corner or centre), margins and no-burn zones (twine holes,
    screws). Nudge the art in 0.5-5 mm steps.
-4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Then every command is replayed
+4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Every preview mode (Looks like,
+   What burns, In LaserGRBL, Picture) has a **colour key** underneath saying what each colour, dashed box and marker
+   means, and the app warns when a logo's or sticker's plain background would burn as a filled rectangle. Then every command is replayed
    offline: only allowed powers and speeds, nothing outside the piece, every dot burned exactly once, laser off at
    every start and end. Nothing reaches the laser until this passes. Save the job or open it in LaserGRBL.
 5. **Laser.** Connect, set the origin, **perimeter check**, then Start.
 
 The **Guide** button (top right) explains everything in plain words: too light or too dark, negatives and
-LaserGRBL's preview, print styles, LaserGRBL settings, origin and perimeter check, USB dropouts, safety and files.
+LaserGRBL's preview, print styles, LaserGRBL settings (with the Hot Wheels car's mistakes), origin and perimeter
+check, backgrounds & stickers (why a whole rectangle burns, fills vs outlines), USB dropouts, safety and files.
 Blue links in the steps open the right Guide page.
 
 ## Perimeter check with the 1% dot
@@ -128,7 +131,9 @@ Run-ups grow automatically with speed (about 10 mm at 6000 mm/min). Save the bes
   `log.txt`, `photos\`.
 - **Presets and settings:** `Documents\Laser Photo Studio\my-presets.json`, `settings.json`.
 - **Sample photos:** built in under `assets\samples\` (made from the project's tests by `tools\make_samples.py`,
-  which lists every photo, its caption and which presets show it). Photos you add go to
+  which lists every photo, its caption and which presets show it; sources come from the project's `outputs` folder
+  and `Documents Projects\Laser & CNC`). "What went wrong" photos are kept on purpose: the Hot Wheels car shows
+  up under the anodized and lid presets. Photos you add go to
   `Documents\Laser Photo Studio\samples\<preset>\`.
 
 ## Folder layout

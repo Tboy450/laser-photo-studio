@@ -166,6 +166,17 @@ class Samples(unittest.TestCase):
                 self.assertTrue(s.title and s.caption, s.path)
                 self.assertEqual(samples.thumbnail(s.path, (128, 96)).size[0] <= 128, True)
 
+    def test_anodized_shows_goku_card_and_hot_wheels_lessons(self):
+        from lps import samples
+        card = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
+        items, note = samples.for_material(card)
+        titles = [s.title for s in items]
+        self.assertIn("Goku 'Kamehameha' card", titles)
+        lessons = [s for s in items if s.kind == "lesson"]
+        self.assertGreaterEqual(len(lessons), 3)
+        self.assertTrue(all(s.title.startswith("What went wrong") for s in lessons))
+        self.assertIn("Hot Wheels", note)
+
     def test_saved_preset_keeps_photos_and_user_photos_round_trip(self):
         from lps import samples
         base = next(m for m in presets.BUILTIN if m.key == "pine-layers")
@@ -209,7 +220,23 @@ class Explanations(unittest.TestCase):
         from lps import helptext
         titles = [t for t, _ in helptext.topics(card)]
         self.assertIn("Too light or too dark?", titles)
+        self.assertIn("Backgrounds & stickers", titles)
         self.assertTrue(all(body.strip() for _, body in helptext.topics(card)))
+        for _, body in helptext.topics(card):   # every Guide picture exists
+            for line in body.splitlines():
+                if line.strip().startswith("[image:"):
+                    self.assertTrue((jobs.APP_DIR / line.strip()[7:-1]).exists(), line)
+
+    def test_edge_burn_spots_a_burning_background(self):
+        from lps import simulate
+        logo = Image.new("L", (300, 200), 255)
+        ImageDraw.Draw(logo).rectangle((60, 60, 240, 140), fill=0)
+        wood = next(m for m in presets.BUILTIN if m.key == "pine-layers")
+        card = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
+        pl = Placement(piece(40.0, 30.0))
+        self.assertLess(simulate.edge_burn(planner.build_job(logo, wood, pl)), 0.1)      # white bg, no Negative
+        self.assertGreater(simulate.edge_burn(planner.build_job(logo, card, pl)), 0.9)   # Negative burns the white
+        self.assertLess(simulate.edge_burn(planner.build_job(logo, card.copy(negative=False), pl)), 0.1)
 
 
 if __name__ == "__main__":

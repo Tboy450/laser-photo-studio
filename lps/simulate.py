@@ -58,6 +58,26 @@ def burn_map(job: JobPlan, passes=None) -> Image.Image:
     return Image.fromarray(out, "RGB")
 
 
+def edge_burn(job: JobPlan, width_mm: float = 0.5) -> float:
+    """Share (0-1) of the art box's outer edge that the picture marks as 'burn' (dark after Negative). Near 1 means
+    the picture's background burns too, so a logo or sticker comes out as a filled rectangle. Only a plain, even
+    edge counts: a photo that runs to its edges has varied tones there and returns 0."""
+    if job.gray is None:
+        return 0.0
+    a = job.gray
+    H, W = a.shape
+    n = max(1, int(round(width_mm / job.geom.pitch)))
+    if H <= 2 * n or W <= 2 * n:
+        return 0.0
+    ring = np.ones((H, W), bool)
+    ring[n:-n, n:-n] = False
+    if job.allowed is not None:
+        ring &= job.allowed
+    if not ring.any() or a[ring].std() > 20:
+        return 0.0
+    return float((a[ring] < 160).mean())
+
+
 def source_view(job: JobPlan) -> Image.Image:
     g = job.gray if job.gray is not None else np.full((job.geom.rows, job.geom.cols), 255.0)
     return Image.fromarray(np.clip(g, 0, 255).astype(np.uint8), "L").convert("RGB")
