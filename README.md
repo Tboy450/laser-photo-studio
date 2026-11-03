@@ -132,7 +132,7 @@ Run-ups grow automatically with speed (about 10 mm at 6000 mm/min). Save the bes
 - **Presets and settings:** `Documents\Laser Photo Studio\my-presets.json`, `settings.json`.
 - **Sample photos:** built in under `assets\samples\` (made from the project's tests by `tools\make_samples.py`,
   which lists every photo, its caption and which presets show it; sources come from the project's `outputs` folder
-  and `Documents Projects\Laser & CNC`). "What went wrong" photos are kept on purpose: the Hot Wheels car shows
+  and `Documents\01 Projects\Laser & CNC`). "What went wrong" photos are kept on purpose: the Hot Wheels car shows
   up under the anodized and lid presets. Photos you add go to
   `Documents\Laser Photo Studio\samples\<preset>\`.
 
