@@ -149,6 +149,62 @@ class SaveLoad(unittest.TestCase):
             self.assertIn("Look: pine", text)
             self.assertIn("M5 S0", text.splitlines()[-1])
             self.assertNotIn("$H", text)
+            from lps import gcodeinfo
+            info = gcodeinfo.analyse(jobs.lasergrbl_path(folder))
+            self.assertEqual(info["kind"], "fill")
+            self.assertAlmostEqual(info["row_pitch"], job.geom.pitch, places=3)
+
+
+class FillOrOutline(unittest.TestCase):
+    """The Hot Wheels stripes came out as outlines because LaserGRBL's Vectorize traces edges."""
+
+    def analyse(self, moves):
+        from lps import gcodeinfo
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "t.nc"
+            f.write_text("G21 G90\nM4 S0\n" + "\n".join(moves) + "\nM5 S0\n")
+            return gcodeinfo.analyse(f)
+
+    @staticmethod
+    def path(points, s=600):
+        (x0, y0), rest = points[0], points[1:]
+        return [f"G0 X{x0:.3f} Y{y0:.3f}"] + [f"G1 X{x:.3f} Y{y:.3f} S{s}" for x, y in rest] + ["G1 S0"]
+
+    def test_vectorized_stripes_and_circle_are_outlines(self):
+        moves = []
+        for i in range(3):    # three long stripes, traced round their edges
+            y = 5 + 4 * i
+            moves += self.path([(0, y), (80, y), (80, y + 2), (0, y + 2), (0, y)])
+        moves += self.path([(100 + 10 * math.cos(a), 10 + 10 * math.sin(a))
+                            for a in np.linspace(0, 2 * math.pi, 73)])
+        info = self.analyse(moves)
+        self.assertEqual(info["kind"], "outline")
+        from lps import gcodeinfo
+        text, warn = gcodeinfo.describe_fill(info)
+        self.assertTrue(warn)
+        self.assertIn("OUTLINES ONLY", text)
+
+    def test_rows_fill_in_any_direction(self):
+        rows = []
+        for i in range(60):   # line-to-line rows, 0.1 mm apart
+            y = i * 0.1
+            rows += [f"G0 X0 Y{y:.3f}", f"G1 X20 S500", "G1 S0"]
+        info = self.analyse(rows)
+        self.assertEqual((info["kind"], info["row_pitch"]), ("fill", 0.1))
+        diag = []
+        for i in range(60):   # LaserGRBL's diagonal direction
+            o = i * 0.1
+            diag += self.path([(o, 0), (o + 10, 10)])
+        self.assertEqual(self.analyse(diag)["kind"], "fill")
+
+    def test_hatch_with_border_is_mixed(self):
+        moves = []
+        for i in range(41):   # 20 mm hatch rows, 0.1 mm apart, plus a round border traced 5 times
+            moves += self.path([(0, i * 0.1), (20, i * 0.1)])
+        moves += self.path([(10 + 8 * math.cos(a), 2 + 8 * math.sin(a)) for a in np.linspace(0, 10 * math.pi, 361)])
+        info = self.analyse(moves)
+        self.assertEqual(info["kind"], "mixed")
+        self.assertLess(info["fill_share"], 0.85)
 
 
 class Samples(unittest.TestCase):

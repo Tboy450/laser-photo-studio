@@ -9,7 +9,7 @@ START = """# Five steps
 2. Material - pick your material. Green = proven on your U20. Yellow = a starting point from other 20 W lasers: run a test grid first. Proven settings show photos of their test ladders and charts, and of finished pieces made with them; click a photo to enlarge it.
 3. Size - enter the piece size, where the start point is (lower-left corner or centre) and any no-burn zones like twine holes.
 4. Check - adjust the picture while watching the preview. The app replays every command before anything can run.
-5. Laser - connect, set the start point, run the perimeter check with the 1% dot, then Start.
+5. Laser - connect, set the start point, run the perimeter check with the 1% dot, then Start. The 'Ready to start?' list above the Start button ticks off each of these and says what's still missing.
 
 # The preview buttons
 - Looks like: roughly how the finished piece will look on the material.
@@ -115,7 +115,8 @@ The head moves to each corner of the burn area with the laser OFF, flashes the 1
 - Before each flash it checks the machine is idle with zero output, and that the controller has 1% programmed while the laser is off.
 - Each flash is sent with its own 'laser off' command attached.
 - Off by a bit? Move the picture in 0.5-5 mm steps and check again.
-- Works for any .nc file too: drop it on the Laser Perimeter Check desktop icon.
+- Works for any .nc file too: drop it on the Laser Perimeter Check desktop icon. It also tells you whether the file fills shapes in or only traces their outlines.
+- Moving the picture or setting a new start point means a new perimeter check: the 'Ready to start?' list unticks it.
 
 The dot is the real engraving laser at very low power, so still wear laser glasses.
 
@@ -156,6 +157,7 @@ A picture is always a rectangle. Every pixel in it is either 'burn' or 'don't bu
 
 # Fills and outlines
 A filled shape (a solid stripe) needs the laser to scan rows across it, which this app's styles and LaserGRBL's raster import do. LaserGRBL's Vectorize and Centerline only trace edges or middle lines, so shapes come out as outlines. That's what happened on the Hot Wheels car.
+To check a file before burning it, open it with 'Check a G-code file instead...' in step 5 (or drop it on the Laser Perimeter Check icon). The app says 'Fills shapes in' or warns 'OUTLINES ONLY'.
 
 [image:assets/samples/hw-front.jpg]"""
 

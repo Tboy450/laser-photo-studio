@@ -10,7 +10,8 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
 
 - **Laser Photo Studio** (desktop icon): the full app. Drop a picture or `.nc` file on it to open it.
 - **Laser Perimeter Check** (desktop icon): opens straight to the 1% dot perimeter check. Drop any `.nc` file on it
-  (from this app, LaserGRBL or older project jobs) to see where it will burn.
+  (from this app, LaserGRBL or older project jobs) to see where it will burn, and whether it fills shapes in or
+  only burns their **outlines** (what LaserGRBL's Vectorize makes).
 - **Pictures for `.nc` files in File Explorer.** Windows only previews picture files; for G-code it shows the icon
   of the program that opens it (LaserGRBL's "LG"). The install adds a small preview add-on, so Explorer draws what
   each `.nc` file will engrave (anodized jobs as silver on black, wood jobs in wood colours). Press F5 or reopen
@@ -35,7 +36,10 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
    offline: only allowed powers and speeds, nothing outside the piece, every dot burned exactly once, laser off at
    every start and end. Nothing reaches the laser until this passes. Save the job or open it in LaserGRBL.
 5. **Laser.** Connect, **move the laser head** (purple pad, purple marker in the preview) to the start point, set it,
-   **perimeter check**, then Start. Hover over any button to see what it moves, or whether nothing moves.
+   **perimeter check**, then Start. Hover over any button to see what it moves, or whether nothing moves. The
+   **Ready to start?** list above Start ticks off each step (picture checked, connected, start point set, perimeter
+   check done for this start point and picture, head at the start point) and says what's missing. Moving the
+   picture or setting a new start point unticks the perimeter check.
 
 The **Guide** button (top right) explains everything in plain words: too light or too dark, negatives and
 LaserGRBL's preview, print styles, LaserGRBL settings (with the Hot Wheels car's mistakes and a list of LaserGRBL's

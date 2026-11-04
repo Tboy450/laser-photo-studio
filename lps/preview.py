@@ -8,7 +8,7 @@ from tkinter import ttk
 
 from PIL import Image, ImageTk
 
-from . import planner, simulate
+from . import gcodeinfo, planner, simulate
 from .presets import LOOKS
 from .ui_common import COLORS, wrap_label
 
@@ -225,13 +225,14 @@ class PreviewPanel(ttk.Frame):
     def _update_info(self):
         app = self.app
         job = app.job
+        gtext, gwarn = gcodeinfo.describe_fill(app.gfile) if app.gfile else ("", False)
         if job is None:
             self.info.configure(text="Open a picture to start." if not app.gfile else
                                 f"{app.gfile['name']}: burns X {app.gfile['burn_bbox'][0]:.1f}..{app.gfile['burn_bbox'][2]:.1f}, "
                                 f"Y {app.gfile['burn_bbox'][1]:.1f}..{app.gfile['burn_bbox'][3]:.1f} mm"
                                 if app.gfile.get("burn_bbox") else "")
             self.legend.configure(text="")
-            self._set_warning("")
+            self._set_warning(gtext if gwarn else "")
             self._set_key(self._overlay_items())
             return
         g = job.geom
@@ -241,6 +242,7 @@ class PreviewPanel(ttk.Frame):
             txt += f"  |  about {fmt_dur(job.est_s)}"
         self.info.configure(text=txt)
         self._set_warning(
+            (gtext if gwarn else "") if app.gfile else
             "Heads-up: the picture burns right to the edge of its box all the way round, so it comes out as a "
             "filled rectangle. Fine for a photo that fills the piece. If the art should be a shape (a sticker, logo "
             "or stripes), its background is burning: see Guide > Backgrounds & stickers."

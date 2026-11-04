@@ -30,6 +30,10 @@ class LaserMixin:
         self.connected = False
         self.last_status = None
         self.origin_set = False
+        self.origin_count = 0          # goes up each time a start point is set, so old perimeter checks expire
+        self.perim_checked = None      # (burn box, origin_count) of the last finished perimeter check
+        self._bbox_cache = (None, None)
+        self._ready_shown = None
         self.dot_on = False
         self.perim_running = False
         self.active_folder = None
@@ -138,6 +142,18 @@ class LaserMixin:
         e.pack(fill="x", pady=4)
         self.engrave_lbl = wrap_label(e, "")
         self.engrave_lbl.pack(anchor="w")
+        self.ready_box = ttk.Frame(e)
+        self.ready_box.pack(fill="x", pady=(8, 0))
+        self.ready_box.columnconfigure(1, weight=1)
+        ttk.Label(self.ready_box, text="Ready to start?", style="H2.TLabel").grid(row=0, column=0, columnspan=2,
+                                                                                  sticky="w")
+        self.ready_rows = []
+        for i in range(6):
+            mark = ttk.Label(self.ready_box, font=("Segoe UI", 10, "bold"), width=2)
+            mark.grid(row=i + 1, column=0, sticky="nw")
+            lab = wrap_label(self.ready_box, "")
+            lab.grid(row=i + 1, column=1, sticky="w")
+            self.ready_rows.append((mark, lab))
         self.btn_start = ttk.Button(e, text="Start engraving", style="Big.TButton", command=self.start_engraving)
         ToolTip(self.btn_start, "Burns the job, starting from the start point. The head must be at X0 Y0.")
         self.btn_start.pack(anchor="w", pady=(8, 0))
@@ -285,6 +301,7 @@ class LaserMixin:
             if st.state != "Alarm":
                 self.btn_unlock.pack_forget()
             self.preview.draw_head()
+            self.refresh_ready()
         elif kind == "dot":
             self.dot_on = bool(ev[1])
             self.btn_dot.configure(text="Dot OFF" if self.dot_on else "Dot on (1%)")
@@ -292,11 +309,14 @@ class LaserMixin:
             name = ev[1]
             if name in ("origin", "declare"):
                 self.origin_set = True
+                self.origin_count += 1
                 self.say("Start point set: this spot is now X0 Y0." if name == "origin" else
                          "Position declared at the stop point.", "ok")
             elif name == "perimeter":
                 self.perim_running = False
                 self.perim_idx = None
+                if not self.gfile:
+                    self.perim_checked = (self._bbox_key(), self.origin_count)
                 self.perim_lbl.configure(text="Done - head is back at the start point. Happy with the corners? Start "
                                               "engraving. Off a little? Move the picture and check again.")
                 self.preview.refresh()
@@ -389,7 +409,55 @@ class LaserMixin:
             ok = bool(self.report and self.report["ok"] and self.compiled_gen == self.gen)
             self.engrave_lbl.configure(text=f"{job.name}: {len(job.passes)} pass(es), {job.burn_cells:,} dots"
                                             + (f", about {fmt_dur(job.est_s)}." if ok else " - not checked yet."))
-            self.btn_start.state(["!disabled"] if ok and not live else ["disabled"])
+            self.btn_start.state(["disabled"] if live else ["!disabled"])
+        if self.gfile or live:
+            self.ready_box.pack_forget()
+        else:
+            self.ready_box.pack(fill="x", pady=(8, 0), before=self.btn_start)
+        self.refresh_ready()
+
+    # ================================================================ ready to start?
+    def _bbox_key(self):
+        job = self.job
+        if job is None:
+            return None
+        if self._bbox_cache[0] is not job:
+            self._bbox_cache = (job, job.burn_bbox())
+        b = self._bbox_cache[1]
+        return tuple(round(v, 2) for v in b) if b else None
+
+    def ready_items(self):
+        """The 'Ready to start?' list: (done, what, how to get there). The first three must be done to start."""
+        job, st = self.job, self.last_status
+        checked = bool(job is not None and self.report and self.report["ok"] and self.compiled_gen == self.gen)
+        perim = self.origin_set and self.perim_checked == (self._bbox_key(), self.origin_count)
+        at_start = bool(self.connected and st and st.state == "Idle" and st.wpos
+                        and math.hypot(st.wpos[0], st.wpos[1]) <= 0.05)
+        return [
+            (job is not None, "Picture open", "open one in step 1."),
+            (checked, "Job checked", "open a picture first." if job is None else
+             "the check found a problem: see step 4." if self.report and not self.report["ok"] else
+             "checking now (it runs by itself)."),
+            (self.connected, "Connected to the laser", "press Connect at the top of this step."),
+            (self.connected and self.origin_set, "Start point set",
+             f"put the head over the {self.origin_words()} and press 'Set start point here'."),
+            (perim, "Perimeter check done for this start point and picture",
+             "press 'Run perimeter check'." if self.perim_checked is None else
+             "the picture or start point changed since the last check: run it again."),
+            (at_start, "Head at the start point, machine idle", "press 'Move head to start point'."),
+        ]
+
+    def refresh_ready(self):
+        if not hasattr(self, "ready_rows"):
+            return
+        items = self.ready_items()
+        if items == self._ready_shown:
+            return
+        self._ready_shown = items
+        for (mark, lab), (done, what, how) in zip(self.ready_rows, items):
+            mark.configure(text="\u2713" if done else "\u2717", foreground=COLORS["ok"] if done else COLORS["bad"])
+            lab.configure(text=what if done else f"{what}: {how}",
+                          foreground=COLORS["ink"] if done else COLORS["muted"])
 
     # ================================================================ perimeter
     def perimeter_mode(self, path):
@@ -407,12 +475,17 @@ class LaserMixin:
         self.perim_points = []
         b = info["burn_bbox"]
         warn = ("  WARNING: " + "; ".join(info["warnings"])) if info["warnings"] else ""
+        fill, outline = gcodeinfo.describe_fill(info)
         self.gfile_lbl.configure(text=f"{info['name']}: burns X {b[0]:.2f}..{b[2]:.2f}, Y {b[1]:.2f}..{b[3]:.2f} mm, "
-                                      f"max power S{info['max_s']:g}.{warn}")
+                                      f"max power S{info['max_s']:g}.{warn}\n{fill}",
+                                 foreground=COLORS["warn"] if outline else COLORS["ink"])
         self.preview.refresh()
         self.goto(4)
         self.refresh_laser_page()
-        self.say("G-code loaded. Connect, set the start point the file expects, then Run perimeter check.", "ok")
+        if outline:
+            self.say("This file only burns OUTLINES - shapes won't fill in. See the warning under the preview.", "warn")
+        else:
+            self.say("G-code loaded. Connect, set the start point the file expects, then Run perimeter check.", "ok")
 
     def clear_gfile(self):
         self.gfile = None
@@ -461,6 +534,11 @@ class LaserMixin:
         if jobs.active_runner():
             messagebox.showinfo("Busy", "A job is already running.")
             return
+        items = self.ready_items()
+        missing = [f"- {what}: {how}" for done, what, how in items[:3] if not done]
+        if missing:
+            messagebox.showinfo("Not ready yet", "Before starting:\n\n" + "\n".join(missing))
+            return
         folder = self.save_current_job(quiet=True)
         if not folder:
             messagebox.showinfo("Check first", "The job needs to pass the check (step 4) first.")
@@ -479,6 +557,10 @@ class LaserMixin:
         if not self.origin_set and not messagebox.askyesno(
                 "Start point", f"You haven't set the start point since connecting. Is the head really over the "
                           f"{self.origin_words()}?"):
+            return
+        if not items[4][0] and not messagebox.askyesno(
+                "Perimeter check", "You haven't run the perimeter check for this start point and picture, so you "
+                                   "haven't seen where the corners will land.\n\nStart anyway?"):
             return
         job, m = self.job, self.job.material
         summary = (f"{job.name}\nMaterial: {m.name}\n{len(job.passes)} pass(es): "

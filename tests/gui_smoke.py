@@ -118,6 +118,9 @@ def main():
     ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True).save(OUT / "5-guide.png")
     hw.destroy()
     app.goto(4)
+    assert pump(app, 30, lambda: app.ready_items()[1][0]), "job not checked"
+    ready = [done for done, _, _ in app.ready_items()]
+    assert ready[:2] == [True, True] and not any(ready[2:]), ready     # picture + check done, nothing else yet
     app.connect()
     assert pump(app, 10, lambda: app.connected and app.last_status is not None), "demo connect failed"
     app.worker.submit("origin", machine.set_origin_here, 0.0, 0.0)
@@ -131,6 +134,14 @@ def main():
     pulses = app.worker.ctrl.pulses
     assert len(pulses) == 4 and all(p[2] == 10 for p in pulses), pulses
     shot(app, "4-laser")
+    assert pump(app, 5, lambda: all(done for done, _, _ in app.ready_items())), app.ready_items()
+    app.pages[4].canvas.yview_moveto(0.55)
+    pump(app, 0.5)
+    shot(app, "4b-ready")
+    app.nudge(1, 0)    # moving the picture means the perimeter check has to be run again
+    assert pump(app, 30, lambda: not app.ready_items()[4][0] and app.ready_items()[1][0]), app.ready_items()
+    app.nudge(None, None)
+    app.pages[4].canvas.yview_moveto(0.0)
     # Material card explanations: LaserGRBL settings and the energy readout after slowing down.
     app.select_material("anodized-dots")
     var, _ = app.adv_vars["feed"]
