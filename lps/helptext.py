@@ -7,7 +7,7 @@ from .presets import STYLES, lasergrbl_recipe
 START = """# Five steps
 1. Picture - open a photo, drawing or logo (phone HEIC photos work). Turn it if it's sideways.
 2. Material - pick your material. Green = proven on your U20. Yellow = a starting point from other 20 W lasers: run a test grid first. Proven settings show photos of their test ladders and charts, and of finished pieces made with them; click a photo to enlarge it.
-3. Size - enter the piece size, where the start point is (lower-left corner or centre) and any no-burn zones like twine holes.
+3. Size - enter the piece size, where the start point is (lower-left corner, centre, or any spot you click on the picture) and any no-burn zones like twine holes.
 4. Check - adjust the picture while watching the preview. The app replays every command before anything can run.
 5. Laser - connect, set the start point, run the perimeter check with the 1% dot, then Start. The 'Ready to start?' list above the Start button ticks off each of these and says what's still missing.
 
@@ -103,11 +103,19 @@ The yellow Mustang roof (stripes + horse, 82.55 x 26.5 mm) went wrong in LaserGR
 Jobs run from this app record exactly where the head stopped and resume safely. In LaserGRBL, don't use Resume or Home after a reconnect: it can jump to old coordinates (that burned the bed on the card)."""
 
 PERIMETER = """# The start point
-The start point (also called the origin, 0,0 or X0 Y0) is the spot the job is measured from: the lower-left corner or the centre of the piece (step 3). Move the head there with the dot on, then press 'Set start point here'. Nothing moves when you set it.
+The start point (also called the origin, 0,0 or X0 Y0) is the spot the job is measured from, and where you put the laser dot before starting. In step 3 choose the lower-left corner, the centre, or 'A spot I pick' and click any spot on the picture: the corner of a stripe, the middle of a windshield's edge, anything you can find on the real piece. The red crosshair shows it. Move the head there with the dot on, then press 'Set start point here'. Nothing moves when you set it.
+
+# The two crosshairs
+- Red crosshair: the start point, where you put the dot on the real piece.
+- Purple marker: where the controller THINKS the head is. When they sit on top of each other, the picture will land where you expect.
+In step 5 you can line them up by clicking the preview:
+- 'move the head there': the head moves to the spot you click, laser off.
+- 'say the dot is here': look where the dot really is on your piece and click that spot on the picture. Nothing moves; the purple marker jumps there.
 
 # Two kinds of moving
 - Move the picture (step 3, and under the perimeter check; blue box in the preview): the picture shifts on the piece and the job is rebuilt. The machine doesn't move.
 - Move the laser head (step 5, purple marker in the preview): the real head moves, laser off. The picture stays put.
+- Move the picture with the head (tick it in step 5): the head moves and keeps its X/Y, so the whole picture shifts on the real piece with it, like sliding the piece under the laser. Run the perimeter check again afterwards.
 The X/Y numbers in step 5 are where the controller THINKS the head is, measured from the start point. They only match the real spot after you set the start point.
 
 # The perimeter check

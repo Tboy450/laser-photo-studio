@@ -517,9 +517,11 @@ class App(PlaceMixin, LaserMixin):
                 self.say("Couldn't build the job - see details.", "bad")
                 messagebox.showerror("Build failed", err[-1500:])
                 return
-            self.job = job
+            old, self.job = self.job, job
             self.report = None
             self.perim_points = []
+            if old is not None and planner.piece_rect(old.piece)[:2] != planner.piece_rect(job.piece)[:2]:
+                self.start_point_moved()
             self.preview.set_job(job)
             self.update_check_panel()
             self.say("Preview updated." + ("" if self.nb.index("current") >= 3 else " Next: size & placement."))

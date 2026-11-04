@@ -406,6 +406,18 @@ def jog(g: Grbl, dx: float, dy: float, feed: int = 1000):
     g.command(f"$J=G91 G21 X{dx:.3f} Y{dy:.3f} F{int(feed)}")
 
 
+def jog_keep_position(g: Grbl, dx: float, dy: float, feed: int = 1000) -> Status:
+    """Jog the head, then give it back the work X,Y it had: the job (the picture) moves with the head on the real
+    piece. Laser off; same G10 L20 P1 as setting the start point."""
+    st = g.query_status()
+    if st.state != "Idle" or not st.wpos:
+        raise ControllerError(f"wait until the head has stopped (machine is {st.state})")
+    x, y = st.wpos[0], st.wpos[1]
+    jog(g, dx, dy, feed)
+    g.wait_idle()
+    return set_origin_here(g, x, y)
+
+
 def move_off(g: Grbl, x: float, y: float, feed: int = 1500, cancel=None) -> Status:
     """Laser-off move to work X,Y and wait until it arrives."""
     g.command("M5 S0")

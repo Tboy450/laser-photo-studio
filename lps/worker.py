@@ -125,7 +125,7 @@ class MachineWorker(threading.Thread):
             self.busy = False
 
     def _task(self, name, fn, args, kw):
-        if self.dot_until and name not in ("dot_jog",):
+        if self.dot_until and name not in ("dot_jog", "dot_follow"):
             self.dot_until = 0.0
             self.emit("dot", False)
         self.busy = True

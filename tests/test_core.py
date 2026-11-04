@@ -116,6 +116,17 @@ class Placement_(unittest.TestCase):
         self.assertFalse(((xs < 3) & (ys < 3)).any())   # rounded corner left bare
         self.assertTrue(verify.verify_job(job)["ok"])
 
+    def test_start_point_on_a_picked_spot(self):
+        corner = small_job("anodized-dots", 40.0, 30.0)
+        spot = small_job("anodized-dots", 40.0, 30.0, origin="spot", spot=[12.5, 8.0])
+        self.assertEqual(planner.piece_rect(spot.piece), (-12.5, -8.0, 27.5, 22.0))
+        self.assertAlmostEqual(spot.geom.x0, corner.geom.x0 - 12.5, places=6)   # same place on the piece,
+        self.assertAlmostEqual(spot.geom.yt, corner.geom.yt - 8.0, places=6)    # measured from the spot
+        for a, b in zip(corner.passes, spot.passes):
+            np.testing.assert_array_equal(a.cells, b.cells)
+        self.assertTrue(verify.verify_job(spot)["ok"])
+        self.assertIn("12.5 mm from the piece's left edge", jobs.origin_text(spot.piece))
+
     def test_test_grid(self):
         mat = next(m for m in presets.BUILTIN if m.key == "basswood-dots")
         job = planner.compile_job(planner.build_test_grid(mat, Placement(piece(120.0, 70.0)), [40, 60, 80],

@@ -72,6 +72,33 @@ class FullRuns(RunnerBase):
         self.assertAlmostEqual(c.phys[0], 0.0, places=3)   # parked at the origin
         self.assertEqual(c.modal["spindle"], "M5")
 
+    def test_job_from_a_picked_start_point(self):
+        job = small_job("anodized-dots", 24.0, 16.0, origin="spot", spot=[10.0, 6.0])
+        rep = verify.verify_job(job)
+        self.assertTrue(rep["ok"])
+        folder = jobs.save_job(job, rep, folder=self.root / "job-spot")
+        jobs.write_json(folder / "run.json", dict(start_pass=0, start_index=0, lead=[], expected_start=[0.0, 0.0],
+                                                  pause_between=False, park=[0.0, 0.0]))
+        c = self.ctrl()
+        self.assertEqual(self.run_job(folder, FakeWire(c)), "complete")
+        np.testing.assert_allclose(coverage(c, job.geom), expected_counts(job), atol=1e-6)
+        self.assert_clean(c)
+        self.assertAlmostEqual(c.phys[0], 0.0, places=3)   # parked back on the picked spot
+
+    def test_picture_moves_with_the_head(self):
+        c = self.ctrl()
+        g = machine.Grbl(FakeWire(c))
+        g.open(settle=0.0)
+        machine.set_origin_here(g, 4.0, 3.0)                  # 'the dot is here': nothing moves
+        self.assertEqual(c.phys[:2], [0.0, 0.0])
+        st = machine.jog_keep_position(g, 2.5, -1.0, 3000)    # head moves, keeps its X/Y
+        self.assertAlmostEqual(st.wpos[0], 4.0, places=2)
+        self.assertAlmostEqual(st.wpos[1], 3.0, places=2)
+        self.assertAlmostEqual(c.phys[0], 2.5, places=3)
+        self.assertAlmostEqual(c.phys[1], -1.0, places=3)
+        g.close()
+        self.assert_clean(c)
+
     def test_photo_pause_between_layers(self):
         job, folder = self.make(pause_between=True)
         c = self.ctrl()

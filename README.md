@@ -27,7 +27,8 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
    compared with the preset, and every setting in the units you'll meet elsewhere (power as `60 % (S600)`, row
    spacing as lines per inch, speed in in/min). Proven presets show **photos**: the ladder and grid tests, their charts, and finished
    pieces made with them (click to enlarge). Add your own test photos to any preset, and save your own presets.
-3. **Size & placement.** Piece size (inches shown too), start point (lower-left corner or centre), margins and
+3. **Size & placement.** Piece size (inches shown too), start point (lower-left corner, centre, or **any spot you
+   click on the picture**, like a stripe's corner or the windshield's edge), margins and
    no-burn zones (twine holes, screws). **Move the picture** in 0.5-5 mm steps: the blue pad and blue box, and the
    machine doesn't move.
 4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Every preview mode (Looks like,
@@ -39,7 +40,10 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
    **perimeter check**, then Start. Hover over any button to see what it moves, or whether nothing moves. The
    **Ready to start?** list above Start ticks off each step (picture checked, connected, start point set, perimeter
    check done for this start point and picture, head at the start point) and says what's missing. Moving the
-   picture or setting a new start point unticks the perimeter check.
+   picture or setting a new start point unticks the perimeter check. **Two crosshairs** line things up: red = the
+   start point, where you put the dot; purple = where the controller thinks the head is. Click the preview to move
+   the head there, or to say "the dot is really here" (nothing moves). Tick **Move the picture with the head** to
+   shift the whole picture on the real piece as you jog.
 
 The **Guide** button (top right) explains everything in plain words: too light or too dark, negatives and
 LaserGRBL's preview, print styles, LaserGRBL settings (with the Hot Wheels car's mistakes and a list of LaserGRBL's

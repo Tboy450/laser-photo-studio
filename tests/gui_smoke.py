@@ -142,6 +142,29 @@ def main():
     assert pump(app, 30, lambda: not app.ready_items()[4][0] and app.ready_items()[1][0]), app.ready_items()
     app.nudge(None, None)
     app.pages[4].canvas.yview_moveto(0.0)
+    # Lining up by clicking the preview (demo laser): 'the dot is here', 'move the head there', then jogging with
+    # 'Move the picture with the head' keeps the head's X/Y.
+    from tkinter import messagebox
+    messagebox.askyesno = lambda *a, **k: True      # the confirmations would wait for a person
+
+    def at(x, y):
+        st = app.last_status
+        return bool(st and st.wpos and abs(st.wpos[0] - x) < 0.05 and abs(st.wpos[1] - y) < 0.05)
+    assert pump(app, 30, lambda: app.ready_items()[1][0]), "re-check after nudging"
+    app.click_var.set("here")
+    app.preview_clicked(5.0, 4.0, 5.0, 4.0)
+    assert pump(app, 10, lambda: at(5.0, 4.0)), app.last_status
+    app.click_var.set("goto")
+    app.preview_clicked(20.0, 30.0, 20.0, 30.0)
+    assert pump(app, 20, lambda: at(20.0, 30.0)), app.last_status
+    count = app.origin_count
+    app.follow_var.set(True)
+    app.jog(1.0, 0.0)
+    assert pump(app, 20, lambda: app.origin_count == count + 1), "follow jog"
+    assert at(20.0, 30.0), app.last_status
+    assert not app.ready_items()[4][0]                # the picture moved: perimeter check needed again
+    app.follow_var.set(False)
+    app.click_var.set("none")
     # Material card explanations: LaserGRBL settings and the energy readout after slowing down.
     app.select_material("anodized-dots")
     var, _ = app.adv_vars["feed"]
@@ -153,6 +176,15 @@ def main():
     pump(app, 1.0)
     app.pages[1].canvas.yview_moveto(0.40)
     shot(app, "1b-material-explained")
+    # Step 3: pick the start point by clicking the picture; the job is re-measured from that spot.
+    app.goto(2)
+    app.origin_var.set("spot")
+    app._piece_edited()
+    app.preview_clicked(0.0, 0.0, 30.0, 20.0)
+    assert pump(app, 30, lambda: app.job.piece.get("spot") == [30.0, 20.0]), app.job.piece
+    assert app.job.geom.piece_rect[:2] == (-30.0, -20.0), app.job.geom.piece_rect
+    assert not app.origin_set                       # the controller's start point is now out of date
+    shot(app, "2b-picked-start-point")
     # Start a short demo job (the plank job would take long even simulated): only check that it launches.
     print("OK", folder)
     root.destroy()

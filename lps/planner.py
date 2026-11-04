@@ -75,6 +75,9 @@ def piece_rect(piece: dict) -> tuple:
     w, h = float(piece["w"]), float(piece["h"])
     if piece.get("origin") == "center":
         return (-w / 2, -h / 2, w / 2, h / 2)
+    if piece.get("origin") == "spot":      # a spot the user picked, measured from the piece's lower-left corner
+        ax, ay = (float(v) for v in piece.get("spot") or (0.0, 0.0))
+        return (-ax, -ay, w - ax, h - ay)
     return (0.0, 0.0, w, h)
 
 

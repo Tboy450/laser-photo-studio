@@ -94,6 +94,27 @@ class LaserMixin:
         ttk.Combobox(jr, textvariable=self.jog_step, values=["0.1", "0.5", "1", "5", "10", "50"], width=4,
                      state="readonly").grid(row=1, column=4)
         ttk.Label(jr, text="mm").grid(row=1, column=5)
+        self.follow_var = tk.BooleanVar(value=False)
+        cb = ttk.Checkbutton(o, text="Move the picture with the head", variable=self.follow_var)
+        cb.pack(anchor="w", pady=(6, 0))
+        ToolTip(cb, "On: after each move the head keeps its X/Y, so the whole picture shifts on the real piece "
+                    "with the head (like moving the piece under the laser). Off: the head moves over the picture "
+                    "to another spot. Needs the start point set first.")
+        cr = ttk.Frame(o)
+        cr.pack(anchor="w", pady=(6, 0))
+        ttk.Label(cr, text="Click on the preview to:").grid(row=0, column=0, sticky="w")
+        self.click_var = tk.StringVar(value="none")
+        for i, (val, text, tip) in enumerate((
+                ("none", "do nothing", "Clicking the preview does nothing."),
+                ("goto", "move the head there", "The head moves to the spot you click, laser off. Needs the start "
+                                                "point set, so the app knows where the head really is."),
+                ("here", "say 'the dot is here'", "Look where the dot really is on your piece and click that spot "
+                                                  "on the picture. Nothing moves: the controller learns where the "
+                                                  "head is (G10 L20 P1), so the purple marker jumps there."))):
+            rb = ttk.Radiobutton(cr, text=text, value=val, variable=self.click_var,
+                                 command=lambda: self.preview.set_cursor_mode())
+            rb.grid(row=i + 1, column=0, sticky="w", padx=(12, 0))
+            ToolTip(rb, tip)
         orow = ttk.Frame(o)
         orow.pack(anchor="w", pady=(8, 0))
         b = ttk.Button(orow, text="Set start point here", command=self.set_origin)
@@ -256,12 +277,56 @@ class LaserMixin:
             self.worker.dot(False)
 
     def jog(self, dx, dy):
-        if self.need_connection():
+        if not self.need_connection():
+            return
+        if self.follow_var.get():
+            if not self.origin_set:
+                messagebox.showinfo("Set the start point first", "'Move the picture with the head' keeps the "
+                                    "picture where the head is, so set the start point first.")
+                return
+            self.worker.submit("dot_follow" if self.dot_on else "follow", machine.jog_keep_position, dx, dy, 1000)
+        else:
             self.worker.submit("dot_jog" if self.dot_on else "jog", machine.jog, dx, dy, 1000)
 
     def origin_words(self):
-        pc = self.job.piece if self.job is not None else self.piece
-        return "centre of the piece" if pc.get("origin") == "center" else "lower-left corner of the piece"
+        return jobs.origin_text(self.job.piece if self.job is not None else self.piece)
+
+    def start_point_moved(self):
+        """The start point now sits somewhere else on the piece, so the controller's X0 Y0 is out of date."""
+        if self.origin_set:
+            self.origin_set = False
+            self.say("The start point moved on the piece: put the head on it and set it again in step 5.", "warn")
+            self.refresh_laser_page()
+
+    # ================================================================ clicking the preview
+    def click_mode(self):
+        """What a click on the preview does right now: 'spot' (step 3), 'goto' / 'here' (step 5) or None."""
+        tab = self.nb.index("current")
+        if tab == 2 and self.origin_var.get() == "spot":
+            return "spot"
+        if tab == 4 and self.click_var.get() in ("goto", "here") and not self.gfile:
+            return self.click_var.get()
+        return None
+
+    def preview_clicked(self, x, y, from_left, from_bottom):
+        mode = self.click_mode()
+        if mode == "spot":
+            self.pick_spot(from_left, from_bottom)
+        elif mode in ("goto", "here") and self.need_connection():
+            px0, py0, px1, py1 = planner.piece_rect(self.job.piece if self.job is not None else self.piece)
+            x, y = round(min(px1, max(px0, x)), 2), round(min(py1, max(py0, y)), 2)   # stay on the piece
+            if mode == "goto":
+                if not self.origin_set:
+                    messagebox.showinfo("Set the start point first", "Until the start point is set the app doesn't "
+                                        "know where the head really is, so it can't move it to a spot on the "
+                                        "picture.")
+                    return
+                self.worker.submit("goto", machine.move_off, x, y, 1500)
+            elif messagebox.askyesno(
+                    "Is the dot here?", f"Is the laser dot exactly on the spot you clicked?\n\nNothing moves. "
+                                        f"The controller learns that the head is at X {x:.1f}, Y {y:.1f}, so the "
+                                        "picture lines up with where the head really is."):
+                self.worker.submit("here", machine.set_origin_here, x, y)
 
     def set_origin(self):
         if self.need_connection() and messagebox.askyesno(
@@ -307,7 +372,14 @@ class LaserMixin:
             self.btn_dot.configure(text="Dot OFF" if self.dot_on else "Dot on (1%)")
         elif kind == "done":
             name = ev[1]
-            if name in ("origin", "declare"):
+            if name in ("follow", "dot_follow"):
+                self.origin_count += 1
+                self.say("The head and the picture moved together. Run the perimeter check again.", "ok")
+            elif name == "here":
+                self.origin_set = True
+                self.origin_count += 1
+                self.say("Got it: the head is where you clicked. The purple marker shows it.", "ok")
+            elif name in ("origin", "declare"):
                 self.origin_set = True
                 self.origin_count += 1
                 self.say("Start point set: this spot is now X0 Y0." if name == "origin" else

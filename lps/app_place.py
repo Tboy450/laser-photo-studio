@@ -62,7 +62,23 @@ class PlaceMixin:
                         command=self._piece_edited).pack(anchor="w")
         ttk.Radiobutton(o, text="Centre of the piece", value="center", variable=self.origin_var,
                         command=self._piece_edited).pack(anchor="w")
-        wrap_label(o, "Corners are easiest to find by eye. Lids are usually centred.", style="Small.TLabel").pack(
+        ttk.Radiobutton(o, text="A spot I pick: click it on the preview", value="spot", variable=self.origin_var,
+                        command=self._piece_edited).pack(anchor="w")
+        sr = ttk.Frame(o)
+        sr.pack(anchor="w", padx=(22, 0), pady=(2, 0))
+        self.spot_vars = (tk.StringVar(), tk.StringVar())
+        self.spot_spins = []
+        for label, v in zip(("from left", "up"), self.spot_vars):
+            ttk.Label(sr, text=label).pack(side="left")
+            sp = ttk.Spinbox(sr, from_=0, to=600, increment=0.5, width=6, textvariable=v, command=self._piece_edited)
+            sp.pack(side="left", padx=(4, 10))
+            sp.bind("<FocusOut>", lambda e: self._piece_edited())
+            sp.bind("<Return>", lambda e: self._piece_edited())
+            self.spot_spins.append(sp)
+        ttk.Label(sr, text="mm").pack(side="left")
+        wrap_label(o, "Corners are easiest to find by eye. Lids are usually centred. Or pick a spot you can find on "
+                      "the real piece, like the corner of a stripe or the middle of the windshield's edge: the red "
+                      "crosshair shows it, and that's where you'll put the laser dot.", style="Small.TLabel").pack(
             anchor="w", pady=(2, 0))
         m = ttk.LabelFrame(f, text="Margins and no-burn zones", style="Card.TLabelframe")
         m.pack(fill="x", pady=4)
@@ -164,6 +180,11 @@ class PlaceMixin:
             self.shape_var.set(pc.get("shape", "rect"))
             self.corner_var.set(f"{pc.get('corner', 0):g}")
             self.origin_var.set(pc.get("origin", "lower-left"))
+            spot = pc.get("spot") or (pc["w"] / 2, pc["h"] / 2)
+            for v, val in zip(self.spot_vars, spot):
+                v.set(f"{val:g}")
+            for sp in self.spot_spins:
+                sp.state(["!disabled"] if pc.get("origin") == "spot" else ["disabled"])
             for v, val in zip(self.margin_vars, pc.get("margins", (0, 0, 0, 0))):
                 v.set(f"{val:g}")
             self.ko_list.delete(0, "end")
@@ -193,6 +214,8 @@ class PlaceMixin:
                 pc["h"] = pc["w"]
             pc["corner"] = max(0.0, float(self.corner_var.get() or 0))
             pc["origin"] = self.origin_var.get()
+            if pc["origin"] == "spot":
+                pc["spot"] = [round(min(pc["w"], max(0.0, float(v.get() or 0))), 2) for v in self.spot_vars]
             pc["margins"] = tuple(max(0.0, float(v.get() or 0)) for v in self.margin_vars)
         except ValueError:
             return
@@ -200,6 +223,18 @@ class PlaceMixin:
         self.sync_place_fields()
         self.perim_points = []
         self.changed()
+
+    def pick_spot(self, from_left, from_bottom):
+        """The preview was clicked in step 3 with 'A spot I pick' on: that spot becomes the start point."""
+        pc = self.piece
+        pc["origin"] = "spot"
+        pc["spot"] = [round(min(pc["w"], max(0.0, from_left)), 1), round(min(pc["h"], max(0.0, from_bottom)), 1)]
+        self.piece_user_set = True
+        self.sync_place_fields()
+        self.perim_points = []
+        self.changed()
+        self.say(f"Start point: {pc['spot'][0]:g} mm from the left edge, {pc['spot'][1]:g} mm up from the bottom "
+                 "(red crosshair). Put the laser dot there in step 5.", "ok")
 
     def add_keepout(self, kind):
         if kind == "circle":

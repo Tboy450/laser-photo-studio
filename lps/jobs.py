@@ -69,7 +69,13 @@ def save_settings(d: dict) -> None:
 
 
 def origin_text(piece: dict) -> str:
-    return "centre of the piece" if piece.get("origin") == "center" else "lower-left corner of the piece"
+    if piece.get("origin") == "center":
+        return "centre of the piece"
+    if piece.get("origin") == "spot":
+        ax, ay = piece.get("spot") or (0.0, 0.0)
+        return (f"spot you picked, {ax:g} mm from the piece's left edge and {ay:g} mm up from its bottom edge "
+                "(the red crosshair)")
+    return "lower-left corner of the piece"
 
 
 def header(job: JobPlan, title: str) -> list:

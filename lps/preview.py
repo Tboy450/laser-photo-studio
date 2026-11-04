@@ -48,6 +48,9 @@ class PreviewPanel(ttk.Frame):
         self.legend = wrap_label(self, "", style="Small.TLabel", width=900)
         self.legend.pack(fill="x")
         self.canvas.bind("<Configure>", lambda e: self._schedule())
+        self.canvas.bind("<Button-1>", self._click)
+        self.canvas.bind("<Motion>", self._hover)
+        self.canvas.bind("<Leave>", lambda e: self.canvas.delete("cursor"))
         self._after = None
         self._cache = {}
         self._photo = None
@@ -207,6 +210,42 @@ class PreviewPanel(ttk.Frame):
                 c.create_text(tx(px), ty(py), text=str(i + 1), font=("Segoe UI", 8, "bold"))
         self.draw_head()
         self._update_info()
+
+    def _to_mm(self, e):
+        """Canvas pixel -> (work X, work Y, mm from the piece's left edge, mm up from its bottom edge)."""
+        ox, oy, s, vx0, vy1 = self.T
+        x, y = vx0 + (e.x - ox) / s, vy1 - (e.y - oy) / s
+        job = self.app.job
+        px0, py0, _, _ = planner.piece_rect(job.piece if job is not None else self.app.piece)
+        return x, y, x - px0, y - py0
+
+    def set_cursor_mode(self):
+        self.canvas.configure(cursor="crosshair" if self.app.click_mode() else "")
+        self.canvas.delete("cursor")
+
+    def _click(self, e):
+        if self.T is not None and self.app.click_mode():
+            self.app.preview_clicked(*self._to_mm(e))
+
+    def _hover(self, e):
+        c = self.canvas
+        c.delete("cursor")
+        mode = self.app.click_mode()
+        c.configure(cursor="crosshair" if mode else "")
+        if not mode or self.T is None:
+            return
+        x, y, fl, fb = self._to_mm(e)
+        col = COLORS["bad"] if mode == "spot" else COLORS["head"]
+        what = {"spot": f"start point here\n{fl:.1f} mm from left, {fb:.1f} up",
+                "goto": f"move the head here\nX {x:.1f}  Y {y:.1f}",
+                "here": f"the dot is here\nX {x:.1f}  Y {y:.1f}"}[mode]
+        right = e.x > c.winfo_width() * 0.6
+        c.create_line(e.x - 18, e.y, e.x + 18, e.y, fill=col, dash=(3, 2), tags="cursor")
+        c.create_line(e.x, e.y - 18, e.x, e.y + 18, fill=col, dash=(3, 2), tags="cursor")
+        t = c.create_text(e.x - 10 if right else e.x + 10, e.y + 10, anchor="ne" if right else "nw", text=what,
+                          fill=col, tags="cursor", font=("Segoe UI", 9, "bold"), justify="right" if right else "left")
+        x0, y0, x1, y1 = c.bbox(t)
+        c.tag_lower(c.create_rectangle(x0 - 3, y0 - 2, x1 + 3, y1 + 2, fill="#ffffff", outline=col, tags="cursor"), t)
 
     def draw_head(self):
         c = self.canvas
