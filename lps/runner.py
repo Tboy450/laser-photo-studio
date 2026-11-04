@@ -211,7 +211,7 @@ class Runner:
         self.g.open(settle=self.settle)
         if self.g.reset_seen:
             raise ControllerError("The controller restarted when the job connected, so its position can't be "
-                                  "trusted. Nothing was burned. Re-check the origin/perimeter and start again.")
+                                  "trusted. Nothing was burned. Re-check the start point/perimeter and start again.")
         self.g.command("M5 S0")
         st = self.g.query_status()
         self.last_status_at = time.monotonic()
@@ -221,7 +221,7 @@ class Runner:
         if exp is not None:
             if not st.wpos or math.hypot(st.wpos[0] - exp[0], st.wpos[1] - exp[1]) > 0.05:
                 raise ControllerError(f"Head is at {st.wpos}, expected X{exp[0]} Y{exp[1]}. Nothing was sent. "
-                                      "Re-check the origin.")
+                                      "Re-check the start point.")
         problems = check_settings(self.g.settings())
         if problems:
             raise ControllerError("Controller settings changed: " + ", ".join(problems) + ". Nothing was sent.")
@@ -390,11 +390,11 @@ class Runner:
                     if not self.wait_photo(p["title"]):
                         self.state["resume"] = recovery.resume_spec(bodies[pi + 1], pi + 1, 0, self.park_xy, self.hop)
                         self.state["resume"]["kept_position"] = True
-                        self.phase("stopped", "Stopped between layers. Position kept, laser off.")
+                        self.phase("stopped", "Stopped between passes. Position kept, laser off.")
                         return "stopped"
             self.park(final=True)
             self.state["resume"] = None
-            self.phase("complete", "Finished! Laser off, head parked at the origin.")
+            self.phase("complete", "Finished! Laser off, head parked at the start point.")
             return "complete"
         except LinkError as e:
             return self.dropout(str(e), bodies)

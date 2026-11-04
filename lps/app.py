@@ -245,12 +245,15 @@ class App(PlaceMixin, LaserMixin):
         for i, (k, label, lo, hi, inc) in enumerate(fields):
             ttk.Label(grid, text=label).grid(row=i, column=0, sticky="w", pady=1)
             v = tk.StringVar()
-            sp = ttk.Spinbox(grid, from_=lo, to=hi, increment=inc, textvariable=v, width=8,
+            sp = ttk.Spinbox(grid, from_=lo, to=hi, increment=inc, textvariable=v, width=6,
                              command=self._adv_changed)
             sp.grid(row=i, column=1, sticky="e", padx=(8, 0))
             sp.bind("<FocusOut>", lambda e: self._adv_changed())
             sp.bind("<Return>", lambda e: self._adv_changed())
             self.adv_vars[k] = (v, sp)
+            hint = ttk.Label(grid, style="Small.TLabel")
+            hint.grid(row=i, column=2, sticky="w", padx=(8, 0))
+            v.trace_add("write", lambda *a, k=k, v=v, hint=hint: hint.configure(text=adv_hint(k, v.get())))
         self.energy_lbl = wrap_label(adv, "", style="Small.TLabel")
         self.energy_lbl.pack(anchor="w", pady=(6, 0))
         self.rule_var = tk.StringVar()
@@ -316,14 +319,16 @@ class App(PlaceMixin, LaserMixin):
         self.m_notes.configure(text="\n".join("- " + n for n in m.notes))
         s = STYLES[m.style]
         if m.style == "layers":
-            pw = "/".join(f"{p / 10:g}" for p in m.tone_power) + " %"
+            pw = ("/".join(f"{p / 10:g}" for p in m.tone_power) + " % ("
+                  + "/".join(f"S{p:g}" for p in m.tone_power) + ")")
         elif m.style == "grayscale":
-            pw = f"{m.power_min / 10:g}-{m.power / 10:g} %"
+            pw = f"{m.power_min / 10:g}-{m.power / 10:g} % (S{m.power_min:g}-S{m.power:g})"
         else:
-            pw = f"{m.power / 10:g} %"
-        self.m_settings.configure(text=f"Power {pw}  |  speed {m.feed} mm/min  |  rows {m.pitch} mm  |  "
-                                       f"{len(m.layer_rule) if m.style == 'layers' else m.passes} "
-                                       f"{'layers' if m.style == 'layers' else 'pass(es)'}")
+            pw = f"{m.power / 10:g} % (S{m.power:g})"
+        n = len(m.layer_rule) if m.style == "layers" else m.passes
+        self.m_settings.configure(text=f"Power {pw}  |  speed {m.feed} mm/min  |  rows {m.pitch} mm "
+                                       f"({25.4 / m.pitch:.0f} lines/inch)  |  {n} "
+                                       f"{'layers' if m.style == 'layers' else 'pass' if n == 1 else 'passes'}")
         self.style_var.set(s["name"])
         self.style_help.configure(text=f"{s['what']} {s['why']}\nBest for: {s['best']}")
         self.m_lgrbl.configure(text="In LaserGRBL: File > Open the picture, then " + presets.lasergrbl_recipe(m))
@@ -564,6 +569,23 @@ class App(PlaceMixin, LaserMixin):
         self.root.destroy()
 
 
+def adv_hint(key: str, text: str) -> str:
+    """The same setting in the other units you'll meet: S value in the G-code, lines per inch, inches."""
+    try:
+        v = float(text)
+    except ValueError:
+        return ""
+    if key in ("power", "power_min", "tp1", "tp2", "tp3"):
+        return f"= S{v * 10:g}"
+    if key == "pitch" and v > 0:
+        return f"= {25.4 / v:.0f} lines/in"
+    if key == "feed":
+        return f"= {v / 25.4:.0f} in/min"
+    if key in ("halftone_cell", "runup"):
+        return f"= {v / 25.4:.3f} in"
+    return ""
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="Laser Photo Studio")
     ap.add_argument("picture", nargs="?")
@@ -582,3 +604,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+

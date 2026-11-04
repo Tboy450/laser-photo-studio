@@ -14,7 +14,7 @@ from . import gcodeinfo, imaging, jobs, machine, planner
 from .dialogs import RecoveryDialog, StartDialog
 from .presets import DATA_DIR
 from .preview import fmt_dur
-from .ui_common import COLORS, link, wrap_label
+from .ui_common import COLORS, ToolTip, link, moves_note, wrap_label
 from .worker import MachineWorker
 
 DEMO_STATE = DATA_DIR / "demo-state.json"
@@ -42,7 +42,7 @@ class LaserMixin:
     # ================================================================ page
     def page_laser(self, f):
         ttk.Label(f, text="5. Laser", style="H1.TLabel").pack(anchor="w")
-        wrap_label(f, "Connect, set the origin, check the perimeter with the 1% dot, then start. Jobs run in the "
+        wrap_label(f, "Connect, set the start point, check the perimeter with the 1% dot, then start. Jobs run in the "
                       "background, so closing this window doesn't stop the laser.", style="Muted.TLabel").pack(
             anchor="w", pady=(2, 8))
         c = ttk.LabelFrame(f, text="Connect", style="Card.TLabelframe")
@@ -59,36 +59,53 @@ class LaserMixin:
         self.conn_lbl = wrap_label(c, "Not connected.", style="Muted.TLabel")
         self.conn_lbl.pack(anchor="w", pady=(4, 0))
         self.btn_unlock = ttk.Button(c, text="Unlock ($X - doesn't move anything)", command=self.unlock)
-        o = ttk.LabelFrame(f, text="Origin (laser off)", style="Card.TLabelframe")
+        ToolTip(self.btn_unlock, "Clears the controller's alarm lock so it accepts commands again. Nothing moves, "
+                                 "and it doesn't home. The position may be unknown afterwards: set the start point "
+                                 "again.")
+        o = ttk.LabelFrame(f, text="Move the laser head and set the start point", style="Card.TLabelframe")
         o.pack(fill="x", pady=4)
+        moves_note(o, COLORS["head"], "These buttons move the real laser head (purple marker), laser off.").pack(
+            fill="x", pady=(0, 4))
         self.pos_lbl = tk.Label(o, text="X --   Y --", font=("Consolas", 13, "bold"), fg=COLORS["ink"])
         self.pos_lbl.pack(anchor="w")
+        ToolTip(self.pos_lbl, "Where the controller thinks the head is, in mm from the start point. It only "
+                              "matches the real spot after you set the start point (and again after a USB "
+                              "dropout).")
         self.origin_help = wrap_label(o, "", style="Small.TLabel")
         self.origin_help.pack(anchor="w", pady=(2, 6))
         jr = ttk.Frame(o)
         jr.pack(anchor="w")
         self.jog_step = tk.StringVar(value="1")
         for t, dx, dy, r, cc in (("Up", 0, 1, 0, 1), ("Left", -1, 0, 1, 0), ("Right", 1, 0, 1, 2), ("Down", 0, -1, 2, 1)):
-            ttk.Button(jr, text=t, width=6, command=lambda dx=dx, dy=dy: self.jog(dx * float(self.jog_step.get()),
-                                                                                 dy * float(self.jog_step.get()))
-                       ).grid(row=r, column=cc)
+            b = ttk.Button(jr, text=t, width=6, command=lambda dx=dx, dy=dy: self.jog(dx * float(self.jog_step.get()),
+                                                                                     dy * float(self.jog_step.get())))
+            b.grid(row=r, column=cc)
+            ToolTip(b, f"The head moves {t.lower()} by the step, laser off (the 1% dot stays on if it's on). The "
+                       "picture stays where it is on the piece.")
         self.btn_dot = ttk.Button(jr, text="Dot on (1%)", width=12, command=self.toggle_dot)
         self.btn_dot.grid(row=1, column=1)
+        ToolTip(self.btn_dot, "Turns on the 1% positioning dot so you can see exactly where the beam is. Nothing "
+                              "moves. It turns itself off after 60 s.")
         ttk.Label(jr, text="  step").grid(row=1, column=3)
         ttk.Combobox(jr, textvariable=self.jog_step, values=["0.1", "0.5", "1", "5", "10", "50"], width=4,
                      state="readonly").grid(row=1, column=4)
         ttk.Label(jr, text="mm").grid(row=1, column=5)
         orow = ttk.Frame(o)
         orow.pack(anchor="w", pady=(8, 0))
-        ttk.Button(orow, text="Set origin here", command=self.set_origin).pack(side="left")
-        ttk.Button(orow, text="Go to origin", command=self.go_origin).pack(side="left", padx=6)
+        b = ttk.Button(orow, text="Set start point here", command=self.set_origin)
+        b.pack(side="left")
+        ToolTip(b, "Nothing moves. Tells the controller that the spot under the head is X0 Y0, the start point "
+                   "the job is measured from (G10 L20 P1 X0 Y0).")
+        b = ttk.Button(orow, text="Move head to start point", command=self.go_origin)
+        b.pack(side="left", padx=6)
+        ToolTip(b, "The head moves to X0 Y0 with the laser off.")
         p = ttk.LabelFrame(f, text="Perimeter check (1% dot)", style="Card.TLabelframe")
         p.pack(fill="x", pady=4)
         wrap_label(p, "The head visits each corner of the burn area with the laser off and flashes your 1% "
                       "positioning dot there (S10, same safety checks as the Positioning Laser app), then returns "
-                      "to the origin.", style="Small.TLabel").pack(anchor="w")
-        link(p, "How the origin and perimeter check work",
-             lambda: self.open_help("Origin & perimeter check")).pack(anchor="w", pady=(2, 0))
+                      "to the start point.", style="Small.TLabel").pack(anchor="w")
+        link(p, "How the start point and perimeter check work",
+             lambda: self.open_help("Start point & perimeter check")).pack(anchor="w", pady=(2, 0))
         pr = ttk.Frame(p)
         pr.pack(fill="x", pady=(6, 0))
         ttk.Label(pr, text="Flashes per corner").pack(side="left")
@@ -103,10 +120,12 @@ class LaserMixin:
         br.pack(fill="x", pady=(8, 0))
         self.btn_perim = ttk.Button(br, text="Run perimeter check", style="Big.TButton", command=self.run_perimeter)
         self.btn_perim.pack(side="left")
+        ToolTip(self.btn_perim, "The head moves to each corner of the burn area with the laser off, flashes the "
+                                "1% dot there, then goes back to the start point.")
         ttk.Button(br, text="Stop", command=self.stop_perimeter).pack(side="left", padx=6)
         self.perim_lbl = wrap_label(p, "", style="Muted.TLabel")
         self.perim_lbl.pack(anchor="w", pady=(4, 0))
-        ttk.Label(p, text="Off by a bit? Move the art, then check again:").pack(anchor="w", pady=(8, 2))
+        ttk.Label(p, text="Off by a bit? Move the picture, then check again:").pack(anchor="w", pady=(8, 2))
         self._nudge_pad(p, self.nudge)
         gr = ttk.Frame(p)
         gr.pack(fill="x", pady=(8, 0))
@@ -120,6 +139,7 @@ class LaserMixin:
         self.engrave_lbl = wrap_label(e, "")
         self.engrave_lbl.pack(anchor="w")
         self.btn_start = ttk.Button(e, text="Start engraving", style="Big.TButton", command=self.start_engraving)
+        ToolTip(self.btn_start, "Burns the job, starting from the start point. The head must be at X0 Y0.")
         self.btn_start.pack(anchor="w", pady=(8, 0))
         m = ttk.LabelFrame(f, text="Job progress", style="Card.TLabelframe")
         m.pack(fill="x", pady=4)
@@ -147,7 +167,7 @@ class LaserMixin:
         self.photo_lbl.pack(anchor="w")
         pb = ttk.Frame(self.photo_box)
         pb.pack(anchor="w", pady=(4, 0))
-        self.btn_continue = ttk.Button(pb, text="Continue with the next layer", style="Big.TButton",
+        self.btn_continue = ttk.Button(pb, text="Continue with the next pass", style="Big.TButton",
                                        command=lambda: self.control("continue"))
         self.btn_continue.pack(side="left")
         ttk.Button(pb, text="Open photos folder", command=self.open_photos).pack(side="left", padx=6)
@@ -229,7 +249,7 @@ class LaserMixin:
 
     def set_origin(self):
         if self.need_connection() and messagebox.askyesno(
-                "Set origin", f"Is the laser head exactly over the {self.origin_words()}?\n\n(Use the 1% dot to "
+                "Set start point", f"Is the laser head exactly over the {self.origin_words()}?\n\n(Use the 1% dot to "
                               "check.) This makes the current spot X0 Y0. It doesn't move anything."):
             self.worker.submit("origin", machine.set_origin_here, 0.0, 0.0)
 
@@ -254,7 +274,7 @@ class LaserMixin:
             else:
                 txt += " Settings OK ($30=1000, $31=0, $32=1, 100 steps/mm)."
             if info.get("rebooted"):
-                txt += " The controller restarted when connecting, so set the origin again."
+                txt += " The controller restarted when connecting, so set the start point again."
             self.conn_lbl.configure(text=txt, foreground=COLORS["bad"] if probs else COLORS["ok"])
             self.say(txt, "warn" if probs or info.get("rebooted") else "ok")
         elif kind == "status":
@@ -272,13 +292,13 @@ class LaserMixin:
             name = ev[1]
             if name in ("origin", "declare"):
                 self.origin_set = True
-                self.say("Origin set: this spot is now X0 Y0." if name == "origin" else
+                self.say("Start point set: this spot is now X0 Y0." if name == "origin" else
                          "Position declared at the stop point.", "ok")
             elif name == "perimeter":
                 self.perim_running = False
                 self.perim_idx = None
-                self.perim_lbl.configure(text="Done - head is back at the origin. Happy with the corners? Start "
-                                              "engraving. Off a little? Nudge the art and check again.")
+                self.perim_lbl.configure(text="Done - head is back at the start point. Happy with the corners? Start "
+                                              "engraving. Off a little? Move the picture and check again.")
                 self.preview.refresh()
             elif name == "unlock":
                 self.say("Unlocked. The position may be unknown - set or declare it before burning.", "warn")
@@ -288,7 +308,7 @@ class LaserMixin:
             if name == "perimeter":
                 self.perim_running = False
                 self.perim_idx = None
-                self.perim_lbl.configure(text=("Stopped - head returned to the origin." if "cancel" in msg
+                self.perim_lbl.configure(text=("Stopped - head returned to the start point." if "cancel" in msg
                                                else f"Stopped: {msg}"))
                 self.preview.refresh()
             else:
@@ -298,11 +318,11 @@ class LaserMixin:
             self.perim_idx = i if i < n else None
             self.perim_lbl.configure(text=f"Point {min(i + 1, n)} of {n} ({name}): "
                                           + {"moving": "moving there, laser off...", "dot": "flashing the 1% dot",
-                                             "done": "returning to origin"}[what])
+                                             "done": "returning to the start point"}[what])
             self.preview.redraw()
         elif kind == "rebooted":
             self.origin_set = False
-            self.say(ev[1] + " Set or declare the origin again before burning.", "bad")
+            self.say(ev[1] + " Set the start point (or declare the stop point) again before burning.", "bad")
         elif kind == "error":
             self.say(ev[1], "bad")
         elif kind == "link_lost":
@@ -355,8 +375,8 @@ class LaserMixin:
         else:
             self.pill.configure(text=" Not connected ", bg="#6b7280")
         self.origin_help.configure(text=f"Move the head over the {self.origin_words()} (use the dot to see exactly "
-                                        "where the beam is), then press 'Set origin here'."
-                                        + ("  Origin set." if self.origin_set else ""))
+                                        "where the beam is), then press 'Set start point here'."
+                                        + ("  Start point set." if self.origin_set else ""))
         job = self.job
         if self.gfile:
             self.engrave_lbl.configure(text="Checking a G-code file. To burn it, open it in LaserGRBL; this app "
@@ -392,7 +412,7 @@ class LaserMixin:
         self.preview.refresh()
         self.goto(4)
         self.refresh_laser_page()
-        self.say("G-code loaded. Connect, set the origin the file expects, then Run perimeter check.", "ok")
+        self.say("G-code loaded. Connect, set the start point the file expects, then Run perimeter check.", "ok")
 
     def clear_gfile(self):
         self.gfile = None
@@ -409,7 +429,7 @@ class LaserMixin:
             messagebox.showinfo("Nothing to check", "Open a picture (or a G-code file) first.")
             return
         if not self.origin_set and not messagebox.askyesno(
-                "Origin", "You haven't set the origin since connecting. The check uses the controller's current "
+                "Start point", "You haven't set the start point since connecting. The check uses the controller's current "
                           "X0 Y0. Continue anyway?"):
             return
         spacing = self.spacing_var.get()
@@ -420,7 +440,7 @@ class LaserMixin:
         self.preview.redraw()
         if not messagebox.askokcancel(
                 "Perimeter check", f"Watch the laser now.\n\nThe head will move with the laser OFF to {len(pts)} "
-                                   f"points and flash the 1% dot {pulses}x at each, then return to the origin.\n\n"
+                                   f"points and flash the 1% dot {pulses}x at each, then return to the start point.\n\n"
                                    "Ready?"):
             return
         self.settings.update(pulses=pulses, perimeter_spacing=spacing or 0)
@@ -452,12 +472,12 @@ class LaserMixin:
             messagebox.showinfo("Not ready", f"The machine is {st.state if st else 'not reporting'}; it must be Idle.")
             return
         if not st.wpos or math.hypot(st.wpos[0], st.wpos[1]) > 0.05:
-            if messagebox.askyesno("Head not at the origin", "The job starts from the origin (X0 Y0). Move the head "
+            if messagebox.askyesno("Head not at the start point", "The job starts from the start point (X0 Y0). Move the head "
                                                              "there now with the laser off?"):
                 self.go_origin()
             return
         if not self.origin_set and not messagebox.askyesno(
-                "Origin", f"You haven't set the origin since connecting. Is the head really over the "
+                "Start point", f"You haven't set the start point since connecting. Is the head really over the "
                           f"{self.origin_words()}?"):
             return
         job, m = self.job, self.job.material
@@ -497,7 +517,7 @@ class LaserMixin:
             return
         jobs.send_control(self.active_folder, cmd)
         self.say({"pause": "Pausing...", "resume": "Resuming...", "stop": "Stopping after this row...",
-                  "estop": "EMERGENCY STOP sent.", "continue": "Continuing with the next layer..."}[cmd],
+                  "estop": "EMERGENCY STOP sent.", "continue": "Continuing with the next pass..."}[cmd],
                  "bad" if cmd == "estop" else "info")
 
     def _poll_runner(self):
@@ -554,7 +574,7 @@ class LaserMixin:
             self.say(st.get("message", ""), "bad")
             self.goto(4)
         if ph != prev and ph == "complete":
-            self.say("Job finished. Laser off, head parked at the origin.", "ok")
+            self.say("Job finished. Laser off, head parked at the start point.", "ok")
         self.preview.draw_head()
         self.refresh_laser_page()
 

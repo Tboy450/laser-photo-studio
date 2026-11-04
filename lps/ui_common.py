@@ -6,7 +6,8 @@ from tkinter import ttk
 
 FONT = ("Segoe UI", 10)
 COLORS = dict(bg="#f4f2ee", panel="#ffffff", ink="#1f2328", muted="#5f6670", accent="#c2410c", ok="#15803d",
-              warn="#b45309", bad="#b91c1c", blue="#1d4ed8", canvas="#d9d4cc")
+              warn="#b45309", bad="#b91c1c", blue="#1d4ed8", canvas="#d9d4cc",
+              art="#2563eb", head="#7c3aed")  # art = the picture on screen, head = the real laser head
 BADGE_COLORS = {"PROVEN": ("#dcfce7", "#166534"), "START": ("#fef3c7", "#92400e"),
                 "EXPERIMENTAL": ("#fee2e2", "#991b1b"), "MINE": ("#dbeafe", "#1e40af")}
 
@@ -150,3 +151,11 @@ def link(parent, text: str, command):
     lab = ttk.Label(parent, text=text, style="Link.TLabel", cursor="hand2")
     lab.bind("<Button-1>", lambda e: command())
     return lab
+
+
+def moves_note(parent, colour: str, text: str):
+    """A colour swatch + one line saying what moves when you press the buttons below it."""
+    row = ttk.Frame(parent)
+    tk.Label(row, text="  ", background=colour).pack(side="left", anchor="n", padx=(0, 6), pady=2)
+    wrap_label(row, text, foreground=colour, font=("Segoe UI", 9, "bold")).pack(side="left", fill="x")
+    return row

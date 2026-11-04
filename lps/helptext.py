@@ -7,13 +7,13 @@ from .presets import STYLES, lasergrbl_recipe
 START = """# Five steps
 1. Picture - open a photo, drawing or logo (phone HEIC photos work). Turn it if it's sideways.
 2. Material - pick your material. Green = proven on your U20. Yellow = a starting point from other 20 W lasers: run a test grid first. Proven settings show photos of their test ladders and charts, and of finished pieces made with them; click a photo to enlarge it.
-3. Size - enter the piece size, where the origin is (lower-left corner or centre) and any no-burn zones like twine holes.
+3. Size - enter the piece size, where the start point is (lower-left corner or centre) and any no-burn zones like twine holes.
 4. Check - adjust the picture while watching the preview. The app replays every command before anything can run.
-5. Laser - connect, set the origin, run the perimeter check with the 1% dot, then Start.
+5. Laser - connect, set the start point, run the perimeter check with the 1% dot, then Start.
 
 # The preview buttons
 - Looks like: roughly how the finished piece will look on the material.
-- What burns: each layer in its own colour.
+- What burns: each pass in its own colour.
 - In LaserGRBL: how LaserGRBL's preview will draw the file.
 - Picture: the adjusted picture before it becomes laser moves.
 Each one has a colour key under the preview that says what every colour, dashed box and marker means.
@@ -22,7 +22,7 @@ Each one has a colour key under the preview that says what every colour, dashed 
 - New material? Burn a test grid first (step 2) and save the best patch as your own preset.
 - Add your test and result photos to the setting ('Add my photo...' in step 2), so next time you can see what each setting did.
 - Always run the perimeter check before burning.
-- Take a photo after each layer; the app pauses for it and files the photos in order."""
+- Take a photo after each pass; the app pauses for it and files the photos in order."""
 
 DARKNESS = """# What makes a mark darker
 Darkness comes from how much laser energy each spot gets:
@@ -72,9 +72,21 @@ In LaserGRBL: File > Open the picture, then {recipe}
 - The loop counter next to LaserGRBL's run button repeats the whole job: those are extra passes (see 'Too light or too dark?').
 
 # Running this app's files in LaserGRBL
-- File > Open the '... - all passes.nc' file, or one layer file at a time if you want photo pauses.
+- File > Open the '... - all passes.nc' file, or one pass file at a time if you want photo pauses.
 - Don't import the PNG files and don't press invert: the conversion is already done.
-- Put the head on the origin the job expects (step 3) and check the frame first.
+- Put the head on the start point the job expects (step 3) and check the frame first.
+
+# LaserGRBL's words and this app's words
+- Line To Line Tracing (picture import) = rows across the whole picture, so shapes fill in. Every print style here works like this.
+- 1:1 Dithering = dots. Same idea as Classic, Smooth, Crisp and Bright dots here.
+- Vectorize = traces the EDGES of shapes, so they come out as outlines, never filled.
+- Centerline = one line along the middle of each stroke. Same idea as Thin lines here.
+- Quality (lines/mm) = row spacing. 10 lines/mm = 0.1 mm rows = 254 lines per inch.
+- S-MAX = power. S600 = 60% on your U20.
+- Loop counter = repeat passes.
+- Frame = the perimeter check (here the head also flashes the 1% dot at each corner).
+- Setting zero in LaserGRBL = 'Set start point here'. The head doesn't move; the spot under it becomes X0 Y0.
+- Home / Global Home = never on this machine (no homing switches). This app refuses it.
 
 # Mistakes from the Hot Wheels car
 The yellow Mustang roof (stripes + horse, 82.55 x 26.5 mm) went wrong in LaserGRBL in these ways:
@@ -90,14 +102,19 @@ The yellow Mustang roof (stripes + horse, 82.55 x 26.5 mm) went wrong in LaserGR
 # If the USB drops out
 Jobs run from this app record exactly where the head stopped and resume safely. In LaserGRBL, don't use Resume or Home after a reconnect: it can jump to old coordinates (that burned the bed on the card)."""
 
-PERIMETER = """# The origin
-The origin (X0 Y0) is the spot the job is measured from: the lower-left corner or the centre of the piece (step 3). Jog the head there with the dot on, then press 'Set origin here'. Nothing moves when you set it.
+PERIMETER = """# The start point
+The start point (also called the origin, 0,0 or X0 Y0) is the spot the job is measured from: the lower-left corner or the centre of the piece (step 3). Move the head there with the dot on, then press 'Set start point here'. Nothing moves when you set it.
+
+# Two kinds of moving
+- Move the picture (step 3, and under the perimeter check; blue box in the preview): the picture shifts on the piece and the job is rebuilt. The machine doesn't move.
+- Move the laser head (step 5, purple marker in the preview): the real head moves, laser off. The picture stays put.
+The X/Y numbers in step 5 are where the controller THINKS the head is, measured from the start point. They only match the real spot after you set the start point.
 
 # The perimeter check
-The head moves to each corner of the burn area with the laser OFF, flashes the 1% positioning dot there (S10, 0.25 s bursts), then comes back to the origin.
+The head moves to each corner of the burn area with the laser OFF, flashes the 1% positioning dot there (S10, 0.25 s bursts), then comes back to the start point.
 - Before each flash it checks the machine is idle with zero output, and that the controller has 1% programmed while the laser is off.
 - Each flash is sent with its own 'laser off' command attached.
-- Off by a bit? Nudge the art in 0.5-5 mm steps and check again.
+- Off by a bit? Move the picture in 0.5-5 mm steps and check again.
 - Works for any .nc file too: drop it on the Laser Perimeter Check desktop icon.
 
 The dot is the real engraving laser at very low power, so still wear laser glasses.
@@ -152,10 +169,10 @@ SAFETY = """- Stay with the machine the whole time. Wood, cardboard and leather 
 
 FILES = """# Where jobs go
 Documents\\Laser Photo Studio\\Jobs\\<date>_<name>\\ (on this PC that's inside OneDrive\\Documents).
-- '01 Layer 1.nc', '02 ...': one file per layer, in order.
+- '01 Layer 1.nc', '02 ...': one file per pass, in order.
 - '<name> - all passes.nc': everything in one file, for LaserGRBL.
-- '1 LOOKS LIKE': the expected result. '2 LASER INPUT': black = laser fires. '3 IN LASERGRBL': its preview. '4 burn map': a colour per layer.
-- README.txt explains the folder; photos\\ collects your layer photos.
+- '1 LOOKS LIKE': the expected result. '2 LASER INPUT': black = laser fires. '3 IN LASERGRBL': its preview. '4 burn map': a colour per pass.
+- README.txt explains the folder; photos\\ collects your photos after each pass.
 
 # Pictures for .nc files in File Explorer
 Windows only shows pictures for picture files. For .nc files it shows the icon of the program that opens them (LaserGRBL's 'LG'). install.ps1 adds a small preview add-on so Explorer draws what each .nc file will engrave; press F5 or reopen the folder after installing. uninstall.ps1 removes it.
@@ -180,7 +197,7 @@ def topics(mat) -> list:
             ("Negatives & LaserGRBL", NEGATIVE),
             ("Print styles", styles_text()),
             ("Using LaserGRBL", LASERGRBL.format(name=mat.name, recipe=lasergrbl_recipe(mat))),
-            ("Origin & perimeter check", PERIMETER),
+            ("Start point & perimeter check", PERIMETER),
             ("Backgrounds & stickers", BACKGROUNDS),
             ("USB dropouts", DROPOUT),
             ("Safety", SAFETY),

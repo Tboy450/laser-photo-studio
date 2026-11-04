@@ -82,7 +82,7 @@ class StartDialog(tk.Toplevel):
             ttk.Checkbutton(f, text=text, variable=v, command=self._update).pack(anchor="w", pady=2)
             self.checks.append(v)
         self.pause = tk.BooleanVar(value=pause_default and multi)
-        cb = ttk.Checkbutton(f, text="Pause after each layer so I can take a photo (head parks at the origin)",
+        cb = ttk.Checkbutton(f, text="Pause after each pass so I can take a photo (head parks at the start point)",
                              variable=self.pause)
         cb.pack(anchor="w", pady=(10, 2))
         if not multi:
@@ -331,7 +331,7 @@ class RecoveryDialog(tk.Toplevel):
         s4 = ttk.LabelFrame(self.steps, text="4. Continue", style="Card.TLabelframe")
         s4.pack(fill="x", pady=4)
         self.pause = tk.BooleanVar(value=bool(app.settings.get("pause_between_layers", True)))
-        ttk.Checkbutton(s4, text="Pause after each remaining layer for a photo", variable=self.pause).pack(anchor="w")
+        ttk.Checkbutton(s4, text="Pause after each remaining pass for a photo", variable=self.pause).pack(anchor="w")
         bar = ttk.Frame(s4)
         bar.pack(fill="x", pady=(8, 0))
         self.go = ttk.Button(bar, text="Resume engraving", style="Big.TButton", command=self.resume)

@@ -23,20 +23,23 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
 1. **Picture.** Photos, drawings or logos; phone HEIC photos work. Turn or mirror it if needed.
 2. **Material & style.** Green = proven on your U20, yellow = a starting point from other 20 W lasers (test first).
    Each preset explains itself, shows the matching **LaserGRBL settings**, and shows the **energy** of any changes
-   compared with the preset. Proven presets show **photos**: the ladder and grid tests, their charts, and finished
+   compared with the preset, and every setting in the units you'll meet elsewhere (power as `60 % (S600)`, row
+   spacing as lines per inch, speed in in/min). Proven presets show **photos**: the ladder and grid tests, their charts, and finished
    pieces made with them (click to enlarge). Add your own test photos to any preset, and save your own presets.
-3. **Size & placement.** Piece size, origin (lower-left corner or centre), margins and no-burn zones (twine holes,
-   screws). Nudge the art in 0.5-5 mm steps.
+3. **Size & placement.** Piece size (inches shown too), start point (lower-left corner or centre), margins and
+   no-burn zones (twine holes, screws). **Move the picture** in 0.5-5 mm steps: the blue pad and blue box, and the
+   machine doesn't move.
 4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Every preview mode (Looks like,
    What burns, In LaserGRBL, Picture) has a **colour key** underneath saying what each colour, dashed box and marker
    means, and the app warns when a logo's or sticker's plain background would burn as a filled rectangle. Then every command is replayed
    offline: only allowed powers and speeds, nothing outside the piece, every dot burned exactly once, laser off at
    every start and end. Nothing reaches the laser until this passes. Save the job or open it in LaserGRBL.
-5. **Laser.** Connect, set the origin, **perimeter check**, then Start.
+5. **Laser.** Connect, **move the laser head** (purple pad, purple marker in the preview) to the start point, set it,
+   **perimeter check**, then Start. Hover over any button to see what it moves, or whether nothing moves.
 
 The **Guide** button (top right) explains everything in plain words: too light or too dark, negatives and
-LaserGRBL's preview, print styles, LaserGRBL settings (with the Hot Wheels car's mistakes), origin and perimeter
-check, backgrounds & stickers (why a whole rectangle burns, fills vs outlines), USB dropouts, safety and files.
+LaserGRBL's preview, print styles, LaserGRBL settings (with the Hot Wheels car's mistakes and a list of LaserGRBL's
+names next to this app's), start point and perimeter check (moving the picture vs moving the head), backgrounds & stickers (why a whole rectangle burns, fills vs outlines), USB dropouts, safety and files.
 Blue links in the steps open the right Guide page.
 
 ## Perimeter check with the 1% dot
@@ -44,8 +47,8 @@ Blue links in the steps open the right Guide page.
 The head visits each corner of the burn area with the laser **off**, then flashes your positioning dot there:
 **S10 = 1%** bursts of 0.25 s, exactly like `Positioning Laser.exe`. Before each flash it checks the machine is idle
 with zero output and that the controller has S10 programmed while the laser is off; each flash goes out with its own
-`M5 S0` off command. It returns to the origin afterwards. Choose 1-6 flashes per corner, and optional dots along the
-edges. The **Dot on (1%)** button gives a steady dot (auto-off after 60 s) for lining up the origin.
+`M5 S0` off command. It returns to the start point afterwards. Choose 1-6 flashes per corner, and optional dots along the
+edges. The **Dot on (1%)** button gives a steady dot (auto-off after 60 s) for lining up the start point.
 
 ## Safety rules built in
 
@@ -53,13 +56,13 @@ edges. The **Dot on (1%)** button gives a steady dot (auto-off after 60 s) for l
 - Checks `$30=1000`, `$31=0`, `$32=1`, `$100=$101=100` before any laser output.
 - M4 dynamic power; every move is G1 (laser-off travel is `G1 ... S0`); `M5 S0` at every row end and job end.
 - One sender at a time: warns if LaserGRBL or Positioning Laser is open; only one job runs at a time.
-- Opens COM4 with DTR/RTS off. Refuses to start if the controller just rebooted, if the head isn't at the origin,
+- Opens COM4 with DTR/RTS off. Refuses to start if the controller just rebooted, if the head isn't at the start point,
   or if a job file was edited after checking. Stops if the head is reported outside the job's area.
 
 ## Running a job
 
 Jobs run as a separate background process: **closing the app doesn't stop the laser**. Reopen the app to watch:
-layer X of N, % done, minutes left, laser ON/off, and the head on the preview. After each layer the head parks and
+pass X of N, % done, minutes left, laser ON/off, and the head on the preview. After each pass the head parks and
 waits for your photo; photos arriving in your phone folder (`Downloads\Mobile Devices`) are copied into the job in
 order. Buttons: Pause / Resume, Stop after this row (keeps position), EMERGENCY STOP.
 
@@ -126,7 +129,7 @@ Run-ups grow automatically with speed (about 10 mm at 6000 mm/min). Save the bes
 ## Files
 
 - **Jobs:** `Documents\Laser Photo Studio\Jobs\<date>_<name>\` (on this PC inside `OneDrive\Documents`):
-  `passes\01 Layer 1.nc ...` (one per layer), `<name> - all passes.nc` (for LaserGRBL), previews
+  `passes\01 Layer 1.nc ...` (one per pass), `<name> - all passes.nc` (for LaserGRBL), previews
   (`1 LOOKS LIKE`, `2 LASER INPUT`, `3 IN LASERGRBL`, `4 burn map`), `README.txt`, `job.json`, `state.json`,
   `log.txt`, `photos\`.
 - **Presets and settings:** `Documents\Laser Photo Studio\my-presets.json`, `settings.json`.

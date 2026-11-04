@@ -1,5 +1,5 @@
-"""Right-hand preview: the piece, the art (as it should look / what each pass burns / the source picture), keep-out
-zones, laser-off run-up area, the origin, perimeter dots and the live head position."""
+"""Right-hand preview: the piece, the art (as it should look / what each pass burns / the source picture), no-burn
+zones, laser-off run-up area, the start point, perimeter dots and the live head position."""
 from __future__ import annotations
 
 import tkinter as tk
@@ -181,7 +181,7 @@ class PreviewPanel(ttk.Frame):
                 im = im.resize((wpx, hpx), Image.Resampling.LANCZOS if wpx < im.width else Image.Resampling.NEAREST)
             self._photo = ImageTk.PhotoImage(im)
             c.create_image(tx(g.x0), ty(g.yt), image=self._photo, anchor="nw")
-            c.create_rectangle(tx(g.x0), ty(g.yt), tx(g.x1), ty(g.y0), outline="#3b82f6", dash=(4, 2))
+            c.create_rectangle(tx(g.x0), ty(g.yt), tx(g.x1), ty(g.y0), outline=COLORS["art"], dash=(4, 2))
             for k in piece.get("keepouts", []):
                 kx, ky = px0 + float(k["x"]), py0 + float(k["y"])
                 if k.get("kind") == "circle":
@@ -199,7 +199,7 @@ class PreviewPanel(ttk.Frame):
         x, y = tx(0), ty(0)
         c.create_line(x - 14, y, x + 14, y, fill=COLORS["bad"], width=2)
         c.create_line(x, y - 14, x, y + 14, fill=COLORS["bad"], width=2)
-        c.create_text(x + 8, y + 14, anchor="nw", text="origin 0,0", fill=COLORS["bad"], font=("Segoe UI", 9, "bold"))
+        c.create_text(x + 8, y + 14, anchor="nw", text="start 0,0", fill=COLORS["bad"], font=("Segoe UI", 9, "bold"))
         for i, (px, py, name) in enumerate(app.perim_points):
             col = COLORS["accent"] if app.perim_idx == i else "#ffffff"
             c.create_oval(tx(px) - 7, ty(py) - 7, tx(px) + 7, ty(py) + 7, fill=col, outline=COLORS["accent"], width=2)
@@ -216,7 +216,7 @@ class PreviewPanel(ttk.Frame):
             return
         ox, oy, s, vx0, vy1 = self.T
         x, y = ox + (st[0] - vx0) * s, oy + (vy1 - st[1]) * s
-        col = COLORS["bad"] if self.app.laser_is_on() else COLORS["blue"]
+        col = COLORS["bad"] if self.app.laser_is_on() else COLORS["head"]
         c.create_oval(x - 9, y - 9, x + 9, y + 9, outline=col, width=3, tags="head")
         c.create_line(x - 13, y, x + 13, y, fill=col, width=1, tags="head")
         c.create_line(x, y - 13, x, y + 13, fill=col, width=1, tags="head")
@@ -236,7 +236,7 @@ class PreviewPanel(ttk.Frame):
             return
         g = job.geom
         txt = (f"Art {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.1f}..{g.x1:.1f}, Y {g.y0:.1f}..{g.yt:.1f} from the "
-               f"origin  |  {len(job.passes)} pass{'es' if len(job.passes) != 1 else ''}  |  {job.burn_cells:,} dots")
+               f"start point  |  {len(job.passes)} pass{'es' if len(job.passes) != 1 else ''}  |  {job.burn_cells:,} dots")
         if app.report:
             txt += f"  |  about {fmt_dur(job.est_s)}"
         self.info.configure(text=txt)
@@ -287,7 +287,7 @@ class PreviewPanel(ttk.Frame):
             text = titles[0] if len(titles) == 1 else f"{titles[0]} to {titles[-1]} (same dots each time)"
             items.append(("fill", hexrgb(col), f"{text}: laser fires"))
         if job.allowed is not None and not job.allowed.all():
-            items.append(("fill", hexrgb((236, 225, 225)), "no-burn area (margins, keep-outs)"))
+            items.append(("fill", hexrgb((236, 225, 225)), "no-burn area (margins, no-burn zones)"))
         return items
 
     def _overlay_items(self):
@@ -295,18 +295,18 @@ class PreviewPanel(ttk.Frame):
         app = self.app
         items = []
         if app.job is not None:
-            items += [("dash", "#3b82f6", "art box"), ("dash", "#9a8f80", "usable area")]
+            items += [("dash", COLORS["art"], "picture (art box)"), ("dash", "#9a8f80", "usable area")]
             if app.report and app.report.get("travel"):
                 items.append(("dash", "#7c8aa0", "laser-off run-ups"))
             if (app.job.piece or {}).get("keepouts"):
-                items.append(("keepout", COLORS["bad"], "keep-out zone"))
+                items.append(("keepout", COLORS["bad"], "no-burn zone"))
         if app.gfile and app.gfile.get("burn_bbox"):
             items.append(("box", COLORS["accent"], "where the .nc file burns"))
-        items.append(("cross", COLORS["bad"], "origin 0,0 (where the head starts)"))
+        items.append(("cross", COLORS["bad"], "start point 0,0 (where the head starts)"))
         if app.perim_points:
             items.append(("dot", COLORS["accent"], "perimeter check points"))
         if app.head_position():
-            items.append(("head", COLORS["blue"], "head now (red while the laser is on)"))
+            items.append(("head", COLORS["head"], "laser head now (red while the laser is on)"))
         return items
 
     def _set_key(self, items):

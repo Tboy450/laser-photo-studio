@@ -226,6 +226,17 @@ class Explanations(unittest.TestCase):
             for line in body.splitlines():
                 if line.strip().startswith("[image:"):
                     self.assertTrue((jobs.APP_DIR / line.strip()[7:-1]).exists(), line)
+        import re
+        for f in (jobs.APP_DIR / "lps").glob("*.py"):    # every 'open the Guide at...' link names a real topic
+            for name in re.findall(r'open_help\("([^"]+)"\)', f.read_text(encoding="utf-8")):
+                self.assertIn(name, titles, f.name)
+
+    def test_settings_show_other_units(self):
+        from lps.app import adv_hint
+        self.assertEqual(adv_hint("power", "60"), "= S600")
+        self.assertEqual(adv_hint("pitch", "0.1"), "= 254 lines/in")
+        self.assertEqual(adv_hint("feed", "2540"), "= 100 in/min")
+        self.assertEqual(adv_hint("pitch", "abc"), "")
 
     def test_edge_burn_spots_a_burning_background(self):
         from lps import simulate

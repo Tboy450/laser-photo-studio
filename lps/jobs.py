@@ -2,7 +2,7 @@
 
 <Documents>/Laser Photo Studio/Jobs/<date>_<name>/
     job.json                  settings, passes (+ SHA-256 of each file), placement, check results
-    passes/01 Layer 1.nc ...  one file per pass/layer; the runner burns exactly the lines between the BODY markers
+    passes/01 Layer 1.nc ...  one file per pass; the runner burns exactly the lines between the BODY markers
     <name> - all passes.nc    everything in one file (for LaserGRBL, no photo pauses)
     1 LOOKS LIKE ... .png etc previews, README.txt
     state.json                live progress written by the runner (also the recovery record)
@@ -78,7 +78,7 @@ def header(job: JobPlan, title: str) -> list:
     return [f"; Laser Photo Studio {__version__} - {job.name}",
             f"; {title}",
             f"; Material: {m.name} [{BADGES.get(m.badge, m.badge)}] | {style} | rows {m.pitch} mm | Look: {m.look}",
-            f"; Origin: work X0 Y0 = {origin_text(job.piece)}. Art X{g.x0:.2f}..{g.x1:.2f} "
+            f"; Start point (origin): work X0 Y0 = {origin_text(job.piece)}. Art X{g.x0:.2f}..{g.x1:.2f} "
             f"Y{g.y0:.2f}..{g.yt:.2f} mm. Check the perimeter before burning.",
             "; M4 dynamic power, S1000 = 100% ($30=1000). Laser-off travel is G1 S0. Never home this machine."]
 
@@ -130,13 +130,13 @@ def readme_text(job: JobPlan, negative: bool) -> str:
     first = pass_filename(1, job.passes[0]) if job.passes else "01 ....nc"
     return f"""Laser Photo Studio {__version__} job: {job.name}
 Material: {m.name} [{BADGES.get(m.badge, m.badge)}]   Style: {style}
-Art: {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.2f}..{g.x1:.2f}, Y {g.y0:.2f}..{g.yt:.2f} mm from the origin
-Origin (work X0 Y0): {origin_text(job.piece)}
+Art: {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.2f}..{g.x1:.2f}, Y {g.y0:.2f}..{g.yt:.2f} mm from the start point
+Start point (origin, work X0 Y0): {origin_text(job.piece)}
 {neg}
 
 FILES
-passes\\{first} ...    One file per layer, in order. Best run from Laser Photo Studio (step 5): photo pauses
-                         after each layer and safe recovery if the USB drops out.
+passes\\{first} ...    One file per pass, in order. Best run from Laser Photo Studio (step 5): photo pauses
+                         after each pass and safe recovery if the USB drops out.
 {lasergrbl_name(job)}
                          Everything in one file, for LaserGRBL (no photo pauses).
 1 LOOKS LIKE ....png     Roughly how the finished piece should look on the material. NOT a laser input.
@@ -147,12 +147,12 @@ passes\\{first} ...    One file per layer, in order. Best run from Laser Photo S
                          laser fires, brighter = more power (its default dark theme). LaserGRBL does NOT invert
                          anything when it opens a .nc, so wood jobs look like a negative there, while
                          light-marking materials (anodized, slate) look like the real result.
-4 burn map ....png       Each layer in its own colour.
+4 burn map ....png       Each pass in its own colour.
 
 LASERGRBL TIPS
 - Open the .nc with File > Open. Don't import the PNGs and don't press LaserGRBL's invert (negative) button:
   the conversion is already done.
-- Put the head on the origin above and check the frame/perimeter first.
+- Put the head on the start point above and check the frame/perimeter first.
 - If the USB drops out in LaserGRBL, don't use its Resume or Home - it can jump to old coordinates. Jobs run
   from Laser Photo Studio record where they stopped and resume safely.
 """

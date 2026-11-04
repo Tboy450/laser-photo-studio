@@ -12,7 +12,7 @@ from .dialogs import FormDialog
 from .planner import Placement
 from .presets import PIECES
 from .preview import fmt_dur
-from .ui_common import Slider, ToolTip, link, wrap_label
+from .ui_common import COLORS, Slider, ToolTip, link, moves_note, wrap_label
 
 PIECE_KEYS = list(PIECES)
 
@@ -21,8 +21,8 @@ class PlaceMixin:
     # ================================================================ step 3
     def page_place(self, f):
         ttk.Label(f, text="3. Size & placement", style="H1.TLabel").pack(anchor="w")
-        wrap_label(f, "Measure your piece. The origin is the spot you'll put the laser head on before starting "
-                      "(you set it in step 5).", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
+        wrap_label(f, "Measure your piece. The start point (origin, 0,0) is the spot you'll put the laser head on "
+                      "before starting (you set it in step 5).", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
         c = ttk.LabelFrame(f, text="Your piece", style="Card.TLabelframe")
         c.pack(fill="x", pady=4)
         self.piece_var = tk.StringVar()
@@ -41,6 +41,8 @@ class PlaceMixin:
             sp.bind("<FocusOut>", lambda e: self._piece_edited())
             sp.bind("<Return>", lambda e: self._piece_edited())
         ttk.Label(row, text="mm").pack(side="left")
+        self.piece_in_lbl = ttk.Label(c, style="Muted.TLabel")
+        self.piece_in_lbl.pack(anchor="w", pady=(2, 0))
         row2 = ttk.Frame(c)
         row2.pack(fill="x", pady=(6, 0))
         self.shape_var = tk.StringVar(value="rect")
@@ -53,7 +55,7 @@ class PlaceMixin:
                          command=self._piece_edited)
         sp.pack(side="left")
         sp.bind("<FocusOut>", lambda e: self._piece_edited())
-        o = ttk.LabelFrame(f, text="Where you'll put the laser head (origin)", style="Card.TLabelframe")
+        o = ttk.LabelFrame(f, text="Start point: where you'll put the laser head", style="Card.TLabelframe")
         o.pack(fill="x", pady=4)
         self.origin_var = tk.StringVar(value="lower-left")
         ttk.Radiobutton(o, text="Lower-left corner of the piece", value="lower-left", variable=self.origin_var,
@@ -62,7 +64,7 @@ class PlaceMixin:
                         command=self._piece_edited).pack(anchor="w")
         wrap_label(o, "Corners are easiest to find by eye. Lids are usually centred.", style="Small.TLabel").pack(
             anchor="w", pady=(2, 0))
-        m = ttk.LabelFrame(f, text="Margins and keep-out zones", style="Card.TLabelframe")
+        m = ttk.LabelFrame(f, text="Margins and no-burn zones", style="Card.TLabelframe")
         m.pack(fill="x", pady=4)
         mr = ttk.Frame(m)
         mr.pack(fill="x")
@@ -101,9 +103,9 @@ class PlaceMixin:
         self.artw_spin.bind("<Return>", lambda e: self._artw_edited())
         ttk.Label(ar, text="mm").pack(side="left")
         ttk.Button(ar, text="Largest that fits", command=self._artw_fit).pack(side="left", padx=8)
-        self.arth_lbl = ttk.Label(a, style="Muted.TLabel")
+        self.arth_lbl = wrap_label(a, "", style="Muted.TLabel")
         self.arth_lbl.pack(anchor="w", pady=(4, 0))
-        p = ttk.LabelFrame(f, text="Position (nudge the art)", style="Card.TLabelframe")
+        p = ttk.LabelFrame(f, text="Move the picture (the machine doesn't move)", style="Card.TLabelframe")
         p.pack(fill="x", pady=4)
         self.nudge_step = tk.StringVar(value="1")
         self._nudge_pad(p, self.nudge)
@@ -113,13 +115,17 @@ class PlaceMixin:
         self.sync_place_fields()
 
     def _nudge_pad(self, parent, fn):
+        moves_note(parent, COLORS["art"], "Moves the picture on the piece (blue box). Nothing moves on the "
+                                          "machine.").pack(fill="x", pady=(0, 4))
         pad = ttk.Frame(parent)
         pad.pack(anchor="w")
-        ttk.Button(pad, text="Up", width=6, command=lambda: fn(0, 1)).grid(row=0, column=1)
-        ttk.Button(pad, text="Left", width=6, command=lambda: fn(-1, 0)).grid(row=1, column=0)
-        ttk.Button(pad, text="Centre", width=7, command=lambda: fn(None, None)).grid(row=1, column=1)
-        ttk.Button(pad, text="Right", width=6, command=lambda: fn(1, 0)).grid(row=1, column=2)
-        ttk.Button(pad, text="Down", width=6, command=lambda: fn(0, -1)).grid(row=2, column=1)
+        for t, dx, dy, r, cc in (("Up", 0, 1, 0, 1), ("Left", -1, 0, 1, 0), ("Centre", None, None, 1, 1),
+                                 ("Right", 1, 0, 1, 2), ("Down", 0, -1, 2, 1)):
+            b = ttk.Button(pad, text=t, width=7 if dx is None else 6, command=lambda dx=dx, dy=dy: fn(dx, dy))
+            b.grid(row=r, column=cc)
+            ToolTip(b, "Puts the picture back in the middle of the piece. The laser head doesn't move."
+                    if dx is None else f"Moves the picture {t.lower()} by one step on the piece. The laser head "
+                                       "doesn't move; the job is rebuilt and checked again.")
         ttk.Label(pad, text="  step").grid(row=1, column=3)
         ttk.Combobox(pad, textvariable=self.nudge_step, values=["0.5", "1", "2", "5"], width=4,
                      state="readonly").grid(row=1, column=4)
@@ -168,6 +174,7 @@ class PlaceMixin:
                     self.ko_list.insert("end", f"Rectangle: from {k['x']:g}, {k['y']:g} mm, {k['w']:g} x {k['h']:g} mm")
             if self.art_w:
                 self.artw_var.set(f"{self.art_w:g}")
+            self.piece_in_lbl.configure(text=f"= {pc['w'] / 25.4:.2f} x {pc['h'] / 25.4:.2f} inches")
             self.offset_lbl.configure(text=("Centred." if not (self.dx or self.dy) else
                                             f"Moved {abs(self.dx):g} mm {'right' if self.dx >= 0 else 'left'}, "
                                             f"{abs(self.dy):g} mm {'up' if self.dy >= 0 else 'down'} from centre."))
@@ -253,7 +260,8 @@ class PlaceMixin:
             self.artw_var.set(f"{g.art_w:g}")
         finally:
             self._loading = old
-        self.arth_lbl.configure(text=f"Art {g.art_w:.1f} x {g.art_h:.1f} mm. Laser-off run-ups add a few mm left "
+        self.arth_lbl.configure(text=f"Art {g.art_w:.1f} x {g.art_h:.1f} mm ({g.art_w / 25.4:.2f} x "
+                                     f"{g.art_h / 25.4:.2f} in). Laser-off run-ups add a few mm left "
                                      "and right (grey dashes in the preview).")
 
     # ================================================================ step 4
@@ -400,7 +408,7 @@ class PlaceMixin:
         previews = {"1 LOOKS LIKE - finished piece": simulate.appearance(job),
                     "2 LASER INPUT - black means the laser fires": simulate.laser_input(job),
                     "3 IN LASERGRBL - how its preview draws the nc": simulate.lasergrbl_view(job),
-                    "4 burn map - colour per layer": simulate.burn_map(job)}
+                    "4 burn map - colour per pass": simulate.burn_map(job)}
         folder = jobs.save_job(job, self.report, picture=None if self.grid_spec else self.picture, previews=previews,
                                extra=extra)
         self.saved[self.gen] = folder
@@ -419,14 +427,14 @@ class PlaceMixin:
             return
         dest = Path(dest)
         shutil.copyfile(jobs.lasergrbl_path(folder), dest)
-        layers = dest.with_name(dest.stem + " - one file per layer")
+        layers = dest.with_name(dest.stem + " - one file per pass")
         if len(self.job.passes) > 1:
             layers.mkdir(exist_ok=True)
             for f in (folder / "passes").glob("*.nc"):
                 shutil.copyfile(f, layers / f.name)
-        messagebox.showinfo("Saved", f"Saved {dest.name}" + (f"\n\nOne file per layer (for photo pauses) is in:\n"
+        messagebox.showinfo("Saved", f"Saved {dest.name}" + (f"\n\nOne file per pass (for photo pauses) is in:\n"
                                                              f"{layers}" if len(self.job.passes) > 1 else "") +
-                            "\n\nIn LaserGRBL: File > Open, set the origin where this app expects it, and check "
+                            "\n\nIn LaserGRBL: File > Open, put the head on the start point this app expects, and check "
                             "the frame before running.")
 
     def open_lasergrbl(self):
