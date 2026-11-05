@@ -7,7 +7,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import jobs, simulate, verify
+from . import jobs, presets, simulate, verify
 from .dialogs import FormDialog
 from .planner import Placement
 from .presets import PIECES
@@ -30,6 +30,10 @@ class PlaceMixin:
                                       values=[PIECES[k]["name"] for k in PIECE_KEYS])
         self.piece_box.pack(anchor="w")
         self.piece_box.bind("<<ComboboxSelected>>", lambda e: self.set_piece(PIECE_KEYS[self.piece_box.current()]))
+        b = ttk.Button(c, text="Toy car (Hot Wheels)...", command=self.toy_car)
+        b.pack(anchor="w", pady=(6, 0))
+        ToolTip(b, "Pick a body type and measure your car: the windshield and rear window become no-burn zones and "
+                   "the start point goes on a spot you can find, like the windshield's front edge.")
         row = ttk.Frame(c)
         row.pack(fill="x", pady=(6, 0))
         self.pw_var, self.ph_var, self.corner_var = tk.StringVar(), tk.StringVar(), tk.StringVar()
@@ -167,6 +171,25 @@ class PlaceMixin:
         self.dx = self.dy = 0.0
         self.sync_place_fields()
         self.changed()
+        if key == "car" and user:
+            self.root.after(100, self.toy_car)
+
+    def toy_car(self):
+        from .dialogs import CarDialog
+        d = CarDialog(self.root, self.piece.get("car") or presets.car_values("mustang")).result
+        if d:
+            self.use_car(d)
+
+    def use_car(self, values):
+        self.piece_key = "car"
+        self.piece = presets.car_piece(values)
+        self.piece_user_set = True
+        self.art_w = None
+        self.dx = self.dy = 0.0
+        self.perim_points = []
+        self.sync_place_fields()
+        self.changed()
+        self.say(f"{self.piece['name']}: windows are no-burn zones; the start point is the red crosshair.", "ok")
 
     def sync_place_fields(self):
         if not hasattr(self, "pw_var"):

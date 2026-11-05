@@ -106,6 +106,10 @@ def layout(img_size: tuple, placement: Placement, pitch: float) -> Geometry:
         aw = placement.art_w or min(uw, uh * aspect)
         ah = aw / aspect
     cols, rows = max(1, int(round(aw / pitch))), max(1, int(round(ah / pitch)))
+    if cols * pitch > uw + 1e-9:     # rounding up mustn't push the art past the usable area (e.g. 84.36 mm wide)
+        cols = max(1, int(uw / pitch + 1e-9))
+    if rows * pitch > uh + 1e-9:
+        rows = max(1, int(uh / pitch + 1e-9))
     cx = (ux0 + ux1) / 2 + placement.dx
     cy = (uy0 + uy1) / 2 + placement.dy
     x0 = round(cx - cols * pitch / 2, 2)

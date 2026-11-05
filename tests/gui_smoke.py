@@ -185,6 +185,23 @@ def main():
     assert app.job.geom.piece_rect[:2] == (-30.0, -20.0), app.job.geom.piece_rect
     assert not app.origin_set                       # the controller's start point is now out of date
     shot(app, "2b-picked-start-point")
+    # Toy car: the window shows a scaled top view; another body type refills the numbers; 'Use this car' sets the piece.
+    from lps import presets
+    from lps.dialogs import CarDialog
+    d = CarDialog(root, presets.car_values("mustang"), wait=False)
+    d.geometry("+60+60")
+    pump(app, 0.8)
+    grab(d, "2c-toy-car")
+    d.body_box.current(d.body_keys.index("pickup"))
+    d._body_picked()
+    assert d.values()["length"] == 78.0 and d.values()["front"] == "right", d.values()
+    d.destroy()
+    app.use_car(presets.car_values("mustang"))
+    assert pump(app, 30, lambda: app.job.piece.get("name", "").startswith("Toy car")), "car job"
+    shot(app, "2d-toy-car-piece")
+    app.goto(3)     # the check runs from step 4
+    assert pump(app, 30, lambda: app.report is not None and app.compiled_gen == app.gen), "car check"
+    assert app.report["ok"] and len(app.job.piece["keepouts"]) == 2, app.report
     # Start a short demo job (the plank job would take long even simulated): only check that it launches.
     print("OK", folder)
     root.destroy()

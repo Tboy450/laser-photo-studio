@@ -127,6 +127,30 @@ class Placement_(unittest.TestCase):
         self.assertTrue(verify.verify_job(spot)["ok"])
         self.assertIn("12.5 mm from the piece's left edge", jobs.origin_text(spot.piece))
 
+    def test_toy_car_windows_are_no_burn_zones(self):
+        black = Image.new("L", (400, 140), 0)
+        mat = next(m for m in presets.BUILTIN if m.key == "anodized-dots").copy(negative=False)
+        for body in presets.CAR_BODIES:
+            v = presets.car_values(body)
+            pc = presets.car_piece(v)
+            self.assertEqual(len(pc["keepouts"]), 2 if presets.CAR_BODIES[body]["rear"] else 1, body)
+            job = planner.compile_job(planner.build_job(black, mat, Placement(pc, fit="fill")))
+            g = job.geom
+            rr, cc = np.nonzero(sum(p.cells for p in job.passes))
+            xs, ys = g.x0 + (cc + 0.5) * g.pitch - g.piece_rect[0], g.yt - (rr + 0.5) * g.pitch - g.piece_rect[1]
+            for k in pc["keepouts"]:    # nothing burns on the glass
+                inside = (xs > k["x"]) & (xs < k["x"] + k["w"]) & (ys > k["y"]) & (ys < k["y"] + k["h"])
+                self.assertFalse(inside.any(), (body, k))
+            self.assertTrue(verify.verify_job(job)["ok"], body)
+        # The Mustang: windshield 25.9 mm back from the nose; start point on its front edge, on the centerline.
+        v = presets.car_values("mustang")
+        self.assertEqual(presets.car_piece(v)["spot"], [round(86.36 - 25.9, 2), 15.24])
+        left = presets.car_piece(dict(v, front="left"))
+        self.assertEqual(left["spot"], [25.9, 15.24])
+        right_ws, left_ws = presets.car_piece(v)["keepouts"][0], left["keepouts"][0]
+        self.assertAlmostEqual(right_ws["x"] + right_ws["w"], 86.36 - left_ws["x"], places=2)   # mirrored
+        self.assertEqual(presets.car_piece(dict(v, start="nose"))["spot"], [86.36, 15.24])
+
     def test_test_grid(self):
         mat = next(m for m in presets.BUILTIN if m.key == "basswood-dots")
         job = planner.compile_job(planner.build_test_grid(mat, Placement(piece(120.0, 70.0)), [40, 60, 80],

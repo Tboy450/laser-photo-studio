@@ -63,6 +63,157 @@ class FormDialog(tk.Toplevel):
         self.destroy()
 
 
+class CarDialog(tk.Toplevel):
+    """Toy car (Hot Wheels size): body type, size, windshield and rear window, with a top view to scale."""
+
+    FIELDS = [("length", "Length, nose to tail (mm)"), ("width", "Width (mm)"),
+              ("ws_from", "Windshield starts, from the nose (mm)"), ("ws_len", "Windshield length (mm)"),
+              ("rear_from", "Rear window starts, from the nose (mm)"), ("rear_len", "Rear window length (0 = none)"),
+              ("window_w", "Window width across the car (mm)"), ("clearance", "Extra clearance round windows (mm)")]
+
+    def __init__(self, master, values: dict, wait=True):
+        super().__init__(master)
+        self.title("Toy car (Hot Wheels size)")
+        self.transient(master)
+        self.resizable(False, False)
+        self.result = None
+        self._loading = False
+        f = ttk.Frame(self, padding=16)
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text="Toy car, seen from above", style="H1.TLabel").grid(row=0, column=0, columnspan=3,
+                                                                             sticky="w")
+        ttk.Label(f, wraplength=860, justify="left",       # fixed width: this window doesn't resize
+                  text="Pick the body type, then measure your car and fix the numbers. The windshield and rear "
+                       "window become no-burn zones, and the start point goes on a spot you can find with the dot. "
+                       "The car's top is curved: keep the art on the flattest part (usually the roof or hood)."
+                  ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 10))
+        self.v = {}
+        ttk.Label(f, text="Body type").grid(row=2, column=0, sticky="w", pady=3)
+        self.body_keys = list(presets.CAR_BODIES)
+        self.body_box = ttk.Combobox(f, state="readonly", width=40,
+                                     values=[presets.CAR_BODIES[k]["name"] for k in self.body_keys])
+        self.body_box.grid(row=2, column=1, sticky="w", padx=(10, 0))
+        self.body_box.bind("<<ComboboxSelected>>", lambda e: self._body_picked())
+        for i, (k, label) in enumerate(self.FIELDS, 3):
+            ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=2)
+            self.v[k] = tk.StringVar()
+            sp = ttk.Spinbox(f, from_=0, to=300, increment=0.5, width=8, textvariable=self.v[k])
+            sp.grid(row=i, column=1, sticky="w", padx=(10, 0))
+            self.v[k].trace_add("write", lambda *a: self._draw())
+        r = 3 + len(self.FIELDS)
+        ttk.Label(f, text="On the bed, the nose points").grid(row=r, column=0, sticky="w", pady=(6, 2))
+        self.front = tk.StringVar()
+        fr = ttk.Frame(f)
+        fr.grid(row=r, column=1, sticky="w", padx=(10, 0), pady=(6, 2))
+        for val in ("right", "left"):
+            ttk.Radiobutton(fr, text=val, value=val, variable=self.front, command=self._draw).pack(side="left",
+                                                                                               padx=(0, 8))
+        ttk.Label(f, text="Start point (where the dot goes)").grid(row=r + 1, column=0, sticky="w", pady=2)
+        self.start_keys = list(presets.CAR_STARTS)
+        self.start_box = ttk.Combobox(f, state="readonly", width=40, values=list(presets.CAR_STARTS.values()))
+        self.start_box.grid(row=r + 1, column=1, sticky="w", padx=(10, 0))
+        self.start_box.bind("<<ComboboxSelected>>", lambda e: self._draw())
+        self.canvas = tk.Canvas(f, width=470, height=250, background=COLORS["panel"], highlightthickness=1,
+                                highlightbackground="#c9c2b8")
+        self.canvas.grid(row=2, column=2, rowspan=r - 2, sticky="n", padx=(16, 0))
+        self.note = ttk.Label(f, style="Small.TLabel", wraplength=470, justify="left")
+        self.note.grid(row=r, column=2, rowspan=2, sticky="nw", padx=(16, 0))
+        bar = ttk.Frame(f)
+        bar.grid(row=r + 2, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        ttk.Button(bar, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(bar, text="Use this car", command=self._ok).pack(side="right", padx=6)
+        self._fill(values)
+        if wait:
+            self.grab_set()
+            self.wait_window()
+
+    def _fill(self, values):
+        self._loading = True
+        try:
+            self.body_box.current(self.body_keys.index(values.get("body", "mustang")))
+            for k, _ in self.FIELDS:
+                self.v[k].set(f"{float(values.get(k, 0)):g}")
+            self.front.set(values.get("front", "right"))
+            self.start_box.current(self.start_keys.index(values.get("start", "windshield")))
+            self.corner = float(values.get("corner", 4.0))
+        finally:
+            self._loading = False
+        self._draw()
+
+    def _body_picked(self):
+        """Another body type: its typical numbers (keeping which way the nose points and the start point)."""
+        body = self.body_keys[self.body_box.current()]
+        keep = dict(front=self.front.get(), start=self.start_keys[self.start_box.current()])
+        self._fill(dict(presets.car_values(body), **keep))
+
+    def values(self):
+        out = dict(body=self.body_keys[self.body_box.current()], front=self.front.get(),
+                   start=self.start_keys[self.start_box.current()], corner=self.corner)
+        for k, _ in self.FIELDS:
+            out[k] = max(0.0, float(self.v[k].get()))
+        return out
+
+    def _draw(self):
+        if self._loading:
+            return
+        c = self.canvas
+        c.delete("all")
+        try:
+            v = self.values()
+            pc = presets.car_piece(v)
+        except (ValueError, KeyError):
+            return
+        L, W = pc["w"], pc["h"]
+        if L <= 0 or W <= 0:
+            return
+        s = min(340 / L, 140 / W)
+        ox, oy = (470 - L * s) / 2, 50 + (140 - W * s) / 2
+        tx = lambda x: ox + x * s
+        ty = lambda y: oy + (W - y) * s
+        rr = min(v["corner"], W / 2) * s
+        x0, y0, x1, y1 = tx(0), ty(W), tx(L), ty(0)
+        c.create_polygon(x0 + rr, y0, x1 - rr, y0, x1, y0, x1, y0 + rr, x1, y1 - rr, x1, y1, x1 - rr, y1,
+                         x0 + rr, y1, x0, y1, x0, y1 - rr, x0, y0 + rr, x0, y0, smooth=True, fill="#f5d76e",
+                         outline="#8a6d1d", width=2)
+        c.create_line(x0, ty(W / 2), x1, ty(W / 2), fill="#8a6d1d", dash=(4, 3))
+        for k in pc["keepouts"]:
+            c.create_rectangle(tx(k["x"]), ty(k["y"] + k["h"]), tx(k["x"] + k["w"]), ty(k["y"]),
+                               outline=COLORS["bad"], width=2, fill="#f3c7c7", stipple="gray50")
+        sx, sy = pc["spot"]
+        c.create_line(tx(sx) - 12, ty(sy), tx(sx) + 12, ty(sy), fill=COLORS["bad"], width=2)
+        c.create_line(tx(sx), ty(sy) - 12, tx(sx), ty(sy) + 12, fill=COLORS["bad"], width=2)
+        right = v["front"] == "right"
+        nose, tail = (x1, x0) if right else (x0, x1)
+        # overall length above the car, width at the tail, windshield distance from the nose below
+        c.create_line(x0, y0 - 14, x1, y0 - 14, arrow="both", fill=COLORS["ink"])
+        c.create_text((x0 + x1) / 2, y0 - 26, text=f"{L:g} mm ({L / 25.4:.2f} in), nose on the {v['front']}",
+                      fill=COLORS["ink"])
+        wx = tail - 12 if right else tail + 12
+        c.create_line(wx, y0, wx, y1, arrow="both", fill=COLORS["ink"])
+        c.create_text(wx - 4 if right else wx + 4, (y0 + y1) / 2, text=f"{W:g}", anchor="e" if right else "w",
+                      fill=COLORS["ink"])
+        wsx = tx(L - v["ws_from"]) if right else tx(v["ws_from"])
+        c.create_line(nose, y1 + 14, wsx, y1 + 14, arrow="both", fill=COLORS["bad"])
+        c.create_text(nose, y1 + 26, text=f"windshield {v['ws_from']:g} mm from the nose",
+                      anchor="e" if right else "w", fill=COLORS["bad"])
+        self.note.configure(text=f"Red boxes: no-burn zones over the windows (plus {v['clearance']:g} mm). Red "
+                                 f"cross: the start point, {presets.CAR_STARTS[v['start']].lower()}. Dashed: the "
+                                 "centerline. Sizes are typical 1:64 cars: measure yours.")
+
+    def _ok(self):
+        try:
+            v = self.values()
+        except ValueError:
+            messagebox.showerror("Check the numbers", "Use plain numbers in mm.", parent=self)
+            return
+        if not (20 <= v["length"] <= 300 and 5 <= v["width"] <= 150) or v["ws_from"] + v["ws_len"] > v["length"]:
+            messagebox.showerror("Check the numbers", "The length must be 20-300 mm, the width 5-150 mm, and the "
+                                 "windshield has to fit on the car.", parent=self)
+            return
+        self.result = v
+        self.destroy()
+
+
 class StartDialog(tk.Toplevel):
     def __init__(self, master, summary: str, pause_default: bool, multi: bool):
         super().__init__(master)

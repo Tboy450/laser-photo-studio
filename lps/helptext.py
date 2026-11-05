@@ -96,6 +96,7 @@ The yellow Mustang roof (stripes + horse, 82.55 x 26.5 mm) went wrong in LaserGR
 - Frame only traces the outer box of the job. It can't show where the windows or the centerline are, so lines burned across the windshield and rear window. Check those points separately with the dot.
 - 'Image Proportion' was unlocked, so changing the width didn't change the height to match. Keep it locked.
 - The horse ended up too far forward, on the nose.
+Next time: in step 3 press 'Toy car (Hot Wheels)...'. Pick the body type and fix the numbers to match your car: the windshield and rear window become no-burn zones, and the start point goes on the windshield's front edge, on the centerline, where you can find it with the dot.
 
 [image:assets/samples/hw-top.jpg]
 
@@ -130,6 +131,7 @@ The dot is the real engraving laser at very low power, so still wear laser glass
 
 # Curved or small pieces
 The perimeter check, like LaserGRBL's Frame, only shows the outer box of the burn. On a toy car or anything with windows, edges or a centerline, also put the dot on those points before burning: on the Hot Wheels car the box looked right, but the stripes crossed the windows and missed the centerline.
+For toy cars use 'Toy car (Hot Wheels)...' in step 3. It has typical 1:64 body types and your measured Mustang; measure your car, and it turns the windows into no-burn zones and puts the start point on the windshield's front edge (or the middle of the roof, or the nose).
 
 [image:assets/samples/hw-setup.jpg]"""
 

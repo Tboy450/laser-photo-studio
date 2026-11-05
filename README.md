@@ -30,7 +30,10 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
 3. **Size & placement.** Piece size (inches shown too), start point (lower-left corner, centre, or **any spot you
    click on the picture**, like a stripe's corner or the windshield's edge), margins and
    no-burn zones (twine holes, screws). **Move the picture** in 0.5-5 mm steps: the blue pad and blue box, and the
-   machine doesn't move.
+   machine doesn't move. **Toy car (Hot Wheels)...** gives a top view for typical 1:64 body types (coupe,
+   fastback, sports car, pickup, van) and your measured Mustang: enter your car's length, width and window
+   positions, and the windshield and rear window become no-burn zones, with the start point on the
+   windshield's front edge, on the centerline.
 4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Every preview mode (Looks like,
    What burns, In LaserGRBL, Picture) has a **colour key** underneath saying what each colour, dashed box and marker
    means, and the app warns when a logo's or sticker's plain background would burn as a filled rectangle. Then every command is replayed
