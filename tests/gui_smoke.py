@@ -202,6 +202,22 @@ def main():
     app.goto(3)     # the check runs from step 4
     assert pump(app, 30, lambda: app.report is not None and app.compiled_gen == app.gen), "car check"
     assert app.report["ok"] and len(app.job.piece["keepouts"]) == 2, app.report
+    # Every colour theme switches live on the running app, and the choice is remembered.
+    from lps.ui_common import COLORS, THEMES
+    app.goto(1)
+    app.pages[1].canvas.yview_moveto(0.0)
+    for name in THEMES:
+        app.set_theme(name)
+        pump(app, 0.6)
+        assert COLORS["ink"] == THEMES[name]["ink"] and app.preview.canvas.cget("background") == COLORS["canvas"]
+        assert jobs.load_settings()["theme"] == name
+        shot(app, f"7-theme-{name}")
+    app.goto(4)
+    app.set_theme("dragonfly")
+    app.pages[4].canvas.yview_moveto(0.0)
+    pump(app, 0.6)
+    shot(app, "7b-dragonfly-laser")
+    app.set_theme("light")
     # Start a short demo job (the plank job would take long even simulated): only check that it launches.
     print("OK", folder)
     root.destroy()

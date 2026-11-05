@@ -6,7 +6,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from . import jobs, machine, presets
 from .presets import STYLES, Material
-from .ui_common import COLORS, wrap_label
+from .ui_common import COLORS, paint, wrap_label
 
 
 class FormDialog(tk.Toplevel):
@@ -114,7 +114,7 @@ class CarDialog(tk.Toplevel):
         self.start_box.grid(row=r + 1, column=1, sticky="w", padx=(10, 0))
         self.start_box.bind("<<ComboboxSelected>>", lambda e: self._draw())
         self.canvas = tk.Canvas(f, width=470, height=250, background=COLORS["panel"], highlightthickness=1,
-                                highlightbackground="#c9c2b8")
+                                highlightbackground=COLORS["border"])
         self.canvas.grid(row=2, column=2, rowspan=r - 2, sticky="n", padx=(16, 0))
         self.note = ttk.Label(f, style="Small.TLabel", wraplength=470, justify="left")
         self.note.grid(row=r, column=2, rowspan=2, sticky="nw", padx=(16, 0))
@@ -178,7 +178,7 @@ class CarDialog(tk.Toplevel):
         c.create_line(x0, ty(W / 2), x1, ty(W / 2), fill="#8a6d1d", dash=(4, 3))
         for k in pc["keepouts"]:
             c.create_rectangle(tx(k["x"]), ty(k["y"] + k["h"]), tx(k["x"] + k["w"]), ty(k["y"]),
-                               outline=COLORS["bad"], width=2, fill="#f3c7c7", stipple="gray50")
+                               outline=COLORS["bad"], width=2, fill=COLORS["keepout"], stipple="gray50")
         sx, sy = pc["spot"]
         c.create_line(tx(sx) - 12, ty(sy), tx(sx) + 12, ty(sy), fill=COLORS["bad"], width=2)
         c.create_line(tx(sx), ty(sy) - 12, tx(sx), ty(sy) + 12, fill=COLORS["bad"], width=2)
@@ -333,15 +333,17 @@ class HelpWindow(tk.Toplevel):
         self.topics = helptext.topics(app.mat)
         body = ttk.Frame(self, padding=8)
         body.pack(fill="both", expand=True)
-        self.lst = tk.Listbox(body, activestyle="none", exportselection=False, width=26, font=("Segoe UI", 11),
-                              borderwidth=0, highlightthickness=0, selectbackground="#c2410c")
+        self.lst = paint(tk.Listbox(body, activestyle="none", exportselection=False, width=26,
+                                    font=("Segoe UI", 11), borderwidth=0, highlightthickness=0),
+                         background="field", foreground="ink", selectbackground="select",
+                         selectforeground="select_ink")
         self.lst.pack(side="left", fill="y", padx=(0, 8))
         for title, _ in self.topics:
             self.lst.insert("end", "  " + title)
         self.lst.bind("<<ListboxSelect>>", lambda e: self._render(self.lst.curselection()[0])
                       if self.lst.curselection() else None)
-        self.txt = tk.Text(body, wrap="word", padx=18, pady=12, borderwidth=0, font=("Segoe UI", 10),
-                           cursor="arrow", background="#fffdf9")
+        self.txt = paint(tk.Text(body, wrap="word", padx=18, pady=12, borderwidth=0, font=("Segoe UI", 10),
+                                 cursor="arrow"), background="panel", foreground="ink")
         sb = ttk.Scrollbar(body, orient="vertical", command=self.txt.yview)
         self.txt.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")

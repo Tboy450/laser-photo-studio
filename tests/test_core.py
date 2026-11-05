@@ -322,6 +322,32 @@ class Explanations(unittest.TestCase):
             for name in re.findall(r'open_help\("([^"]+)"\)', f.read_text(encoding="utf-8")):
                 self.assertIn(name, titles, f.name)
 
+    def test_every_theme_is_complete_and_readable(self):
+        from lps.ui_common import THEMES
+
+        def lum(h):
+            r, g, b = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+            f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+            return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+        def contrast(a, b):
+            hi, lo = sorted((lum(a), lum(b)), reverse=True)
+            return (hi + 0.05) / (lo + 0.05)
+
+        self.assertEqual(len({frozenset(t) for t in THEMES.values()}), 1)     # every theme has every role
+        for key, t in THEMES.items():
+            need = 7.0 if key not in ("light", "dragonfly") else 4.5          # WCAG AAA for the contrast pairs
+            self.assertGreaterEqual(contrast(t["ink"], t["bg"]), need, key)
+            self.assertGreaterEqual(contrast(t["ink"], t["field"]), need, key)
+            self.assertGreaterEqual(contrast(t["header_ink"], t["header"]), need, key)
+            self.assertGreaterEqual(contrast(t["select_ink"], t["select"]), 4.5, key)
+            for role in ("muted", "ok", "warn", "bad", "blue"):              # WCAG AA for coloured text
+                self.assertGreaterEqual(contrast(t[role], t["bg"]), 4.5, (key, role))
+            for role in ("ok", "bad"):                                        # status text on its own badge
+                self.assertGreaterEqual(contrast(t[role], t[role + "_bg"]), 4.5, (key, role))
+            self.assertGreaterEqual(contrast(t["art"], t["canvas"]), 3.0, key)    # markers on the preview
+            self.assertGreaterEqual(contrast(t["head"], t["canvas"]), 3.0, key)
+
     def test_settings_show_other_units(self):
         from lps.app import adv_hint
         self.assertEqual(adv_hint("power", "60"), "= S600")

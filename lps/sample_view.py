@@ -11,7 +11,7 @@ from PIL import Image, ImageTk
 from . import jobs, samples
 from .dialogs import FormDialog
 from .imaging import PICTURE_TYPES
-from .ui_common import link, wrap_label
+from .ui_common import link, paint, wrap_label
 
 COLS = 3
 SHOW = 6
@@ -78,17 +78,17 @@ class SampleStrip(ttk.Frame):
         self.note.configure(text=self._note)
 
     def _tile(self, i, s):
-        tile = tk.Frame(self.grid_box, cursor="hand2")
+        tile = paint(tk.Frame(self.grid_box, cursor="hand2"), background="face")
         tile.grid(row=i // COLS, column=i % COLS, padx=(0, self.gap), pady=(0, self.gap), sticky="nw")
         ph = ImageTk.PhotoImage(samples.thumbnail(s.path, self.thumb))
         self._refs.append(ph)
-        tk.Label(tile, image=ph, width=self.thumb[0], height=self.thumb[1], background="#d9d4cc",
-                 cursor="hand2").pack()
+        paint(tk.Label(tile, image=ph, width=self.thumb[0], height=self.thumb[1], cursor="hand2"),
+              background="canvas").pack()
         label, bg, fg = samples.KINDS.get(s.kind, samples.KINDS["test"])
         tk.Label(tile, text=label, font=("Segoe UI", 8, "bold"), foreground=fg, background=bg, padx=3,
                  cursor="hand2").pack(anchor="w", pady=(3, 0))
-        tk.Label(tile, text=s.title, font=("Segoe UI", 9), wraplength=self.thumb[0], justify="left", anchor="w",
-                 cursor="hand2").pack(anchor="w")
+        paint(tk.Label(tile, text=s.title, font=("Segoe UI", 9), wraplength=self.thumb[0], justify="left",
+                       anchor="w", cursor="hand2"), background="face", foreground="ink").pack(anchor="w")
         for w in (tile, *tile.winfo_children()):
             w.bind("<Button-1>", lambda e, i=i: self.open(i))
 

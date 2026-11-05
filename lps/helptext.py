@@ -18,6 +18,9 @@ START = """# Five steps
 - Picture: the adjusted picture before it becomes laser moves.
 Each one has a colour key under the preview that says what every colour, dashed box and marker means.
 
+# Colours
+The Colours box at the top switches the whole app straight away and remembers your choice: the original light look, Dragonfly dark (navy), or a high-contrast pair (yellow on black, black on white, black on yellow, white on blue, blue on black) if text is hard to read. This Guide names the original colours, like the red crosshair; in other themes the colour key under the preview shows what's what.
+
 # Good habits
 - New material? Burn a test grid first (step 2) and save the best patch as your own preset.
 - Add your test and result photos to the setting ('Add my photo...' in step 2), so next time you can see what each setting did.

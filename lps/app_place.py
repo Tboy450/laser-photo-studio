@@ -12,7 +12,7 @@ from .dialogs import FormDialog
 from .planner import Placement
 from .presets import PIECES
 from .preview import fmt_dur
-from .ui_common import COLORS, Slider, ToolTip, link, moves_note, wrap_label
+from .ui_common import COLORS, Slider, ToolTip, link, moves_note, paint, wrap_label
 
 PIECE_KEYS = list(PIECES)
 
@@ -98,7 +98,8 @@ class PlaceMixin:
             self.margin_vars.append(v)
         ttk.Label(mr, text="mm").grid(row=0, column=4, sticky="w")
         ttk.Label(m, text="No-burn zones (holes, twine, screws, existing art):").pack(anchor="w", pady=(8, 2))
-        self.ko_list = tk.Listbox(m, height=4, activestyle="none")
+        self.ko_list = paint(tk.Listbox(m, height=4, activestyle="none"), background="field", foreground="ink",
+                             selectbackground="select", selectforeground="select_ink", highlightbackground="border")
         self.ko_list.pack(fill="x")
         kr = ttk.Frame(m)
         kr.pack(fill="x", pady=(4, 0))
@@ -135,7 +136,7 @@ class PlaceMixin:
         self.sync_place_fields()
 
     def _nudge_pad(self, parent, fn):
-        moves_note(parent, COLORS["art"], "Moves the picture on the piece (blue box). Nothing moves on the "
+        moves_note(parent, "art", "Moves the picture on the piece (its dashed box). Nothing moves on the "
                                           "machine.").pack(fill="x", pady=(0, 4))
         pad = ttk.Frame(parent)
         pad.pack(anchor="w")
@@ -433,7 +434,7 @@ class PlaceMixin:
         if hint:
             lines.append(hint)
         self.check_text.configure(text="\n".join(lines),
-                                  foreground="#15803d" if rep["ok"] else "#b91c1c")
+                                  foreground=COLORS["ok"] if rep["ok"] else COLORS["bad"])
         folder = self.saved.get(self.gen)
         self.saved_lbl.configure(text=f"Saved in {folder}" if folder else "")
         self.refresh_laser_page()

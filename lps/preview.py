@@ -10,7 +10,7 @@ from PIL import Image, ImageTk
 
 from . import gcodeinfo, planner, simulate
 from .presets import LOOKS
-from .ui_common import COLORS, wrap_label
+from .ui_common import COLORS, paint, wrap_label
 
 
 def hexrgb(c):
@@ -35,11 +35,11 @@ class PreviewPanel(ttk.Frame):
         self.show_box.bind("<<ComboboxSelected>>", lambda e: self.refresh())
         self.show_lbl = ttk.Label(bar, text="Show:")
         self.show_lbl.pack(side="right", padx=4)
-        self.canvas = tk.Canvas(self, background=COLORS["canvas"], highlightthickness=0)
+        self.canvas = paint(tk.Canvas(self, highlightthickness=0), background="canvas")
         self.canvas.pack(fill="both", expand=True, pady=(6, 4))
         self.info = wrap_label(self, "", style="Muted.TLabel", width=900)
         self.info.pack(fill="x")
-        self.warn = wrap_label(self, "", width=900, foreground=COLORS["warn"])
+        self.warn = paint(wrap_label(self, "", width=900), foreground="warn")
         self.key = tk.Canvas(self, height=1, highlightthickness=0,
                              background=ttk.Style(self).lookup("TFrame", "background") or COLORS["bg"])
         self.key.pack(fill="x", pady=(2, 0))
@@ -160,16 +160,16 @@ class PreviewPanel(ttk.Frame):
         px0, py0, px1, py1 = planner.piece_rect(piece)
         fill = {"look": hexrgb(look[0]), "lgrbl": hexrgb(simulate.LASERGRBL_BG)}.get(self.view.get(), "#ffffff")
         if piece.get("shape") == "circle":
-            c.create_oval(tx(px0), ty(py1), tx(px1), ty(py0), fill=fill, outline="#6b5b4b", width=2)
+            c.create_oval(tx(px0), ty(py1), tx(px1), ty(py0), fill=fill, outline=COLORS["piece_edge"], width=2)
         else:
-            c.create_rectangle(tx(px0), ty(py1), tx(px1), ty(py0), fill=fill, outline="#6b5b4b", width=2)
+            c.create_rectangle(tx(px0), ty(py1), tx(px1), ty(py0), fill=fill, outline=COLORS["piece_edge"], width=2)
         if job is not None:
             g = job.geom
             ux0, uy0, ux1, uy1 = g.usable_rect
-            c.create_rectangle(tx(ux0), ty(uy1), tx(ux1), ty(uy0), outline="#9a8f80", dash=(3, 3))
+            c.create_rectangle(tx(ux0), ty(uy1), tx(ux1), ty(uy0), outline=COLORS["usable"], dash=(3, 3))
             if app.report and app.report.get("travel"):
                 t = app.report["travel"]
-                c.create_rectangle(tx(t[0]), ty(t[3]), tx(t[2]), ty(t[1]), outline="#7c8aa0", dash=(2, 4))
+                c.create_rectangle(tx(t[0]), ty(t[3]), tx(t[2]), ty(t[1]), outline=COLORS["travel"], dash=(2, 4))
             wpx, hpx = max(1, int(g.art_w * s)), max(1, int(g.art_h * s))
             im = self._art_image()
             if self.view.get() == "look":
@@ -190,10 +190,10 @@ class PreviewPanel(ttk.Frame):
                 if k.get("kind") == "circle":
                     r = float(k["r"])
                     c.create_oval(tx(kx - r), ty(ky + r), tx(kx + r), ty(ky - r), outline=COLORS["bad"], width=2,
-                                  fill="#f3c7c7", stipple="gray50")
+                                  fill=COLORS["keepout"], stipple="gray50")
                 else:
                     c.create_rectangle(tx(kx), ty(ky + float(k["h"])), tx(kx + float(k["w"])), ty(ky),
-                                       outline=COLORS["bad"], width=2, fill="#f3c7c7", stipple="gray50")
+                                       outline=COLORS["bad"], width=2, fill=COLORS["keepout"], stipple="gray50")
         if app.gfile and app.gfile.get("burn_bbox"):
             b = app.gfile["burn_bbox"]
             c.create_rectangle(tx(b[0]), ty(b[3]), tx(b[2]), ty(b[1]), outline=COLORS["accent"], width=2)
@@ -245,7 +245,8 @@ class PreviewPanel(ttk.Frame):
         t = c.create_text(e.x - 10 if right else e.x + 10, e.y + 10, anchor="ne" if right else "nw", text=what,
                           fill=col, tags="cursor", font=("Segoe UI", 9, "bold"), justify="right" if right else "left")
         x0, y0, x1, y1 = c.bbox(t)
-        c.tag_lower(c.create_rectangle(x0 - 3, y0 - 2, x1 + 3, y1 + 2, fill="#ffffff", outline=col, tags="cursor"), t)
+        c.tag_lower(c.create_rectangle(x0 - 3, y0 - 2, x1 + 3, y1 + 2, fill=COLORS["panel"], outline=col,
+                                       tags="cursor"), t)
 
     def draw_head(self):
         c = self.canvas
@@ -336,9 +337,9 @@ class PreviewPanel(ttk.Frame):
         app = self.app
         items = []
         if app.job is not None:
-            items += [("dash", COLORS["art"], "picture (art box)"), ("dash", "#9a8f80", "usable area")]
+            items += [("dash", COLORS["art"], "picture (art box)"), ("dash", COLORS["usable"], "usable area")]
             if app.report and app.report.get("travel"):
-                items.append(("dash", "#7c8aa0", "laser-off run-ups"))
+                items.append(("dash", COLORS["travel"], "laser-off run-ups"))
             if (app.job.piece or {}).get("keepouts"):
                 items.append(("keepout", COLORS["bad"], "no-burn zone"))
         if app.gfile and app.gfile.get("burn_bbox"):
@@ -370,24 +371,24 @@ class PreviewPanel(ttk.Frame):
             x0, y0, x1, y1 = x, y + 2, x + sw, y + 2 + sw
             cy = (y0 + y1) / 2
             if kind == "fill":
-                k.create_rectangle(x0, y0, x1, y1, fill=col, outline="#8a8278")
+                k.create_rectangle(x0, y0, x1, y1, fill=col, outline=COLORS["muted"])
             elif kind == "ramp":
                 c0, c1 = (tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in col)
                 for i in range(sw):
                     t = i / (sw - 1)
                     k.create_line(x0 + i, y0, x0 + i, y1, fill=hexrgb([a + (b - a) * t for a, b in zip(c0, c1)]))
-                k.create_rectangle(x0, y0, x1, y1, outline="#8a8278")
+                k.create_rectangle(x0, y0, x1, y1, outline=COLORS["muted"])
             elif kind == "dash":
                 k.create_rectangle(x0, y0, x1, y1, outline=col, dash=(3, 2))
             elif kind == "box":
                 k.create_rectangle(x0, y0, x1, y1, outline=col, width=2)
             elif kind == "keepout":
-                k.create_rectangle(x0, y0, x1, y1, outline=col, width=2, fill="#f3c7c7", stipple="gray50")
+                k.create_rectangle(x0, y0, x1, y1, outline=col, width=2, fill=COLORS["keepout"], stipple="gray50")
             elif kind == "cross":
                 k.create_line(x0, cy, x1, cy, fill=col, width=2)
                 k.create_line((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, fill=col, width=2)
             elif kind == "dot":
-                k.create_oval(x0 + 1, y0 + 1, x1 - 1, y1 - 1, fill="#ffffff", outline=col, width=2)
+                k.create_oval(x0 + 1, y0 + 1, x1 - 1, y1 - 1, fill=COLORS["panel"], outline=col, width=2)
             elif kind == "head":
                 k.create_oval(x0 + 1, y0 + 1, x1 - 1, y1 - 1, outline=col, width=2)
             k.create_text(x1 + 6, cy, text=text, anchor="w", font=font, fill=COLORS["ink"])

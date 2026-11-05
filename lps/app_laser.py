@@ -68,9 +68,9 @@ class LaserMixin:
                                  "again.")
         o = ttk.LabelFrame(f, text="Move the laser head and set the start point", style="Card.TLabelframe")
         o.pack(fill="x", pady=4)
-        moves_note(o, COLORS["head"], "These buttons move the real laser head (purple marker), laser off.").pack(
+        moves_note(o, "head", "These buttons move the real laser head (the head marker), laser off.").pack(
             fill="x", pady=(0, 4))
-        self.pos_lbl = tk.Label(o, text="X --   Y --", font=("Consolas", 13, "bold"), fg=COLORS["ink"])
+        self.pos_lbl = ttk.Label(o, text="X --   Y --", font=("Consolas", 13, "bold"))
         self.pos_lbl.pack(anchor="w")
         ToolTip(self.pos_lbl, "Where the controller thinks the head is, in mm from the start point. It only "
                               "matches the real spot after you set the start point (and again after a USB "
@@ -184,7 +184,8 @@ class LaserMixin:
         self.run_title.pack(anchor="w")
         self.run_bar = ttk.Progressbar(m, maximum=100)
         self.run_bar.pack(fill="x", pady=4)
-        self.laser_lbl = tk.Label(m, text=" laser off ", bg="#dcfce7", fg="#166534", font=("Segoe UI", 10, "bold"))
+        self.laser_lbl = tk.Label(m, text=" laser off ", bg=COLORS["ok_bg"], fg=COLORS["ok"],
+                                  font=("Segoe UI", 10, "bold"))
         self.laser_lbl.pack(anchor="w")
         self.run_lbl = wrap_label(m, "", style="Muted.TLabel")
         self.run_lbl.pack(anchor="w", pady=(4, 0))
@@ -456,16 +457,16 @@ class LaserMixin:
             on = rs.get("laser_on")
             self.pill.configure(text=f" {'LASER ON - ' if on else ''}Job: {PHASE_TEXT.get(rs['phase'], rs['phase'])} "
                                      f"{int(100 * rs.get('progress', 0))}% ",
-                                bg=COLORS["bad"] if on else "#c2410c")
+                                bg=COLORS["bad"] if on else COLORS["accent"], fg=COLORS["bg"])
         elif self.connected:
             st = self.last_status
             pos = f" X {st.wpos[0]:.1f} Y {st.wpos[1]:.1f}" if st and st.wpos else ""
             demo = "Demo laser" if self.demo.get() else "Connected"
             self.pill.configure(text=f" {'LASER ON (dot) - ' if self.dot_on else ''}{demo} - "
                                      f"{st.state if st else '...'}{pos} ",
-                                bg=COLORS["bad"] if self.dot_on else COLORS["ok"])
+                                bg=COLORS["bad"] if self.dot_on else COLORS["ok"], fg=COLORS["bg"])
         else:
-            self.pill.configure(text=" Not connected ", bg="#6b7280")
+            self.pill.configure(text=" Not connected ", bg=COLORS["pill"], fg=COLORS["header_ink"])
         self.origin_help.configure(text=f"Move the head over the {self.origin_words()} (use the dot to see exactly "
                                         "where the beam is), then press 'Set start point here'."
                                         + ("  Start point set." if self.origin_set else ""))
@@ -705,8 +706,8 @@ class LaserMixin:
             bits.append(f"head X {st['wpos'][0]:.1f} Y {st['wpos'][1]:.1f}")
         self.run_lbl.configure(text="  |  ".join(bits) + "\n" + st.get("message", ""))
         on = bool(st.get("laser_on")) and ph in LIVE
-        self.laser_lbl.configure(text=" LASER ON " if on else " laser off ", bg="#fee2e2" if on else "#dcfce7",
-                                 fg="#991b1b" if on else "#166534")
+        self.laser_lbl.configure(text=" LASER ON " if on else " laser off ",
+                                 bg=COLORS["bad_bg"] if on else COLORS["ok_bg"], fg=COLORS["bad"] if on else COLORS["ok"])
         for b, ok in ((self.btn_pause, alive and ph == "running"), (self.btn_resume, alive and ph == "paused"),
                       (self.btn_stop, alive and ph in ("running", "paused", "waiting_photo"))):
             b.state(["!disabled"] if ok else ["disabled"])

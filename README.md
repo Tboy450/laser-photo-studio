@@ -48,6 +48,11 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
    the head there, or to say "the dot is really here" (nothing moves). Tick **Move the picture with the head** to
    shift the whole picture on the real piece as you jog.
 
+The **Colours** box (top right) switches the whole app live: the original light look, **Dragonfly dark** (the navy,
+cyan and amber of the NASA Dragonfly site), or a high-contrast pair for easier reading: yellow on black, black on
+white, black on yellow, white on blue, blue on black. Each theme is tested for contrast (WCAG: 7:1 for the pairs'
+text).
+
 The **Guide** button (top right) explains everything in plain words: too light or too dark, negatives and
 LaserGRBL's preview, print styles, LaserGRBL settings (with the Hot Wheels car's mistakes and a list of LaserGRBL's
 names next to this app's), start point and perimeter check (moving the picture vs moving the head), backgrounds & stickers (why a whole rectangle burns, fills vs outlines), USB dropouts, safety and files.

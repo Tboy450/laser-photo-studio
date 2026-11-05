@@ -18,7 +18,7 @@ from .dialogs import FormDialog, TestGridDialog
 from .preview import PreviewPanel
 from .presets import BADGES, PIECES, STYLES
 from .sample_view import SampleStrip
-from .ui_common import COLORS, ScrollFrame, badge, link, setup_style, wrap_label
+from .ui_common import COLORS, THEMES, ScrollFrame, apply_theme, badge, badge_colors, link, paint, wrap_label
 
 GROUPS = (("PROVEN", "Proven on your U20"), ("START", "Starting points - test first"),
           ("EXPERIMENTAL", "Experimental - test first"), ("MINE", "My presets"))
@@ -31,8 +31,6 @@ class App(PlaceMixin, LaserMixin):
         root.title(f"Laser Photo Studio {__version__}  -  Tronxy Ultrabot U20")
         root.geometry("1380x880")
         root.minsize(1120, 720)
-        setup_style(root)
-        root.configure(background=COLORS["bg"])
         ico = jobs.APP_DIR / "assets" / "icon.ico"
         if ico.exists():
             try:
@@ -40,6 +38,8 @@ class App(PlaceMixin, LaserMixin):
             except tk.TclError:
                 pass
         self.settings = jobs.load_settings()
+        apply_theme(root, self.settings.get("theme", "light"))
+        paint(root, background="bg")
         self.materials = presets.load_materials()
         self.mat = self.base_mat = self.materials[0]
         self.help_win = None
@@ -77,17 +77,23 @@ class App(PlaceMixin, LaserMixin):
 
     # ================================================================ layout
     def _build_ui(self):
-        top = tk.Frame(self.root, background="#2b2622", height=48)
+        top = paint(tk.Frame(self.root, height=48), background="header")
         top.pack(fill="x")
-        tk.Label(top, text="  Laser Photo Studio", fg="#ffffff", bg="#2b2622",
-                 font=("Segoe UI", 15, "bold")).pack(side="left", pady=8)
-        tk.Label(top, text="picture -> checked G-code -> safe runs on your Tronxy U20", fg="#cbbfb2",
-                 bg="#2b2622").pack(side="left", padx=10)
+        paint(tk.Label(top, text="  Laser Photo Studio", font=("Segoe UI", 15, "bold")),
+              foreground="header_ink", background="header").pack(side="left", pady=8)
         ttk.Button(top, text="Settings", command=self.open_settings).pack(side="right", padx=(4, 10))
         ttk.Button(top, text="Guide", command=lambda: self.open_help()).pack(side="right", padx=4)
-        self.pill = tk.Label(top, text=" Not connected ", bg="#6b7280", fg="white", font=("Segoe UI", 10, "bold"),
-                             padx=8, pady=3)
+        names = {k: v["name"] for k, v in THEMES.items()}
+        self.theme_var = tk.StringVar(value=names.get(self.settings.get("theme", "light"), names["light"]))
+        tb = ttk.Combobox(top, textvariable=self.theme_var, state="readonly", width=25, values=list(names.values()))
+        tb.pack(side="right", padx=4)
+        tb.bind("<<ComboboxSelected>>", lambda e: self.set_theme(list(names)[tb.current()]))
+        paint(tk.Label(top, text="Colours"), foreground="header_muted", background="header").pack(side="right")
+        self.pill = paint(tk.Label(top, text=" Not connected ", font=("Segoe UI", 10, "bold"), padx=8, pady=3),
+                          background="pill", foreground="header_ink")
         self.pill.pack(side="right", padx=6)
+        paint(tk.Label(top, text="picture -> checked G-code -> safe runs on your Tronxy U20", anchor="w"),
+              foreground="header_muted", background="header").pack(side="left", padx=10, fill="x", expand=True)
         pw = ttk.PanedWindow(self.root, orient="horizontal")
         pw.pack(fill="both", expand=True)
         left = ttk.Frame(pw, width=470)
@@ -103,7 +109,7 @@ class App(PlaceMixin, LaserMixin):
         self.preview = PreviewPanel(pw, self)
         pw.add(self.preview, weight=1)
         self.root.after(150, lambda: pw.sashpos(0, int(self.root.winfo_fpixels("5.6i"))))
-        self.statusbar = tk.Label(self.root, anchor="w", bg="#e7e2da", fg=COLORS["ink"], padx=10, pady=4)
+        self.statusbar = paint(tk.Label(self.root, anchor="w", padx=10, pady=4), background="status")
         self.statusbar.pack(fill="x", side="bottom")
         self._page_picture(self.pages[0].inner)
         self._page_material(self.pages[1].inner)
@@ -113,8 +119,28 @@ class App(PlaceMixin, LaserMixin):
         self.say("Welcome! Step 1: open a picture. Or open a G-code file to check where it will burn.")
 
     def say(self, text, kind="info"):
+        self._said = (text, kind)
         col = {"info": COLORS["ink"], "ok": COLORS["ok"], "warn": COLORS["warn"], "bad": COLORS["bad"]}[kind]
         self.statusbar.configure(text=text, fg=col)
+
+    def set_theme(self, name):
+        """Switch colours now (and next time): Light, Dragonfly dark, or a high-contrast pair."""
+        old = dict(COLORS)
+        apply_theme(self.root, name)
+        self.settings["theme"] = name
+        jobs.save_settings(self.settings)
+        self.theme_var.set(THEMES[name]["name"])
+        for lab in (self.conn_lbl, self.gfile_lbl):      # coloured by what they say: keep the same meaning
+            role = next((k for k, v in old.items() if v == str(lab.cget("foreground"))), None)
+            if role:
+                lab.configure(foreground=COLORS[role])
+        self.preview.key.configure(background=ttk.Style().lookup("TFrame", "background") or COLORS["bg"])
+        self.preview.refresh()
+        self._show_material()
+        self.update_check_panel()
+        self._ready_shown = None
+        self.refresh_laser_page()
+        self.say(*getattr(self, "_said", ("Colours changed.", "info")))
 
     def goto(self, index):
         self.nb.select(index)
@@ -311,8 +337,7 @@ class App(PlaceMixin, LaserMixin):
     def _show_material(self):
         m = self.mat
         self.m_name.configure(text=m.name)
-        bg, fg = {"PROVEN": ("#dcfce7", "#166534"), "START": ("#fef3c7", "#92400e"),
-                  "EXPERIMENTAL": ("#fee2e2", "#991b1b"), "MINE": ("#dbeafe", "#1e40af")}[m.badge]
+        bg, fg = badge_colors(m.badge)
         self.m_badge.configure(text=f" {BADGES[m.badge]} ", background=bg, foreground=fg)
         self.m_summary.configure(text=m.summary)
         self.sample_strip.show(m)
