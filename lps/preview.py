@@ -2,19 +2,28 @@
 zones, laser-off run-up area, the start point, perimeter dots and the live head position."""
 from __future__ import annotations
 
+import math
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk
 
 from PIL import Image, ImageTk
 
-from . import gcodeinfo, planner, simulate
+from . import gcodeinfo, jobs, planner, simulate
 from .presets import LOOKS
 from .ui_common import COLORS, paint, wrap_label
 
 
 def hexrgb(c):
     return "#%02x%02x%02x" % tuple(int(v) for v in c)
+
+
+GRID_STEPS = (0.5, 1, 2, 5, 10, 20, 50, 100)     # mm
+
+
+def grid_step(px_per_mm: float, min_px: float = 36.0) -> float:
+    """The finest round spacing whose squares are still big enough to see at this zoom."""
+    return next((g for g in GRID_STEPS if g * px_per_mm >= min_px), GRID_STEPS[-1])
 
 
 class PreviewPanel(ttk.Frame):
@@ -35,6 +44,10 @@ class PreviewPanel(ttk.Frame):
         self.show_box.bind("<<ComboboxSelected>>", lambda e: self.refresh())
         self.show_lbl = ttk.Label(bar, text="Show:")
         self.show_lbl.pack(side="right", padx=4)
+        self.grid_on = tk.BooleanVar(value=bool(app.settings.get("grid", True)))
+        self.grid_mm = None       # the spacing drawn right now
+        ttk.Checkbutton(bar, text="Grid", variable=self.grid_on, command=self._grid_toggled).pack(side="right",
+                                                                                                  padx=8)
         self.canvas = paint(tk.Canvas(self, highlightthickness=0), background="canvas")
         self.canvas.pack(fill="both", expand=True, pady=(6, 4))
         self.info = wrap_label(self, "", style="Muted.TLabel", width=900)
@@ -194,6 +207,9 @@ class PreviewPanel(ttk.Frame):
                 else:
                     c.create_rectangle(tx(kx), ty(ky + float(k["h"])), tx(kx + float(k["w"])), ty(ky),
                                        outline=COLORS["bad"], width=2, fill=COLORS["keepout"], stipple="gray50")
+        self.grid_mm = grid_step(s) if self.grid_on.get() else None
+        if self.grid_mm:
+            self._draw_grid(tx, ty, px0, py0, px1, py1)
         if app.gfile and app.gfile.get("burn_bbox"):
             b = app.gfile["burn_bbox"]
             c.create_rectangle(tx(b[0]), ty(b[3]), tx(b[2]), ty(b[1]), outline=COLORS["accent"], width=2)
@@ -210,6 +226,30 @@ class PreviewPanel(ttk.Frame):
                 c.create_text(tx(px), ty(py), text=str(i + 1), font=("Segoe UI", 8, "bold"))
         self.draw_head()
         self._update_info()
+
+    def _draw_grid(self, tx, ty, px0, py0, px1, py1):
+        """Squares over the piece, lined up with the start point; the numbers are mm from it, as in step 5's X/Y."""
+        c, step, col, back = self.canvas, self.grid_mm, COLORS["grid"], COLORS["grid_back"]
+        font = ("Segoe UI", 8)
+
+        def line(x0, y0, x1, y1, zero):
+            if back:
+                c.create_line(x0, y0, x1, y1, fill=back, tags="grid")
+            c.create_line(x0, y0, x1, y1, fill=col, dash=(6, 3) if zero else (3, 3), tags="grid")
+
+        for k in range(math.ceil(px0 / step - 1e-9), math.floor(px1 / step + 1e-9) + 1):
+            x = k * step
+            line(tx(x), ty(py0), tx(x), ty(py1), k == 0)
+            c.create_text(tx(x), ty(py1) - 7, text=f"{x:g}", fill=COLORS["muted"], font=font, tags="grid")
+        for k in range(math.ceil(py0 / step - 1e-9), math.floor(py1 / step + 1e-9) + 1):
+            y = k * step
+            line(tx(px0), ty(y), tx(px1), ty(y), k == 0)
+            c.create_text(tx(px0) - 4, ty(y), text=f"{y:g}", anchor="e", fill=COLORS["muted"], font=font, tags="grid")
+
+    def _grid_toggled(self):
+        self.app.settings["grid"] = self.grid_on.get()
+        jobs.save_settings(self.app.settings)
+        self.redraw()
 
     def _to_mm(self, e):
         """Canvas pixel -> (work X, work Y, mm from the piece's left edge, mm up from its bottom edge)."""
@@ -336,6 +376,9 @@ class PreviewPanel(ttk.Frame):
         """Key entries for the lines and markers drawn over the art."""
         app = self.app
         items = []
+        if self.grid_mm:
+            items.append(("grid", COLORS["grid"], f"grid: {self.grid_mm:g} mm squares ({self.grid_mm / 25.4:.2f} in), "
+                                                    "numbers = mm from the start point"))
         if app.job is not None:
             items += [("dash", COLORS["art"], "picture (art box)"), ("dash", COLORS["usable"], "usable area")]
             if app.report and app.report.get("travel"):
@@ -384,6 +427,10 @@ class PreviewPanel(ttk.Frame):
                 k.create_rectangle(x0, y0, x1, y1, outline=col, width=2)
             elif kind == "keepout":
                 k.create_rectangle(x0, y0, x1, y1, outline=col, width=2, fill=COLORS["keepout"], stipple="gray50")
+            elif kind == "grid":
+                for f in (1 / 3, 2 / 3):
+                    k.create_line(x0 + sw * f, y0, x0 + sw * f, y1, fill=col)
+                    k.create_line(x0, y0 + sw * f, x1, y0 + sw * f, fill=col)
             elif kind == "cross":
                 k.create_line(x0, cy, x1, cy, fill=col, width=2)
                 k.create_line((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, fill=col, width=2)

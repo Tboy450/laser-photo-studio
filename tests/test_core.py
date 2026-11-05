@@ -345,8 +345,19 @@ class Explanations(unittest.TestCase):
                 self.assertGreaterEqual(contrast(t[role], t["bg"]), 4.5, (key, role))
             for role in ("ok", "bad"):                                        # status text on its own badge
                 self.assertGreaterEqual(contrast(t[role], t[role + "_bg"]), 4.5, (key, role))
+            self.assertGreaterEqual(contrast(t["grid"], t["canvas"]), 3.0, key)
+            if key not in ("light", "dragonfly"):     # a contrast pair's grid is its text colour, with a backing line
+                self.assertEqual(t["grid"], t["ink"], key)
+                self.assertGreaterEqual(contrast(t["grid"], t["grid_back"]), 7.0, key)
             self.assertGreaterEqual(contrast(t["art"], t["canvas"]), 3.0, key)    # markers on the preview
             self.assertGreaterEqual(contrast(t["head"], t["canvas"]), 3.0, key)
+
+    def test_grid_spacing_follows_the_zoom(self):
+        from lps.preview import grid_step
+        self.assertEqual(grid_step(3.5), 20)      # a 7 x 6 in plank fills the preview: coarse squares
+        self.assertEqual(grid_step(8.6), 5)       # a toy car: finer
+        self.assertEqual(grid_step(80.0), 0.5)    # tiny piece
+        self.assertEqual(grid_step(0.1), 100)     # never fails on a huge piece
 
     def test_settings_show_other_units(self):
         from lps.app import adv_hint

@@ -36,7 +36,8 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
    windshield's front edge, on the centerline.
 4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Every preview mode (Looks like,
    What burns, In LaserGRBL, Picture) has a **colour key** underneath saying what each colour, dashed box and marker
-   means, and the app warns when a logo's or sticker's plain background would burn as a filled rectangle. Then every command is replayed
+   means, a **Grid** (spacing follows the piece's size; numbers are mm from the start point) helps you read off
+   positions, and the app warns when a logo's or sticker's plain background would burn as a filled rectangle. Then every command is replayed
    offline: only allowed powers and speeds, nothing outside the piece, every dot burned exactly once, laser off at
    every start and end. Nothing reaches the laser until this passes. Save the job or open it in LaserGRBL.
 5. **Laser.** Connect, **move the laser head** (purple pad, purple marker in the preview) to the start point, set it,

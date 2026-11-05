@@ -17,6 +17,7 @@ START = """# Five steps
 - In LaserGRBL: how LaserGRBL's preview will draw the file.
 - Picture: the adjusted picture before it becomes laser moves.
 Each one has a colour key under the preview that says what every colour, dashed box and marker means.
+The Grid tick box draws squares over the piece. Their size follows the zoom (finer on a small piece) and the key says how big they are. The numbers are mm from the start point, the same as the X/Y in step 5, so you can read off where anything will land.
 
 # Colours
 The Colours box at the top switches the whole app straight away and remembers your choice: the original light look, Dragonfly dark (navy), or a high-contrast pair (yellow on black, black on white, black on yellow, white on blue, blue on black) if text is hard to read. This Guide names the original colours, like the red crosshair; in other themes the colour key under the preview shows what's what.

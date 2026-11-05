@@ -199,6 +199,15 @@ def main():
     app.use_car(presets.car_values("mustang"))
     assert pump(app, 30, lambda: app.job.piece.get("name", "").startswith("Toy car")), "car job"
     shot(app, "2d-toy-car-piece")
+    # The grid follows the zoom: finer on the small car than on the plank; it can be switched off.
+    cv = app.preview.canvas
+    assert app.preview.grid_mm and app.preview.grid_mm <= 10 and cv.find_withtag("grid"), app.preview.grid_mm
+    assert any(t.startswith("grid:") for _, _, t in app.preview._key_items), app.preview._key_items
+    app.preview.grid_on.set(False)
+    app.preview._grid_toggled()
+    assert not cv.find_withtag("grid") and not jobs.load_settings()["grid"]
+    app.preview.grid_on.set(True)
+    app.preview._grid_toggled()
     app.goto(3)     # the check runs from step 4
     assert pump(app, 30, lambda: app.report is not None and app.compiled_gen == app.gen), "car check"
     assert app.report["ok"] and len(app.job.piece["keepouts"]) == 2, app.report
@@ -211,6 +220,9 @@ def main():
         pump(app, 0.6)
         assert COLORS["ink"] == THEMES[name]["ink"] and app.preview.canvas.cget("background") == COLORS["canvas"]
         assert jobs.load_settings()["theme"] == name
+        cv = app.preview.canvas
+        fills = {cv.itemcget(i, "fill") for i in cv.find_withtag("grid") if cv.type(i) == "line"}
+        assert COLORS["grid"] in fills and "#ffffff" not in fills - {COLORS["grid"], COLORS["grid_back"]}, (name, fills)
         shot(app, f"7-theme-{name}")
     app.goto(4)
     app.set_theme("dragonfly")
