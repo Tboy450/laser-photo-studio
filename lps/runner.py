@@ -15,7 +15,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import jobs, recovery
+from . import jobs, recovery, position_memory
 from .machine import (ControllerError, Grbl, LinkError, SerialWire, check_settings, require_off)
 
 
@@ -46,6 +46,8 @@ class Runner:
         self.active_mark = None
         self.parking = False
         self.next_save = 0.0
+        self.memory = position_memory.PositionMemory(self.spec.get("position_memory_path") or
+                                                     self.folder / "position-memory.json")
         m = self.job["material"]
         self.hop = int(m.get("hop_feed", 3000))
         self.env = self.job.get("envelope")
@@ -77,6 +79,9 @@ class Runner:
             self.active_mark = now
         self.state["elapsed_s"] = round(self.active_s, 1)
         self.state["updated"] = dt.datetime.now().isoformat(timespec="seconds")
+        self.state["position_record"] = self.memory.data
+        if self.memory.enabled:
+            self.memory.save()
         self._progress()
         if self.state.get("demo") and self.wire is not None and hasattr(self.wire, "ctrl"):
             c = self.wire.ctrl
@@ -149,6 +154,7 @@ class Runner:
                     self.last_wpos = wp
                     self.last_motion_at = now
                 self.state["wpos"] = list(wp)
+                self.state["position_at"] = time.time()
                 e = self.env
                 if e and not self.parking and not (e[0] - 1 <= wp[0] <= e[2] + 1 and e[1] - 1 <= wp[1] <= e[3] + 1):
                     raise ControllerError(f"Head reported at X{wp[0]} Y{wp[1]}, outside this job's area. Stopped.")
@@ -189,7 +195,9 @@ class Runner:
             self.watch()
             st = self.g.status
             if self.g.status_serial > seen and st and st.state == "Idle" and not self.g.pending:
+                self.memory.settled(st)
                 return st
+            self.save()
             time.sleep(0.01)
         raise ControllerError("The machine didn't come to rest in time.")
 
@@ -207,7 +215,7 @@ class Runner:
                 self.settle = 0.05
             else:
                 self.wire = SerialWire(self.spec.get("port", "COM4"), int(self.spec.get("baud", 115200)))
-        self.g = Grbl(self.wire, log=self.log)
+        self.g = Grbl(self.wire, log=self.log, observer=self.memory.protocol)
         self.g.open(settle=self.settle)
         if self.g.reset_seen:
             raise ControllerError("The controller restarted when the job connected, so its position can't be "
@@ -227,7 +235,8 @@ class Runner:
             raise ControllerError("Controller settings changed: " + ", ".join(problems) + ". Nothing was sent.")
         require_off(self.g, 0)
         self.g.command("G21 G90 G94 G54 M5 S0")
-        self.wait_idle(25)
+        st = self.wait_idle(25)
+        self.memory.arm(st, self.spec.get("setup_context") or dict(job_folder=str(self.folder)))
 
     def load_passes(self):
         out = []
@@ -244,6 +253,8 @@ class Runner:
         armed = False
         stop_after = False
         self.state["pass_total"] = len(body)
+        self.memory.begin("engraving", dict(job_folder=str(self.folder), pass_index=self.pi,
+                                            start_index=self.state["sent"], pass_total=len(body)))
         while True:
             self.check_control()
             if self.estop_req:
@@ -273,6 +284,10 @@ class Runner:
                     self.state["last_xy"] = list(self.last_xy) if self.last_xy else None
                     i += 1
             self.poll()
+            accepted = i - len(g.pending)
+            body_indices = [bi for _, bi in items[max(0, accepted - 8):accepted] if bi is not None]
+            if body_indices:
+                self.state["last_accepted"] = [self.pi, body_indices[-1]]
             self.watch()
             if i >= len(items) and not g.pending:
                 return "done"
@@ -285,6 +300,7 @@ class Runner:
     def park(self, final=False):
         self.parking = True
         try:
+            self.memory.begin("park", dict(target=self.park_xy))
             self.g.command("M5 S0")
             self.g.command(f"G1 X{self.park_xy[0]:.3f} Y{self.park_xy[1]:.3f} F{self.hop} S0")
             self.last_xy = self.park_xy
@@ -405,6 +421,10 @@ class Runner:
             return self.fault(f"Unexpected error: {e}", bodies)
         finally:
             try:
+                self.memory.disconnect()
+            except OSError as e:
+                self.log(f"Position record could not be saved: {e}")
+            try:
                 if self.g:
                     self.g.close()
             except Exception:
@@ -412,7 +432,10 @@ class Runner:
             self.release_lock()
             keep_awake(False)
             self.active_mark = None
-            self.save(force=True)
+            try:
+                self.save(force=True)
+            except OSError as e:
+                self.log(f"Final progress record could not be saved: {e}")
 
     def finish_estop(self, bodies):
         ok, st = self.estop()
@@ -451,9 +474,11 @@ class Runner:
             else None
         if self.state["resume"]:
             self.state["resume"]["kept_position"] = False
+            self.state["resume"]["position_basis"] = "last_sent_endpoint_not_confirmed"
             p = self.state["resume"]["expected_start"]
-            self.phase("dropout", f"USB connection lost: {msg} The head stopped at about X{p[0]:.2f} Y{p[1]:.2f} "
-                                  "(end of the last command sent). Use 'Resume after dropout'.")
+            self.phase("dropout", f"USB connection lost: {msg} Last sent endpoint: X{p[0]:.2f} Y{p[1]:.2f}. "
+                                  "This is a candidate stop, not confirmed motion. Reported position, idle checkpoint "
+                                  "and accepted/sent command indices are saved. Use 'Resume after dropout' to reconcile.")
         else:
             self.phase("fault", f"Couldn't start: {msg}")
         return "dropout"

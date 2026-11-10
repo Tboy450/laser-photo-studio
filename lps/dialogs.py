@@ -258,6 +258,111 @@ class StartDialog(tk.Toplevel):
         self.destroy()
 
 
+class LidLadderDialog(tk.Toplevel):
+    """Wide-range power x speed ladder on a round lid: the app works out the patch size and how many lids it takes."""
+
+    def __init__(self, master, wait=True):
+        super().__init__(master)
+        from . import ladder
+        self.ladder = ladder
+        self.title("Wide-range lid ladder")
+        self.transient(master)
+        self.resizable(False, False)
+        self.result = None
+        f = ttk.Frame(self, padding=16)
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text="Wide-range lid ladder (2 in circle)", style="H1.TLabel").grid(row=0, column=0, columnspan=3,
+                                                                                        sticky="w")
+        ttk.Label(f, wraplength=640, justify="left",
+                  text="Solid patches for every power and speed, packed into the lid. Each speed is its own pass, "
+                       "fastest first and slowest last. Patches have no engraved labels: the job folder gets a "
+                       "printable map ('5 LADDER MAP'), and one small mark burns at the top.").grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(4, 10))
+        self.v = {}
+        rows = [("material", "Lid material"), ("powers", "Powers (%)"), ("speeds", "Speeds (mm/min)"),
+                ("diameter", "Lid diameter (mm)"), ("safe", "Safe circle for marks (mm)"), ("lid", "Lid number")]
+        for i, (k, label) in enumerate(rows, 2):
+            ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=3)
+            self.v[k] = tk.StringVar()
+            if k == "material":
+                w = ttk.Combobox(f, textvariable=self.v[k], values=ladder.LID_MATERIALS, width=44)
+            else:
+                w = ttk.Entry(f, textvariable=self.v[k], width=46)
+            w.grid(row=i, column=1, sticky="w", padx=(10, 0))
+            self.v[k].trace_add("write", lambda *a: self._summary())
+        pr = ttk.Frame(f)
+        pr.grid(row=2, column=2, rowspan=3, sticky="nw", padx=(10, 0))
+        ttk.Button(pr, text="A: 6 powers x 8 speeds", command=lambda: self._preset("A")).pack(anchor="w")
+        ttk.Button(pr, text="B: 11 powers x 8 speeds", command=lambda: self._preset("B")).pack(anchor="w", pady=4)
+        sr = ttk.Frame(f)
+        sr.grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Label(sr, text="Fill speeds evenly (log scale): from").pack(side="left")
+        self.lo, self.hi, self.count = tk.StringVar(value="50"), tk.StringVar(value="6000"), tk.StringVar(value="8")
+        for var, txt in ((self.lo, "to"), (self.hi, "mm/min, count"), (self.count, "")):
+            ttk.Entry(sr, textvariable=var, width=6).pack(side="left", padx=4)
+            if txt:
+                ttk.Label(sr, text=txt).pack(side="left")
+        ttk.Button(sr, text="Fill", command=self._log_fill).pack(side="left", padx=6)
+        self.info = ttk.Label(f, wraplength=640, justify="left")
+        self.info.grid(row=9, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        bar = ttk.Frame(f)
+        bar.grid(row=10, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        ttk.Button(bar, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(bar, text="Make the ladder", command=self._ok).pack(side="right", padx=6)
+        for k, val in (("material", ladder.LID_MATERIALS[0]), ("diameter", "50.8"), ("safe", "45.72"), ("lid", "1")):
+            self.v[k].set(val)
+        self._preset("A")
+        if wait:
+            self.grab_set()
+            self.wait_window()
+
+    def _preset(self, key):
+        p = self.ladder.PRESETS[key]
+        self.v["powers"].set(", ".join(f"{x:g}" for x in p["powers"]))
+        self.v["speeds"].set(", ".join(f"{x:g}" for x in p["speeds"]))
+
+    def _log_fill(self):
+        try:
+            sp = self.ladder.log_speeds(float(self.lo.get()), float(self.hi.get()), int(self.count.get()))
+        except (ValueError, ZeroDivisionError):
+            return
+        self.v["speeds"].set(", ".join(f"{x:g}" for x in sp))
+
+    def values(self):
+        nums = lambda s: [float(x) for x in s.replace(";", ",").split(",") if x.strip()]
+        d = dict(kind="lid", material=self.v["material"].get().strip(), powers=nums(self.v["powers"].get()),
+                 speeds=[int(x) for x in nums(self.v["speeds"].get())], diameter=float(self.v["diameter"].get()),
+                 safe=float(self.v["safe"].get()), lid=int(float(self.v["lid"].get() or 1)))
+        if not d["powers"] or not d["speeds"] or any(not 1 <= p <= 100 for p in d["powers"]) \
+                or any(not 50 <= s <= 6000 for s in d["speeds"]) or not 10 <= d["safe"] <= d["diameter"] <= 200:
+            raise ValueError("Powers must be 1-100 %, speeds 50-6000 mm/min, and the safe circle inside the lid.")
+        return d
+
+    def _summary(self):
+        try:
+            d = self.values()
+        except (ValueError, KeyError) as e:
+            self.info.configure(text=str(e) if "must" in str(e) else "Check the numbers.", foreground=COLORS["bad"])
+            return
+        lad = self.ladder
+        pl = lad.plan(d["powers"], d["speeds"], d["safe"] / 2)
+        patches, _ = lad.assign(d["powers"], d["speeds"], pl["cells"], min(d["lid"], pl["lids"]), pl["per_lid"])
+        n = len(d["powers"]) * len(d["speeds"])
+        fit = (f"{n} patches of {pl['patch']:g} mm fit on one lid ({len(pl['cells'])} spaces)." if pl["lids"] == 1 else
+               f"{n} patches need {pl['lids']} lids at {pl['patch']:g} mm ({pl['per_lid']} per lid): make lid 1, "
+               "then lid 2 and so on.")
+        warn = lad.notes(d["powers"], d["speeds"], d["diameter"] / 2, patches, pl["patch"])
+        self.info.configure(text=fit + "\n\n" + "\n".join("- " + w for w in warn), foreground=COLORS["ink"])
+
+    def _ok(self):
+        try:
+            self.result = self.values()
+        except ValueError as e:
+            messagebox.showerror("Check the numbers", str(e), parent=self)
+            return
+        self.destroy()
+
+
 class TestGridDialog(tk.Toplevel):
     def __init__(self, master, mat: Material):
         super().__init__(master)
@@ -408,10 +513,7 @@ class SettingsDialog(FormDialog):
             ("baud", "Baud rate", settings["baud"], "int"),
             ("phone_folder", "Folder where phone photos arrive", settings["phone_folder"], "str"),
             ("lasergrbl", "LaserGRBL.exe", settings["lasergrbl"], "str"),
-            ("pulses", "Dot flashes per corner (perimeter check)", settings["pulses"], "int"),
-            ("perimeter_feed", "Perimeter travel speed (mm/min)", settings["perimeter_feed"], "int"),
-            ("perimeter_spacing", "Extra edge dots every N mm (0 = corners only)", settings["perimeter_spacing"],
-             "float"),
+            ("perimeter_feed", "Actual-outline check speed (mm/min)", settings["perimeter_feed"], "int"),
         ], intro="Machine: Tronxy Ultrabot U20 (MKS DLC32, Grbl 1.1h). The app checks $30=1000, $31=0, $32=1 and "
                  "$100/$101=100 before any laser output, and never homes.", ok_text="Save")
 
@@ -437,8 +539,17 @@ class RecoveryDialog(tk.Toplevel):
         ptitle = job.get("passes", [{}] * (pi + 1))[pi].get("title", f"pass {pi + 1}") if pi < npass else "end"
         ttk.Label(f, text="Resume the job", style="H1.TLabel").pack(anchor="w")
         wrap_label(f, state.get("message", ""), width=500).pack(anchor="w", pady=(4, 6))
-        wrap_label(f, f"It will continue {ptitle} ({pi + 1} of {npass}) from where it stopped, without burning "
-                      f"anything twice. Stop point: X {self.point[0]:.2f}, Y {self.point[1]:.2f} mm.",
+        evidence = state.get("position_record") or {}
+        last = (evidence.get("last_reported") or {}).get("wpos")
+        idle = (evidence.get("last_idle") or {}).get("wpos")
+        if last or idle:
+            wrap_label(f, f"Last reported XY: {last}. Last confirmed idle XY: {idle}.\n"
+                          f"Accepted command: {state.get('last_accepted')}; sent command: {state.get('last_written')}. "
+                          "Accepted means queued, not necessarily engraved.", width=500).pack(anchor="w")
+        wrap_label(f, f"Prepared continuation: {ptitle} ({pi + 1} of {npass}). "
+                      f"{'Confirmed row end' if self.kept else 'Candidate endpoint to verify'}: "
+                      f"X {self.point[0]:.2f}, Y {self.point[1]:.2f} mm. "
+                      "After a link failure, sent/accepted commands do not prove completed motion.",
                    width=500).pack(anchor="w")
         self.steps = ttk.Frame(f)
         self.steps.pack(fill="x", pady=(10, 0))
@@ -456,8 +567,8 @@ class RecoveryDialog(tk.Toplevel):
         s2.pack(fill="x", pady=4)
         txt = ("The job stopped cleanly, so the controller still knows its position. If it shows the stop point "
                "below, skip to step 3." if self.kept else
-               "A replug restarts the controller and it forgets where the head is. The head stopped at the end of "
-               "the last command sent, so declare that point (this never moves the head).")
+               "A replug may reset the controller. The saved endpoint is where the last sent command would finish; "
+               "verify it before declaring it. Declaring coordinates never moves the head.")
         wrap_label(s2, txt, width=470).pack(anchor="w")
         ttk.Button(s2, text=f"The head is at the stop point (X {self.point[0]:.2f}, Y {self.point[1]:.2f})",
                    command=self.declare).pack(anchor="w", pady=(6, 0))
@@ -504,9 +615,15 @@ class RecoveryDialog(tk.Toplevel):
         if not self.app.connected:
             messagebox.showinfo("Connect first", "Connect to the laser first (step 1).", parent=self)
             return
+        if not self.kept and not messagebox.askyesno("Confirm the interrupted position",
+                "Does the physical head match the saved candidate endpoint? A write/acknowledgement is not proof "
+                "the move finished. Only declare this point after checking it.", parent=self):
+            return
         self.app.worker.submit("declare", machine.set_origin_here, self.point[0], self.point[1])
 
     def on_event(self, ev):
+        if ev[0] in ("connected", "disconnected", "rebooted", "link_lost"):
+            self.declared = False
         if ev[0] == "done" and ev[1] == "declare":
             self.declared = True
         if ev[0] == "dot":
@@ -530,12 +647,21 @@ class RecoveryDialog(tk.Toplevel):
             ok = self.at_point()
             self.pos.configure(text=f"Controller says the head is at X {st.wpos[0]:.2f}, Y {st.wpos[1]:.2f}"
                                     + ("  - matches the stop point" if ok else ""))
-        ready = self.app.connected and st is not None and st.state == "Idle" and self.at_point()
+        ready = self.ready()
         self.go.state(["!disabled"] if ready else ["disabled"])
 
+    def ready(self):
+        st = self.app.last_status
+        return bool(self.app.connected and not self.app.status_stale() and st and st.idle_off and self.at_point()
+                    and (self.declared or self.kept and self.app.origin_set))
+
     def resume(self):
+        if not self.ready():
+            return
         if not messagebox.askokcancel("Resume", "Did the 1% dot sit on the end of the last burned line?\n\n"
                                                 "Resume engraving now?", parent=self):
+            return
+        if not self.ready():
             return
         spec = dict(self.res)
         spec.pop("kept_position", None)

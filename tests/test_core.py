@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-from lps import imaging, jobs, planner, presets, verify
+from lps import imaging, jobs, planner, presets, verify, keepouts
 from lps.planner import Placement
 
 PROJECT = Path(r"C:\Users\Heemi\Documents\Codex\2026-10-25\got")
@@ -127,6 +127,94 @@ class Placement_(unittest.TestCase):
         self.assertTrue(verify.verify_job(spot)["ok"])
         self.assertIn("12.5 mm from the piece's left edge", jobs.origin_text(spot.piece))
 
+    def test_exact_size_stretches_the_whole_picture_to_the_box(self):
+        pc = dict(shape="rect", w=14.0, h=19.0, origin="lower-left", margins=(0, 0, 0, 0), corner=0.0, keepouts=[])
+        mat = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
+        job = planner.compile_job(planner.build_job(sample_picture(), mat, Placement(pc, fit="exact")))
+        g = job.geom      # a 4:3 picture in a tall box: no refit, no crop
+        self.assertEqual((g.cols, g.rows, g.x0, g.y0, g.crop), (140, 190, 0.0, 0.0, None))
+        self.assertTrue(verify.verify_job(job)["ok"])
+        thin = dict(pc, w=1.8, h=20.64)         # the spoiler: narrower than the old 5 mm minimum
+        g = planner.build_job(sample_picture(), mat, Placement(thin, fit="exact")).geom
+        self.assertEqual((g.cols, g.rows), (18, 206))
+        self.assertAlmostEqual(g.art_h, 20.64)
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "sized.png"
+            Image.new("L", (1120, 1520), 255).save(f, dpi=(2032, 2032))
+            self.assertEqual(imaging.saved_size_mm(f), (14.0, 19.0))
+            Image.new("L", (100, 100), 255).save(f, dpi=(96, 96))
+            self.assertIsNone(imaging.saved_size_mm(f))
+
+    def test_exact_fractional_size_does_not_shift_or_shrink_with_resolution(self):
+        black = Image.new("L", (300, 100), 0)
+        for origin in ("lower-left", "center", "spot"):
+            for pitch in (.08, .1, .15):
+                with self.subTest(origin=origin, pitch=pitch):
+                    pc = piece(14.29, 19.05, origin=origin, spot=[3, 4], margins=(2, 2, 2, 2))
+                    mat = next(m for m in presets.BUILTIN if m.key == "anodized-dots").copy(pitch=pitch, negative=False)
+                    job = planner.compile_job(planner.build_job(black, mat, Placement(pc, fit="exact")))
+                    g = job.geom
+                    self.assertAlmostEqual(g.art_w, 14.29)
+                    self.assertAlmostEqual(g.art_h, 19.05)
+                    np.testing.assert_allclose((g.x0,g.y0,g.x1,g.yt), planner.piece_rect(pc),atol=1e-10)
+                    self.assertTrue(verify.verify_job(job)["ok"], verify.verify_job(job))
+
+    def test_moving_and_resizing_window_updates_burn_mask(self):
+        pc = piece(70, 28, origin="spot", spot=[50,14], margins=(0,0,0,0))
+        zone = dict(kind="rect", x=20.,y=5.,w=8.,h=15.)
+        moved = keepouts.drag_zone(zone,70,28,5,2)
+        enlarged = keepouts.drag_zone(moved,70,28,2,1,"ne")
+        self.assertEqual(enlarged,dict(kind="rect",x=25.,y=7.,w=10.,h=16.))
+        pc['keepouts']=[enlarged]
+        mat=next(m for m in presets.BUILTIN if m.key=='anodized-dots').copy(negative=False)
+        job=planner.compile_job(planner.build_job(Image.new('L',(700,280),0),mat,Placement(pc,fit='exact')))
+        for p in job.passes:
+            self.assertFalse(p.cells[~job.allowed].any())
+        self.assertTrue(verify.verify_job(job)['ok'])
+        # Moving beyond the piece clamps at its edge; resizing never inverts a window.
+        limited=keepouts.drag_zone(zone,70,28,100,-100)
+        self.assertEqual((limited['x'],limited['y']),(62.,0.))
+        small=keepouts.drag_zone(zone,70,28,100,-100,'nw')
+        self.assertGreater(small['w'],0)
+        self.assertGreater(small['h'],0)
+        circle=keepouts.drag_zone(dict(kind='circle',x=10.,y=10.,r=2.),70,28,2,0,'radius')
+        self.assertEqual(circle['r'],4.)
+
+    def test_wide_range_lid_ladder(self):
+        from lps import ladder
+        mat = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
+        for key, patch, spaces in (("A", 4.0, 52), ("B", 3.0, 89)):       # the sizes worked out for the 2 in lid
+            pr = ladder.PRESETS[key]
+            pl = ladder.plan(pr["powers"], pr["speeds"])
+            self.assertEqual((pl["patch"], len(pl["cells"]), pl["lids"]), (patch, spaces, 1), key)
+            job = planner.compile_job(ladder.build_lid_ladder(mat, Placement(ladder.lid_piece()), pr["powers"],
+                                                              pr["speeds"], material_note="Black aluminum 1 oz tin"))
+            self.assertTrue(verify.verify_job(job)["ok"], key)
+            self.assertEqual([p.feed for p in job.passes], sorted(pr["speeds"], reverse=True))   # fastest first
+            lad = job.ladder
+            self.assertEqual(len(lad["patches"]), len(pr["powers"]) * len(pr["speeds"]))
+            self.assertGreater(lad["mark"][1], max(q["y"] for q in lad["patches"]) - 1e-9)      # mark on top row
+            for q in lad["patches"]:     # every patch inside the 45.72 mm safe circle
+                h = lad["patch"] / 2
+                self.assertLessEqual(math.hypot(abs(q["x"]) + h, abs(q["y"]) + h), 22.86 + 1e-6)
+            self.assertTrue(any(n.startswith("Heat: ") and "12x" in n for n in lad["notes"]))
+        self.assertEqual(ladder.ladder_map(job).mode, "RGB")
+        # Continuing a stopped run: same spots, finished speeds left out, burned rows not burned twice.
+        pr = ladder.PRESETS["A"]
+        full = ladder.build_lid_ladder(mat, Placement(ladder.lid_piece()), pr["powers"], pr["speeds"])
+        y99 = max(q["y"] for q in full.ladder["patches"] if q["speed"] == 100) + 1.5     # a row through them
+        cont = planner.compile_job(ladder.build_lid_ladder(
+            mat, Placement(ladder.lid_piece()), pr["powers"], pr["speeds"], skip_speeds=[200, 400, 800, 1600, 3200, 6000],
+            done_rows={100: [y99]}, order="hot", mark=False))
+        self.assertTrue(verify.verify_job(cont)["ok"])
+        self.assertEqual([(q["x"], q["y"]) for q in cont.ladder["patches"]], [(q["x"], q["y"]) for q in full.ladder["patches"]])
+        self.assertEqual(len(cont.passes), 12)                              # 2 speeds x 6 powers, one patch each
+        self.assertEqual((cont.passes[0].feed, cont.passes[0].title), (50, "50 mm/min 100%"))   # hottest first
+        r = int(round((cont.geom.yt - y99) / cont.geom.pitch - 0.5))
+        self.assertFalse(any(p.cells[r].any() for p in cont.passes if p.feed == 100))
+        big = ladder.plan(list(range(50, 101, 5)), ladder.log_speeds(50, 6000, 16))     # too many: more lids
+        self.assertGreater(big["lids"], 1)
+
     def test_toy_car_windows_are_no_burn_zones(self):
         black = Image.new("L", (400, 140), 0)
         mat = next(m for m in presets.BUILTIN if m.key == "anodized-dots").copy(negative=False)
@@ -169,6 +257,25 @@ class Placement_(unittest.TestCase):
 
 
 class SaveLoad(unittest.TestCase):
+    def test_export_keeps_picture_frame_despite_white_padding(self):
+        from lps import gcodeinfo
+        im=Image.new('L',(100,100),255)
+        ImageDraw.Draw(im).rectangle((30,30,70,70),fill=0)
+        mat=next(m for m in presets.BUILTIN if m.key=='anodized-dots').copy(negative=False)
+        job=planner.compile_job(planner.build_job(im,mat,Placement(piece(14.29,19.05),fit='exact')))
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/'padded.nc'
+            path.write_text(jobs.all_text(job),encoding='ascii')
+            info=gcodeinfo.analyse(path)
+            self.assertEqual(gcodeinfo.frame_bbox(info),(0,0,14.29,19.05))
+            self.assertNotEqual(info['burn_bbox'],info['picture_bbox'])
+            self.assertEqual(info['trace_paths'],job.trace_paths())
+            # A false comment cannot hide burns outside its frame.
+            path.write_text(jobs.all_text(job).replace('W14.290 H19.050','W1.000 H1.000'),encoding='ascii')
+            bad=gcodeinfo.analyse(path)
+            self.assertIsNone(bad['picture_bbox'])
+            self.assertEqual(gcodeinfo.frame_bbox(bad),bad['burn_bbox'])
+
     def test_files_round_trip(self):
         job = small_job("pine-layers")
         rep = verify.verify_job(job)

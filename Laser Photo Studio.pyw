@@ -1,4 +1,4 @@
-"""Double-click to start Laser Photo Studio (or drag a picture / .nc file onto its desktop icon)."""
+"""Launch Laser Photo Studio from Windows Start or with an optional picture or G-code path."""
 import sys
 from pathlib import Path
 

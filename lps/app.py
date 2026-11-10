@@ -14,7 +14,7 @@ from tkinter import filedialog, messagebox, ttk
 from . import __version__, gcodeinfo, helptext, imaging, jobs, planner, presets, verify
 from .app_laser import LaserMixin
 from .app_place import PlaceMixin
-from .dialogs import FormDialog, TestGridDialog
+from .dialogs import FormDialog, LidLadderDialog, TestGridDialog
 from .preview import PreviewPanel
 from .presets import BADGES, PIECES, STYLES
 from .sample_view import SampleStrip
@@ -59,9 +59,10 @@ class App(PlaceMixin, LaserMixin):
         self.gfile = None
         self.events: queue.Queue = queue.Queue()
         self.event_hooks = []
-        self.perim_points, self.perim_idx = [], None
         self._build_after = None
+        self.layout_pending = False
         self._loading = False
+        self._closing = False
         self.init_machine_state()
         self._build_ui()
         self.select_material(self.mat.key)
@@ -151,8 +152,8 @@ class App(PlaceMixin, LaserMixin):
     # ================================================================ step 1
     def _page_picture(self, f):
         ttk.Label(f, text="1. Pick a picture", style="H1.TLabel").pack(anchor="w")
-        wrap_label(f, "Photos, drawings or logos. Phone photos (HEIC) work too. Tip: drag a picture onto the "
-                      "desktop icon to open it straight away.", style="Muted.TLabel").pack(anchor="w", pady=(2, 10))
+        wrap_label(f, "Open a photo, drawing or logo. Phone photos (HEIC) work too.",
+                   style="Muted.TLabel").pack(anchor="w", pady=(2, 10))
         ttk.Button(f, text="Open picture...", style="Big.TButton", command=self.open_picture).pack(anchor="w")
         self.pic_info = wrap_label(f, "No picture yet.")
         self.pic_info.pack(anchor="w", pady=(8, 4))
@@ -188,6 +189,8 @@ class App(PlaceMixin, LaserMixin):
             messagebox.showerror("Can't open picture", f"{Path(path).name}\n\n{e}")
             return
         self.picture_path = Path(path)
+        if self.picture_path.stem.upper().endswith('IMPORT'):
+            self.v_neg.set(False)       # prepared black-on-white laser inputs must not be inverted again
         self.rotate, self.mirror = 0, False
         self.grid_spec = None
         self.gfile = None
@@ -195,6 +198,9 @@ class App(PlaceMixin, LaserMixin):
         self.art_w = None
         self._apply_orientation()
         self.say(f"Opened {self.picture_path.name}. Step 2: choose the material.", "ok")
+        self.show_saved_size()
+        if self.saved_size():
+            self.use_saved_size()
 
     def turn(self, d):
         if self.picture_raw is None:
@@ -202,6 +208,7 @@ class App(PlaceMixin, LaserMixin):
         self.rotate = (self.rotate + d) % 4
         self.art_w = None
         self._apply_orientation()
+        self.show_saved_size()
 
     def flip(self):
         if self.picture_raw is None:
@@ -282,6 +289,15 @@ class App(PlaceMixin, LaserMixin):
             v.trace_add("write", lambda *a, k=k, v=v, hint=hint: hint.configure(text=adv_hint(k, v.get())))
         self.energy_lbl = wrap_label(adv, "", style="Small.TLabel")
         self.energy_lbl.pack(anchor="w", pady=(6, 0))
+        ttk.Label(adv, text="Scan direction").pack(anchor="w", pady=(8, 0))
+        self.scan_var = tk.StringVar()
+        self.scan_box = ttk.Combobox(adv, textvariable=self.scan_var, state="readonly", width=36,
+                                    values=("Alternating rows", "Left to right only"))
+        self.scan_box.pack(anchor="w")
+        self.scan_box.bind("<<ComboboxSelected>>", self._scan_pick)
+        wrap_label(adv, "Left to right only returns with the laser off. It takes longer and helps compare "
+                   "direction-dependent alignment; it does not increase resolution.",
+                   style="Small.TLabel").pack(anchor="w", pady=(2, 6))
         self.rule_var = tk.StringVar()
         self.rule_box = ttk.Combobox(adv, textvariable=self.rule_var, state="readonly", width=44, values=[
             "Plank recipe: all tones, all -0.1 mm, darks -0.2 mm", "Tone by layer count: light 1, mid 2, dark 3"])
@@ -297,6 +313,10 @@ class App(PlaceMixin, LaserMixin):
         self.del_btn.pack(side="left", padx=6)
         ttk.Button(f, text="Make a test grid for a new material...", command=self.test_grid).pack(anchor="w",
                                                                                                pady=(10, 0))
+        ttk.Button(f, text="Wide-range lid ladder (2 in circle)...", command=self.lid_ladder).pack(anchor="w",
+                                                                                                pady=(6, 0))
+        ttk.Button(f, text="Continue a stopped lid ladder...", command=self.continue_ladder).pack(anchor="w",
+                                                                                                 pady=(6, 0))
         self._next(f, "Next: size & placement  >", 2)
 
     def _fill_tree(self):
@@ -378,6 +398,7 @@ class App(PlaceMixin, LaserMixin):
         self.rule_var.set(self.rule_box["values"][1 if tuple(m.layer_rule) == ((1, 0), (2, 1), (3, 2)) else 0])
         self.rule_box.state(["!disabled"] if m.style == "layers" else ["disabled"])
         self.thin_var.set(m.thin_pass)
+        self.scan_var.set("Alternating rows" if m.scan_direction == "alternating" else "Left to right only")
         self.del_btn.state(["!disabled"] if m.badge == "MINE" else ["disabled"])
 
     def _customised(self, **changes):
@@ -419,6 +440,13 @@ class App(PlaceMixin, LaserMixin):
             return
         self._customised(**changes)
 
+    def _scan_pick(self, _=None):
+        if self._loading:
+            return
+        direction = "forward" if self.scan_box.current() == 1 else "alternating"
+        if direction != self.mat.scan_direction:
+            self._customised(scan_direction=direction)
+
     def save_preset(self):
         d = FormDialog(self.root, "Save as my preset", [("name", "Name", self.mat.name.replace(" (adjusted)", ""),
                                                          "str")],
@@ -458,16 +486,83 @@ class App(PlaceMixin, LaserMixin):
         self.say("Test grid ready. Place it (step 3), check it (step 4), then run the perimeter check and burn it "
                  "(step 5). Afterwards save the best patch as your preset.", "ok")
 
+    def continue_ladder(self):
+        """Burn what a stopped ladder didn't, on the same spots, in the order you pick."""
+        from . import ladder
+        found = [f for f in jobs.latest_jobs(30) if "lid-ladder" in f.name and (f / "state.json").exists()
+                 and (jobs.read_json(f / "state.json") or {}).get("phase") in ("stopped", "dropout", "fault")]
+        folder = filedialog.askdirectory(title="Stopped lid ladder job folder", mustexist=True,
+                                         initialdir=str(found[0] if found else jobs.JOBS_DIR))
+        if not folder:
+            return
+        try:
+            c = ladder.continuation(folder)
+        except Exception as e:
+            messagebox.showerror("Can't continue this job", f"{Path(folder).name}\n\n{e}")
+            return
+        left = [s for s in c["speeds"] if s not in c["skip_speeds"]]
+        part = "".join(f"\n{s} mm/min: rows Y {min(r):g} to {max(r):g} already burned, left out." for s, r in c["done_rows"].items())
+        d = FormDialog(self.root, "Continue the ladder", [
+            ("order", "Burn order", ladder.ORDERS["hot"], list(ladder.ORDERS.values()))],
+            intro=f"{c['from_job']}\nAlready done: {', '.join(map(str, c['skip_speeds'])) or 'nothing'} mm/min.\n"
+                  f"Left: {', '.join(map(str, left))} mm/min.{part}\n\nSame spots as the first map. Keep job zero "
+                  "where it was (don't move the lid or reset the controller). 'Hottest first' makes one pass per "
+                  "patch: with 'Pause after each pass' on you can let the lid cool between them.").result
+        if not d:
+            return
+        c["order"] = next(k for k, v in ladder.ORDERS.items() if v == d["order"])
+        self.grid_spec = c
+        self.piece_key = "custom"
+        self.piece = ladder.lid_piece(c["diameter"], c["safe"])
+        self.piece_user_set = True
+        self.fit_var.set("whole")
+        self.picture_path = None
+        self.dx = self.dy = 0.0
+        self.art_w = None
+        self.pic_info.configure(text=f"Continuing {c['from_job']}")
+        self.sync_place_fields()
+        self.changed()
+        self.goto(3)
+        self.say("Continuation ready: check it (step 4) and save it for the map ('5 LADDER MAP', red = burning now). "
+                 "In step 5 keep the same job zero, then start with 'Pause after each pass' on.", "ok")
+
+    def lid_ladder(self):
+        from . import ladder
+        d = LidLadderDialog(self.root).result
+        if not d:
+            return
+        self.grid_spec = d
+        self.piece_key = "custom"
+        self.piece = ladder.lid_piece(d["diameter"], d["safe"])
+        self.piece_user_set = True
+        self.fit_var.set("whole")
+        self.picture_path = None
+        self.dx = self.dy = 0.0
+        self.art_w = None
+        self.pic_info.configure(text=f"Lid ladder (no picture): {d['material']}")
+        self.sync_place_fields()
+        self.changed()
+        self.goto(3)
+        self.say("Lid ladder ready: check it (step 4), save it (the folder gets '5 LADDER MAP' to print), then "
+                 "perimeter check and burn (step 5) with 'Pause after each pass' on.", "ok")
+
     # ================================================================ background build / check
     def changed(self, delay=350):
         if self._loading:
             return
+        self.gen += 1                  # reject old build/check results immediately, before debounce
+        self.layout_pending = True
         self.report = None
         if self._build_after:
             self.root.after_cancel(self._build_after)
         self._build_after = self.root.after(delay, self._start_build)
+        self.refresh_laser_page()
 
     def job_name(self):
+        if self.grid_spec and self.grid_spec.get("kind") == "lid":
+            m = self.grid_spec.get("material", "").split()
+            return (f"lid-ladder-{'-'.join(m[:2]).lower() or 'lid'}-{self.grid_spec.get('lid', 1)}"
+                    + ("-continued" if self.grid_spec.get("from_job") else ""))
         if self.grid_spec:
             return f"test-grid-{self.mat.key}"
         stem = self.picture_path.stem if self.picture_path else "job"
@@ -477,7 +572,6 @@ class App(PlaceMixin, LaserMixin):
         self._build_after = None
         if self.picture is None and not self.grid_spec:
             return
-        self.gen += 1
         gen = self.gen
         mat, placement, look = self.build_params()
         pic, grid, name = self.picture, self.grid_spec, self.job_name()
@@ -485,11 +579,19 @@ class App(PlaceMixin, LaserMixin):
 
         def work():
             try:
-                if grid:
+                if grid and grid.get("kind") == "lid":
+                    from . import ladder
+                    job = ladder.build_lid_ladder(mat, placement, grid["powers"], grid["speeds"], grid["lid"],
+                                                  grid["material"], name=name,
+                                                  skip_speeds=grid.get("skip_speeds", ()),
+                                                  done_rows={int(k): v for k, v in grid.get("done_rows", {}).items()},
+                                                  order=grid.get("order", "fast"), mark=grid.get("mark", True))
+                elif grid:
                     job = planner.build_test_grid(mat, placement, grid["powers"], grid["speeds"], grid["patch"],
                                                   grid["gap"], grid["content"], name=name)
                 else:
                     job = planner.build_job(pic, mat, placement, look, name=name)
+                job.trace_paths()
                 self.events.put(("built", gen, job, None))
             except Exception:
                 self.events.put(("built", gen, None, traceback.format_exc()))
@@ -497,7 +599,7 @@ class App(PlaceMixin, LaserMixin):
         threading.Thread(target=work, daemon=True).start()
 
     def check_job(self):
-        if self.job is None:
+        if self.job is None or self.layout_pending:
             return
         gen, job = self.gen, self.job
         self.say("Checking every command offline...")
@@ -530,7 +632,8 @@ class App(PlaceMixin, LaserMixin):
                         pass
         except queue.Empty:
             pass
-        self.root.after(60, self._drain)
+        finally:
+            self.root.after(60, self._drain)
 
     def _event(self, ev):
         kind = ev[0]
@@ -543,18 +646,20 @@ class App(PlaceMixin, LaserMixin):
                 messagebox.showerror("Build failed", err[-1500:])
                 return
             old, self.job = self.job, job
+            self.layout_pending = False
             self.report = None
-            self.perim_points = []
             if old is not None and planner.piece_rect(old.piece)[:2] != planner.piece_rect(job.piece)[:2]:
                 self.start_point_moved()
+            self.remember_setup()
             self.preview.set_job(job)
             self.update_check_panel()
+            self.refresh_laser_page()
             self.say("Preview updated." + ("" if self.nb.index("current") >= 3 else " Next: size & placement."))
             if self.nb.index("current") >= 3:
                 self.check_job()
         elif kind == "compiled":
             _, gen, job, rep = ev
-            if gen != self.gen:
+            if gen != self.gen or (job is not None and job is not self.job):
                 return
             if job is None:
                 self.say("Check failed - see details.", "bad")
@@ -563,6 +668,7 @@ class App(PlaceMixin, LaserMixin):
             self.report = rep
             self.compiled_gen = gen
             self.update_check_panel()
+            self.refresh_laser_page()
             self.preview.refresh()
             self.say(verify.summary_text(rep).split("\n")[0], "ok" if rep["ok"] else "bad")
         else:
@@ -588,12 +694,18 @@ class App(PlaceMixin, LaserMixin):
             self.say("Settings saved.", "ok")
 
     def on_close(self):
+        if self._closing:
+            return
+        self._closing = True
         if self.worker is not None:
-            self.disconnect(wait=True)
-        if jobs.active_runner():
-            messagebox.showinfo("Job keeps running", "The engraving job keeps running in the background. Open "
-                                                     "Laser Photo Studio again to watch it or stop it.")
-        self.root.destroy()
+            self.disconnect()
+        self._finish_close()
+
+    def _finish_close(self):
+        if self.worker is None:
+            self.root.destroy()
+        else:
+            self.root.after(60, self._finish_close)
 
 
 def adv_hint(key: str, text: str) -> str:

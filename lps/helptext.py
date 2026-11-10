@@ -22,6 +22,10 @@ The Grid tick box draws squares over the piece. Their size follows the zoom (fin
 # Colours
 The Colours box at the top switches the whole app straight away and remembers your choice: the original light look, Dragonfly dark (navy), or a high-contrast pair (yellow on black, black on white, black on yellow, white on blue, blue on black) if text is hard to read. This Guide names the original colours, like the red crosshair; in other themes the colour key under the preview shows what's what.
 
+# Wide-range lid ladder
+Step 2's 'Wide-range lid ladder (2 in circle)...' packs solid patches for every power and speed onto a lid. The app picks the patch size (option A: 6 powers x 8 speeds as 4 mm patches; B: 11 x 8 as 3 mm), or says how many lids it takes. Each speed is a pass, fastest first and slowest last, so with 'Pause after each pass' you can stop before the slow, hot rows. The saved job folder has '5 LADDER MAP - print this' showing every patch's setting; one small mark burns at the top so you can line the map up. Note which lid material you ran it on: it goes in the job name and the map.
+Stopped part way? 'Continue a stopped lid ladder...' reads the stopped job, leaves out every speed that finished and the rows already burned, and keeps every patch on its first spot so the first map still applies. Pick the order: fastest first, slowest first, or hottest first (one patch per pass, the slowest speed at 100 % first, then down), and keep 'Pause after each pass' on so the lid can cool between patches. Keep the same job zero: don't move the lid or reset the controller.
+
 # Good habits
 - New material? Burn a test grid first (step 2) and save the best patch as your own preset.
 - Add your test and result photos to the setting ('Add my photo...' in step 2), so next time you can see what each setting did.
@@ -88,8 +92,8 @@ In LaserGRBL: File > Open the picture, then {recipe}
 - Quality (lines/mm) = row spacing. 10 lines/mm = 0.1 mm rows = 254 lines per inch.
 - S-MAX = power. S600 = 60% on your U20.
 - Loop counter = repeat passes.
-- Frame = the perimeter check (here the head also flashes the 1% dot at each corner).
-- Setting zero in LaserGRBL = 'Set start point here'. The head doesn't move; the spot under it becomes X0 Y0.
+- Frame in LaserGRBL usually means a bounding box. In this app, choose Total travel perimeter, Image perimeter, Sticker outline, Full burn trace, or Dry run.
+- Setting zero in LaserGRBL = 'Set job zero here'. The current spot becomes X0 Y0 while the head stays still.
 - Home / Global Home = never on this machine (no homing switches). This app refuses it.
 
 # Mistakes from the Hot Wheels car
@@ -105,48 +109,62 @@ Next time: in step 3 press 'Toy car (Hot Wheels)...'. Pick the body type and fix
 [image:assets/samples/hw-top.jpg]
 
 # If the USB drops out
-Jobs run from this app record exactly where the head stopped and resume safely. In LaserGRBL, don't use Resume or Home after a reconnect: it can jump to old coordinates (that burned the bed on the card)."""
+Jobs run from this app save reported positions and command progress for recovery. A sent command is not proof of completed motion. In LaserGRBL, don't use Resume or Home after a reconnect: it can jump to old coordinates (that burned the bed on the card)."""
 
-PERIMETER = """# The start point
-The start point (also called the origin, 0,0 or X0 Y0) is the spot the job is measured from, and where you put the laser dot before starting. In step 3 choose the lower-left corner, the centre, or 'A spot I pick' and click any spot on the picture: the corner of a stripe, the middle of a windshield's edge, anything you can find on the real piece. The red crosshair shows it. Move the head there with the dot on, then press 'Set start point here'. Nothing moves when you set it.
+PERIMETER = """# Place → Set zero → Check → Start
+Choose the job zero in Step 3. Use the piece center, the lower-left corner, or a recognizable spot you pick. Put the positioning dot on that same spot on the real piece, then press 'Set job zero here' in Step 5. The head stays still while the controller assigns that spot X0 Y0.
 
-# The two crosshairs
-- Red crosshair: the start point, where you put the dot on the real piece.
-- Purple marker: where the controller THINKS the head is. When they sit on top of each other, the picture will land where you expect.
-In step 5 you can line them up by clicking the preview:
-- 'move the head there': the head moves to the spot you click, laser off.
-- 'say the dot is here': look where the dot really is on your piece and click that spot on the picture. Nothing moves; the purple marker jumps there.
+# Read the labeled markers
+- Job zero (crosshair): the fixed reference all job coordinates use.
+- Laser head (circle): the controller's reported position in that coordinate system. A last-reported label appears if position updates stop.
+- Piece center: the midpoint of the material. Image center: the midpoint of the placed picture. Toggle Centers to see both. Coincident points share a label.
 
-# Two kinds of moving
-- Move the picture (step 3, and under the perimeter check; blue box in the preview): the picture shifts on the piece and the job is rebuilt. The machine doesn't move.
-- Move the laser head (step 5, purple marker in the preview): the real head moves, laser off. The picture stays put.
-- Move the picture with the head (tick it in step 5): the head moves and keeps its X/Y, so the whole picture shifts on the real piece with it, like sliding the piece under the laser. Run the perimeter check again afterwards.
-The X/Y numbers in step 5 are where the controller THINKS the head is, measured from the start point. They only match the real spot after you set the start point.
+# Know what each action changes
+- Jog head to clicked point moves the physical head with the beam off. The engraving placement stays fixed.
+- Mark observed dot adds a temporary diamond where you click. Apply alignment shows the proposed zero shift and writes it only after you confirm. The head stays still.
+- Move the picture in Step 3 to edit the layout. 'Shift engraving placement when jogging' deliberately moves the placement with the arrow buttons. Check the new placement before starting.
 
-# The perimeter check
-The head moves to each corner of the burn area with the laser OFF, flashes the 1% positioning dot there (S10, 0.25 s bursts), then comes back to the start point.
-- Before each flash it checks the machine is idle with zero output, and that the controller has 1% programmed while the laser is off.
-- Each flash is sent with its own 'laser off' command attached.
-- Off by a bit? Move the picture in 0.5-5 mm steps and check again.
-- Works for any .nc file too: drop it on the Laser Perimeter Check desktop icon. It also tells you whether the file fills shapes in or only traces their outlines.
-- Moving the picture or setting a new start point means a new perimeter check: the 'Ready to start?' list unticks it.
+# Exact size
+In step 3, turn on 'Use exact image size' to size the picture directly with Width and Height. Both fields stay editable. Pick a material before or after entering dimensions. Material and resolution changes keep your entered size, including fractional millimeters. 'Keep proportions' links the fields. Turn it off to enter each dimension independently. A file with a saved print size opens in exact mode at that size. The 'Use the size saved in the file' button restores those dimensions after an edit. Selecting a piece template switches back to fitting the picture to the piece.
+
+Exact size uses the picture box's lower-left as job zero unless you choose the center or another spot. Step 5 lists the image corners in X/Y from that zero. Blank space is part of the image box, so the first mark can be offset from 0,0.
+
+# Other cars and editable no-burn zones
+The Mustang is one starting shape, not a required car. Pick the nearest body type and measure your own car in Toy car, or add rectangular/circular no-burn zones in step 3. Select a zone and press Edit selected to change X, Y, width/height or radius. Coordinates are measured from the piece's lower-left, even when the job starts at a picked spot.
+
+Tick 'Move / resize no-burn zones on the preview'. Drag inside a window to move it. Select it and drag a corner square to resize; a round zone has a radius handle. Double-click a zone for its measurements. Only the no-burn mask changes, never the laser head or start point. Release the mouse to rebuild the burn map. Zone changes clear the old perimeter check, so check the new layout before starting.
+
+# Choose the check that answers your question
+- Total travel perimeter (off): check head clearance around the full travel rectangle, including laser-off run-ups. It can cross a no-burn zone with the beam off.
+- Image perimeter (1%): check the placed image's full footprint, including blank space. For a round piece the path follows the usable face where it clips the image box.
+- Sticker outline (1%): check the outside edges of the marks. The beam is off between separate artwork islands.
+- Full burn trace (2%): replay the checked picture job with 2% on the planned marking strokes and the beam off during travel. This may take as long as the engraving.
+- Dry run (off): replay the same path with the beam off throughout.
+
+Each button shows its path before the confirmation. Stop check lets queued moves settle, then returns to job zero while the connection and position are known. Disconnect and window close let queued moves settle at the stop position. Changing the layout or job zero clears completion for the old placement. An imported G-code file can use the checks supported by the geometry the app can read from it.
 
 The dot is the real engraving laser at very low power, so still wear laser glasses.
 
 # Curved or small pieces
-The perimeter check, like LaserGRBL's Frame, only shows the outer box of the burn. On a toy car or anything with windows, edges or a centerline, also put the dot on those points before burning: on the Hot Wheels car the box looked right, but the stripes crossed the windows and missed the centerline.
+Use Sticker outline to judge where the visible shapes land. Use Full burn trace and its preview to inspect individual strokes near windows. No-burn zones remove marks from the job. Clearance and image frames show different information.
 For toy cars use 'Toy car (Hot Wheels)...' in step 3. It has typical 1:64 body types and your measured Mustang; measure your car, and it turns the windows into no-burn zones and puts the start point on the windshield's front edge (or the middle of the roof, or the nose).
 
 [image:assets/samples/hw-setup.jpg]"""
 
-DROPOUT = """# What happens
-When the USB drops out, the controller restarts and forgets where the head is. The job record keeps the last command sent, and the head stops at the end of that command.
+DROPOUT = """# What is saved
+The local Recovery record keeps the picture, material settings, size, masks, placement, selected job zero, controller work offset, and reported machine/work coordinates. Completed inspection jogs and parks have a separate confirmed idle checkpoint. Trace progress and engraving command indices are saved separately: accepted means queued, not necessarily completed.
 
-# Resume safely
-1. Plug back in and connect. Unlock if asked. Never Home this machine: it has no homing switches.
-2. Declare the stop point. This tells the controller where the head is; nothing moves.
-3. Turn the 1% dot on. It should sit at the end of the last burned line; nudge if needed.
-4. Resume. It continues with the very next command, so nothing burns twice.
+# Unplugged after an inspection jog
+1. Reconnect in step 5, then choose Restore saved setup / position.
+2. Confirm that the head and material have stayed physically in place since the saved completed move. The app restores the saved layout and coordinate reference without moving the head, even if the controller restarted.
+3. Move head to job zero returns to the saved project center/corner with the laser off. A normal inspection jog never relocates the picture.
+
+# Interrupted while moving
+A replug may reset the controller. The saved last-sent endpoint is only a candidate; it is not an encoder measurement. If the controller kept its frame and was not reset, Restore saved setup can use its current idle report after your confirmation. If the frame changed mid-move, the app retains the evidence instead of automatically assigning the last-sent endpoint.
+For an engraving, Resume after dropout shows the last reported position, confirmed idle point, and sent/accepted indices. Check the candidate position before declaring or resuming it. Reconnects do not automatically jog or start a job. Never Home this machine: it has no homing switches.
+
+# Where the record lives
+%LOCALAPPDATA%\\Laser Photo Studio\\Recovery\\COM4.json (local disk, not OneDrive). Earlier references are preserved in the history subfolder. Demo mode uses a separate demo-COM4.json. Engraving state.json also carries the position record.
 
 # Fewer dropouts
 - A short, shielded USB cable with a ferrite clip, in a port on the back of the PC.
@@ -184,7 +202,7 @@ SAFETY = """- Stay with the machine the whole time. Wood, cardboard and leather 
 - Never use Home on this machine; it has no homing switches."""
 
 FILES = """# Where jobs go
-Documents\\Laser Photo Studio\\Jobs\\<date>_<name>\\ (on this PC that's inside OneDrive\\Documents).
+Jobs are saved in %LOCALAPPDATA%\\Laser Photo Studio\\Jobs\\<date>_<name>\\.
 - '01 Layer 1.nc', '02 ...': one file per pass, in order.
 - '<name> - all passes.nc': everything in one file, for LaserGRBL.
 - '1 LOOKS LIKE': the expected result. '2 LASER INPUT': black = laser fires. '3 IN LASERGRBL': its preview. '4 burn map': a colour per pass.
@@ -194,10 +212,10 @@ Documents\\Laser Photo Studio\\Jobs\\<date>_<name>\\ (on this PC that's inside O
 Windows only shows pictures for picture files. For .nc files it shows the icon of the program that opens them (LaserGRBL's 'LG'). install.ps1 adds a small preview add-on so Explorer draws what each .nc file will engrave; press F5 or reopen the folder after installing. uninstall.ps1 removes it.
 
 # Your presets and settings
-Saved presets: Documents\\Laser Photo Studio\\my-presets.json. Port and phone-photo folder: the Settings button.
+Saved presets are in %LOCALAPPDATA%\\Laser Photo Studio\\my-presets.json. Use the Settings button to change the port and phone photo folder.
 
 # Sample photos
-The photos under 'About this setting' come from the project's tests and finished pieces (the app's assets\\samples folder). Photos you add go to Documents\\Laser Photo Studio\\samples\\<setting>\\ and can be removed again in the photo viewer."""
+The photos under 'About this setting' come from the project's tests and finished pieces (the app's assets\\samples folder). Photos you add go to %LOCALAPPDATA%\\Laser Photo Studio\\samples\\<setting>\\ and can be removed again in the photo viewer."""
 
 
 def styles_text() -> str:

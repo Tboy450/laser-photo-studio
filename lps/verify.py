@@ -12,6 +12,19 @@ MOVE = re.compile(r"G1 X(-?\d+\.\d{3}) Y(-?\d+\.\d{3}) F(\d+) S(\d+)")
 FORBIDDEN_HINT = ("G0", "$", "M3", "G10", "G92", "G28", "G30", "G53", "M2", "M30")
 
 
+def trace_moves(job):
+    """XY moves from a verified job, with the original feed and a preview-only mark flag."""
+    for p in job.passes:
+        for command in p.commands:
+            if command in ("M5 S0", "M4 S0"):
+                continue
+            move = MOVE.fullmatch(command)
+            if move is None:
+                raise ValueError(f"Unexpected move in checked job: {command!r}")
+            yield float(move[1]), float(move[2]), int(move[3]), int(move[4]) > 0
+    yield 0.0, 0.0, 3000, False
+
+
 def allowed_values(job: JobPlan, p: PassPlan):
     m = job.material
     s_ok = {0} | {int(v) for v in np.unique(p.cells) if v}
@@ -72,18 +85,20 @@ def verify_pass(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30.
             if x is None or abs(ny - y) > 1e-6:
                 bad(f"command {i}: powered move is not a horizontal row move")
             else:
-                rf = (g.yt - ny) / g.pitch - 0.5
+                rf = (g.yt - ny) / g.y_pitch - 0.5
                 r = int(round(rf))
-                a, b = (min(x, nx) - g.x0) / g.pitch, (max(x, nx) - g.x0) / g.pitch
+                a, b = (min(x, nx) - g.x0) / g.x_pitch, (max(x, nx) - g.x0) / g.x_pitch
                 ca, cb = int(round(a)), int(round(b))
-                if abs(rf - r) > 1e-3 or abs(a - ca) > 1e-3 or abs(b - cb) > 1e-3:
+                # The emitted coordinates have 0.001 mm precision.
+                if (abs(rf - r) > 0.00051 / g.y_pitch or abs(a - ca) > 0.00051 / g.x_pitch
+                        or abs(b - cb) > 0.00051 / g.x_pitch):
                     bad(f"command {i}: powered move is off the cell grid")
                 elif not (0 <= r < H and 0 <= ca <= cb <= W):
                     bad(f"command {i}: powered move outside the artwork")
                 else:
                     counts[r, ca:cb] += 1
                     power[r, ca:cb] = s
-                if min(x, nx) < ux0 - 1e-6 or max(x, nx) > ux1 + 1e-6 or ny < uy0 - 1e-6 or ny > uy1 + 1e-6:
+                if min(x, nx) < ux0 - 0.00051 or max(x, nx) > ux1 + 0.00051 or ny < uy0 - 0.00051 or ny > uy1 + 0.00051:
                     bad(f"command {i}: burn outside the usable area of the piece")
         x, y = nx, ny
     want = p.cells > 0

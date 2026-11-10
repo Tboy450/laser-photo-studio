@@ -1,38 +1,50 @@
 # Laser Photo Studio 1.0 - install. Safe to run again. Per-user only: no admin rights needed.
-#   * Desktop icons: "Laser Photo Studio" and "Laser Perimeter Check"
+#   * Local Start menu shortcuts: "Laser Photo Studio" and "Laser Perimeter Check"
 #   * Picture previews for laser G-code files (.nc .gcode .gc .ngc) in File Explorer
-# uninstall.ps1 removes both again. Your jobs and presets are never touched.
+# uninstall.ps1 removes both again. Your jobs and presets are kept.
+param([switch]$ShortcutsOnly, [string]$ExistingPythonw)
+
 $ErrorActionPreference = 'Stop'
 $app = $PSScriptRoot
 
 # 1. Python and the libraries the app uses
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    throw 'Python 3 is needed: install it from the Microsoft Store or python.org, then run this again.'
+if ($ShortcutsOnly -and $ExistingPythonw) {
+    $pyw = $ExistingPythonw
+} else {
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        throw 'Python 3 is needed: install it from the Microsoft Store or python.org, then run this again.'
+    }
+    $pyw = & python -c "import os,sys; print(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))"
 }
-$pyw = & python -c "import os,sys; print(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))"
-if (-not (Test-Path $pyw)) { throw "pythonw.exe not found next to python ($pyw)." }
-$ErrorActionPreference = 'Continue'
-& python -c "import numpy, PIL, serial" 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { & python -m pip install --user --disable-pip-version-check numpy pillow pyserial }
-$ErrorActionPreference = 'Stop'
+if (-not $pyw -or -not (Test-Path -LiteralPath $pyw -PathType Leaf)) {
+    throw "pythonw.exe not found ($pyw)."
+}
+if (-not $ShortcutsOnly) {
+    $ErrorActionPreference = 'Continue'
+    & python -c "import numpy, PIL, serial" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { & python -m pip install --user --disable-pip-version-check numpy pillow pyserial }
+    $ErrorActionPreference = 'Stop'
+}
 
-# 2. Desktop icons
-$desk = [Environment]::GetFolderPath('Desktop')
+# 2. Start menu shortcuts. The Desktop can be redirected into OneDrive.
+$programs = [Environment]::GetFolderPath('Programs')
 $ws = New-Object -ComObject WScript.Shell
 function New-Icon($name, $arguments, $icon, $description) {
-    $lnk = $ws.CreateShortcut((Join-Path $desk "$name.lnk"))
+    $shortcutPath = Join-Path $programs "$name.lnk"
+    $lnk = $ws.CreateShortcut($shortcutPath)
     $lnk.TargetPath = $pyw
     $lnk.Arguments = $arguments
     $lnk.WorkingDirectory = $app
     $lnk.IconLocation = "$icon,0"
     $lnk.Description = $description
     $lnk.Save()
-    Write-Output "Desktop icon: $name"
+    Write-Output $shortcutPath
 }
 New-Icon 'Laser Photo Studio' "`"$app\Laser Photo Studio.pyw`"" "$app\assets\icon.ico" `
     'Picture -> checked G-code -> safe runs on the Tronxy U20'
 New-Icon 'Laser Perimeter Check' "`"$app\Laser Photo Studio.pyw`" --perimeter" "$app\assets\perimeter.ico" `
     'Check where a job will burn with the 1% positioning dot'
+if ($ShortcutsOnly) { return }
 
 # 3. File Explorer previews for G-code files
 $dll = Join-Path $app 'thumbnails\LaserThumbnails.dll'

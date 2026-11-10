@@ -1,9 +1,8 @@
-"""Resume rules (LASER-AUTOMATION-BRIEF.md, "Hiccups to design out"):
-  * Never home and never trust old coordinates. After a reboot the head is re-declared at the recorded stop point
-    with G10 L20 P1, then checked by eye with the 1% dot.
-  * The stop point is the endpoint of the last command actually written to the port: the controller finishes what
-    it received, so the head stops there (matched photos to within 0.2 mm on the plank).
-  * Resume from the very next command, so finished areas are never burned twice.
+"""Build continuation plans, without claiming a serial acknowledgement proves motion.
+  * Never home. After a reboot, reconcile the physical position before declaring coordinates.
+  * A last-sent endpoint is a candidate only: a reset or partial write can discard queued motion.
+    position_memory keeps reported coordinates and confirmed idle checkpoints separately.
+  * Continuing after a command avoids repeats ONLY if completion of that command was established.
 """
 from __future__ import annotations
 

@@ -7,7 +7,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import jobs, presets, simulate, verify
+from . import imaging, jobs, presets, simulate, verify
 from .dialogs import FormDialog
 from .planner import Placement
 from .presets import PIECES
@@ -25,6 +25,14 @@ class PlaceMixin:
                       "before starting (you set it in step 5).", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
         c = ttk.LabelFrame(f, text="Your piece", style="Card.TLabelframe")
         c.pack(fill="x", pady=4)
+        self.exact_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(c, text="Use exact image size",
+                        variable=self.exact_var, command=self._exact_toggled).pack(anchor="w")
+        wrap_label(c, "Width and Height below set the image size and stay editable. Changing materials keeps these "
+                      "dimensions. The perimeter check traces the actual marks.", style="Small.TLabel").pack(anchor="w")
+        self.saved_btn = ttk.Button(c, text="Use the size saved in the file", command=self.use_saved_size)
+        self.saved_btn.pack(anchor="w", pady=(4, 8))
+        self.saved_btn.state(["disabled"])
         self.piece_var = tk.StringVar()
         self.piece_box = ttk.Combobox(c, textvariable=self.piece_var, state="readonly", width=42,
                                       values=[PIECES[k]["name"] for k in PIECE_KEYS])
@@ -38,27 +46,34 @@ class PlaceMixin:
         row.pack(fill="x", pady=(6, 0))
         self.pw_var, self.ph_var, self.corner_var = tk.StringVar(), tk.StringVar(), tk.StringVar()
         for label, var in (("Width", self.pw_var), ("Height", self.ph_var)):
+            axis="w" if label=="Width" else "h"
             ttk.Label(row, text=label).pack(side="left")
-            sp = ttk.Spinbox(row, from_=5, to=600, increment=0.5, width=7, textvariable=var,
-                             command=self._piece_edited)
+            sp = ttk.Spinbox(row, from_=1, to=600, increment=0.5, width=7, textvariable=var,
+                             command=lambda a=axis:self._piece_edited(a))
             sp.pack(side="left", padx=(4, 10))
-            sp.bind("<FocusOut>", lambda e: self._piece_edited())
-            sp.bind("<Return>", lambda e: self._piece_edited())
+            sp.bind("<FocusOut>", lambda e,a=axis:self._piece_edited(a))
+            sp.bind("<Return>", lambda e,a=axis:self._piece_edited(a))
         ttk.Label(row, text="mm").pack(side="left")
+        self.proportions_var=tk.BooleanVar(value=False)
+        self.proportions_btn=ttk.Checkbutton(c,text="Keep proportions (off = stretch W/H)",
+                                            variable=self.proportions_var)
+        self.proportions_btn.pack(anchor="w",pady=(4,0))
         self.piece_in_lbl = ttk.Label(c, style="Muted.TLabel")
         self.piece_in_lbl.pack(anchor="w", pady=(2, 0))
         row2 = ttk.Frame(c)
         row2.pack(fill="x", pady=(6, 0))
         self.shape_var = tk.StringVar(value="rect")
-        ttk.Radiobutton(row2, text="Rectangle", value="rect", variable=self.shape_var,
-                        command=self._piece_edited).pack(side="left")
-        ttk.Radiobutton(row2, text="Circle (lids)", value="circle", variable=self.shape_var,
-                        command=self._piece_edited).pack(side="left", padx=8)
+        self.exact_disabled = []
+        for label, value in (("Rectangle", "rect"), ("Circle (lids)", "circle")):
+            rb = ttk.Radiobutton(row2, text=label, value=value, variable=self.shape_var, command=self._piece_edited)
+            rb.pack(side="left", padx=(0, 8))
+            self.exact_disabled.append(rb)
         ttk.Label(row2, text="Corner radius").pack(side="left", padx=(8, 4))
         sp = ttk.Spinbox(row2, from_=0, to=50, increment=0.5, width=5, textvariable=self.corner_var,
                          command=self._piece_edited)
         sp.pack(side="left")
         sp.bind("<FocusOut>", lambda e: self._piece_edited())
+        self.exact_disabled.append(sp)
         o = ttk.LabelFrame(f, text="Start point: where you'll put the laser head", style="Card.TLabelframe")
         o.pack(fill="x", pady=4)
         self.origin_var = tk.StringVar(value="lower-left")
@@ -96,23 +111,33 @@ class PlaceMixin:
             sp.grid(row=i // 2, column=(i % 2) * 2 + 1, sticky="w", padx=(4, 16), pady=1)
             sp.bind("<FocusOut>", lambda e: self._piece_edited())
             self.margin_vars.append(v)
+            self.exact_disabled.append(sp)
         ttk.Label(mr, text="mm").grid(row=0, column=4, sticky="w")
         ttk.Label(m, text="No-burn zones (holes, twine, screws, existing art):").pack(anchor="w", pady=(8, 2))
-        self.ko_list = paint(tk.Listbox(m, height=4, activestyle="none"), background="field", foreground="ink",
+        self.ko_list = paint(tk.Listbox(m, height=4, activestyle="none", exportselection=False), background="field", foreground="ink",
                              selectbackground="select", selectforeground="select_ink", highlightbackground="border")
         self.ko_list.pack(fill="x")
+        self.ko_list.bind("<<ListboxSelect>>", lambda e: self.preview.refresh())
+        self.ko_list.bind("<Double-Button-1>", lambda e: self.edit_keepout())
         kr = ttk.Frame(m)
         kr.pack(fill="x", pady=(4, 0))
         ttk.Button(kr, text="+ Hole / circle", command=lambda: self.add_keepout("circle")).pack(side="left")
         ttk.Button(kr, text="+ Rectangle", command=lambda: self.add_keepout("rect")).pack(side="left", padx=4)
+        ttk.Button(kr, text="Edit selected", command=self.edit_keepout).pack(side="left", padx=4)
         ttk.Button(kr, text="Remove", command=self.remove_keepout).pack(side="left")
+        self.zone_edit_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(m, text="Move / resize no-burn zones on the preview", variable=self.zone_edit_var,
+                        command=lambda: self.preview.refresh()).pack(anchor="w", pady=(6, 0))
+        wrap_label(m, "Select a window or zone, then drag inside it to move it or drag a corner to resize. "
+                      "Double-click a zone for measurements. This edits the mask; it never moves the laser.",
+                   style="Small.TLabel").pack(anchor="w")
         a = ttk.LabelFrame(f, text="Picture size", style="Card.TLabelframe")
         a.pack(fill="x", pady=4)
         self.fit_var = tk.StringVar(value="whole")
-        ttk.Radiobutton(a, text="Whole picture", value="whole", variable=self.fit_var,
-                        command=self._fit_changed).pack(anchor="w")
-        ttk.Radiobutton(a, text="Fill the area (crops the edges)", value="fill", variable=self.fit_var,
-                        command=self._fit_changed).pack(anchor="w")
+        for label, value in (("Whole picture", "whole"), ("Fill the area (crops the edges)", "fill")):
+            rb = ttk.Radiobutton(a, text=label, value=value, variable=self.fit_var, command=self._fit_changed)
+            rb.pack(anchor="w")
+            self.exact_disabled.append(rb)
         ar = ttk.Frame(a)
         ar.pack(fill="x", pady=(6, 0))
         ttk.Label(ar, text="Width").pack(side="left")
@@ -123,7 +148,9 @@ class PlaceMixin:
         self.artw_spin.bind("<FocusOut>", lambda e: self._artw_edited())
         self.artw_spin.bind("<Return>", lambda e: self._artw_edited())
         ttk.Label(ar, text="mm").pack(side="left")
-        ttk.Button(ar, text="Largest that fits", command=self._artw_fit).pack(side="left", padx=8)
+        b = ttk.Button(ar, text="Largest that fits", command=self._artw_fit)
+        b.pack(side="left", padx=8)
+        self.exact_disabled.append(b)
         self.arth_lbl = wrap_label(a, "", style="Muted.TLabel")
         self.arth_lbl.pack(anchor="w", pady=(4, 0))
         p = ttk.LabelFrame(f, text="Move the picture (the machine doesn't move)", style="Card.TLabelframe")
@@ -153,6 +180,10 @@ class PlaceMixin:
         ttk.Label(pad, text="mm").grid(row=1, column=5, padx=(2, 0))
 
     def nudge(self, dx, dy):
+        if self.fit_var.get() == "exact":
+            self.say("Exact size: the picture fills its box, so there's nothing to nudge. Move the head, or tick "
+                     "'Move the picture with the head' in step 5.", "warn")
+            return
         if dx is None:
             self.dx = self.dy = 0.0
         else:
@@ -160,10 +191,43 @@ class PlaceMixin:
             self.dx = round(self.dx + dx * st, 2)
             self.dy = round(self.dy + dy * st, 2)
         self.sync_place_fields()
-        self.perim_points = []
         self.changed(150)
 
+    def _exact_toggled(self, size=None):
+        if self.exact_var.get():
+            w, h = size or (self.piece["w"], self.piece["h"])
+            self.piece_key = "custom"
+            # Keep explicitly placed window masks; default the new box to its lower-left.
+            self.piece = dict(copy.deepcopy(self.piece), name="Exact size", shape="rect", w=w, h=h,
+                              origin="lower-left", margins=(0.0, 0.0, 0.0, 0.0), corner=0.0)
+            self.piece_user_set = True
+            self.fit_var.set("exact")
+            self.dx = self.dy = 0.0
+        else:
+            self.fit_var.set("whole")
+        self.art_w = None
+        self.sync_place_fields()
+        self.changed()
+
+    def saved_size(self):
+        """The size stored in the open picture's file, turned with the picture."""
+        s = imaging.saved_size_mm(self.picture_path) if self.picture_path else None
+        return (s[1], s[0]) if s and self.rotate % 2 else s
+
+    def show_saved_size(self):
+        s = self.saved_size()
+        self.saved_btn.configure(text=f"Use the size saved in the file: {s[0]:g} x {s[1]:g} mm" if s else
+                                 "Use the size saved in the file")
+        self.saved_btn.state(["!disabled"] if s else ["disabled"])
+        if s:
+            self.say(f"This file says it's {s[0]:g} x {s[1]:g} mm: step 3 can burn it at exactly that size.", "ok")
+
+    def use_saved_size(self):
+        self.exact_var.set(True)
+        self._exact_toggled(self.saved_size())
+
     def set_piece(self, key, user=True):
+        self.fit_var.set("whole" if self.fit_var.get() == "exact" else self.fit_var.get())
         self.piece_key = key
         self.piece = copy.deepcopy(PIECES[key])
         if user:
@@ -182,15 +246,15 @@ class PlaceMixin:
             self.use_car(d)
 
     def use_car(self, values):
+        self.fit_var.set("whole" if self.fit_var.get() == "exact" else self.fit_var.get())
         self.piece_key = "car"
         self.piece = presets.car_piece(values)
         self.piece_user_set = True
         self.art_w = None
         self.dx = self.dy = 0.0
-        self.perim_points = []
         self.sync_place_fields()
         self.changed()
-        self.say(f"{self.piece['name']}: windows are no-burn zones; the start point is the red crosshair.", "ok")
+        self.say(f"{self.piece['name']}: windows are no-burn zones. The labeled Job zero crosshair is the origin.", "ok")
 
     def sync_place_fields(self):
         if not hasattr(self, "pw_var"):
@@ -223,16 +287,24 @@ class PlaceMixin:
             self.offset_lbl.configure(text=("Centred." if not (self.dx or self.dy) else
                                             f"Moved {abs(self.dx):g} mm {'right' if self.dx >= 0 else 'left'}, "
                                             f"{abs(self.dy):g} mm {'up' if self.dy >= 0 else 'down'} from centre."))
-            self.artw_spin.state(["disabled"] if self.fit_var.get() == "fill" else ["!disabled"])
+            self.exact_var.set(self.fit_var.get() == "exact")
+            self.proportions_btn.state(["!disabled"] if self.exact_var.get() else ["disabled"])
+            self.artw_spin.state(["!disabled"] if self.fit_var.get() == "whole" else ["disabled"])
+            for widget in self.exact_disabled:
+                widget.state(["disabled"] if self.exact_var.get() else ["!disabled"])
         finally:
             self._loading = old
 
-    def _piece_edited(self):
+    def _piece_edited(self, axis=None):
         if self._loading:
             return
         try:
             pc = self.piece
-            pc["w"], pc["h"] = max(5.0, float(self.pw_var.get())), max(5.0, float(self.ph_var.get()))
+            ratio=pc['w']/pc['h']
+            pc["w"], pc["h"] = max(1.0, float(self.pw_var.get())), max(1.0, float(self.ph_var.get()))
+            if self.fit_var.get()=='exact' and self.proportions_var.get():
+                if axis=='w': pc['h']=pc['w']/ratio
+                elif axis=='h': pc['w']=pc['h']*ratio
             pc["shape"] = self.shape_var.get()
             if pc["shape"] == "circle":
                 pc["h"] = pc["w"]
@@ -241,11 +313,12 @@ class PlaceMixin:
             if pc["origin"] == "spot":
                 pc["spot"] = [round(min(pc["w"], max(0.0, float(v.get() or 0))), 2) for v in self.spot_vars]
             pc["margins"] = tuple(max(0.0, float(v.get() or 0)) for v in self.margin_vars)
+            if self.fit_var.get() == "exact":
+                pc.update(shape="rect", corner=0.0, margins=(0.0, 0.0, 0.0, 0.0))
         except ValueError:
             return
         self.piece_user_set = True
         self.sync_place_fields()
-        self.perim_points = []
         self.changed()
 
     def pick_spot(self, from_left, from_bottom):
@@ -255,10 +328,9 @@ class PlaceMixin:
         pc["spot"] = [round(min(pc["w"], max(0.0, from_left)), 1), round(min(pc["h"], max(0.0, from_bottom)), 1)]
         self.piece_user_set = True
         self.sync_place_fields()
-        self.perim_points = []
         self.changed()
         self.say(f"Start point: {pc['spot'][0]:g} mm from the left edge, {pc['spot'][1]:g} mm up from the bottom "
-                 "(red crosshair). Put the laser dot there in step 5.", "ok")
+                 "(Job zero). Put the laser dot there in step 5.", "ok")
 
     def add_keepout(self, kind):
         if kind == "circle":
@@ -288,6 +360,55 @@ class PlaceMixin:
             del self.piece["keepouts"][sel[0]]
             self.sync_place_fields()
             self.changed()
+
+    def zone_editing(self):
+        return self.nb.index("current") == 2 and self.zone_edit_var.get() and not self.gfile
+
+    def selected_keepout(self):
+        selected = self.ko_list.curselection()
+        return selected[0] if selected and selected[0] < len(self.piece.get("keepouts", [])) else None
+
+    def select_keepout(self, index):
+        self.ko_list.selection_clear(0, "end")
+        self.ko_list.selection_set(index)
+        self.ko_list.see(index)
+
+    def update_keepout(self, index, zone, *, live=False):
+        self.piece["keepouts"][index] = zone
+        self.piece_user_set = True
+        self.completed_checks.clear()
+        self.report = None
+        if live:
+            self.gen += 1
+            self.layout_pending = True
+            self.refresh_laser_page()
+            self.preview.redraw()
+        else:
+            self.sync_place_fields()
+            self.select_keepout(index)
+            self.changed(0)
+
+    def edit_keepout(self):
+        index = self.selected_keepout()
+        if index is None:
+            self.say("Select a window or no-burn zone first.", "warn")
+            return
+        zone = self.piece["keepouts"][index]
+        fields = [("x", "X from the piece's left edge (mm)", zone["x"], "float"),
+                  ("y", "Y up from the piece's bottom edge (mm)", zone["y"], "float")]
+        dimensions = [("r", "Radius")] if zone["kind"] == "circle" else [("w", "Width"), ("h", "Height")]
+        for key, label in dimensions:
+            fields.append((key, label + " (mm)", zone[key], "float"))
+        values = FormDialog(self.root, "Edit no-burn zone", fields,
+                            intro="Only the no-burn mask changes. The laser head does not move.").result
+        if values is not None:
+            from .keepouts import constrain_zone
+            try:
+                zone = constrain_zone(dict(zone, **values), self.piece["w"], self.piece["h"])
+            except ValueError as e:
+                messagebox.showerror("Check the zone", str(e))
+                return
+            self.update_keepout(index, zone)
 
     def _fit_changed(self):
         self.art_w = None
@@ -321,7 +442,9 @@ class PlaceMixin:
             self._loading = old
         self.arth_lbl.configure(text=f"Art {g.art_w:.1f} x {g.art_h:.1f} mm ({g.art_w / 25.4:.2f} x "
                                      f"{g.art_h / 25.4:.2f} in). Laser-off run-ups add a few mm left "
-                                     "and right (grey dashes in the preview).")
+                                     "and right (grey dashes in the preview).\n"
+                                     f"Picture lower-left: X {g.x0:.3f}, Y {g.y0:.3f} mm from start 0,0. "
+                                     "Blank space inside the file stays inside this box.")
 
     # ================================================================ step 4
     def page_check(self, f):
@@ -397,7 +520,8 @@ class PlaceMixin:
         self.v_gamma.set(m.gamma)
         self.v_sharpen.set(m.sharpen)
         self.v_auto.set(m.autolevel)
-        self.v_neg.set(m.negative)
+        prepared=bool(self.picture_path and self.picture_path.stem.upper().endswith('IMPORT'))
+        self.v_neg.set(False if prepared else m.negative)
         for v, c in zip(self.v_cut, m.tone_cuts):
             v.set(c)
 
@@ -409,7 +533,7 @@ class PlaceMixin:
         if mat.style == "layers":
             c = sorted((int(v.get()) for v in self.v_cut), reverse=True)
             mat = mat.copy(tone_cuts=(c[0], min(c[1], c[0] - 1), min(c[2], c[1] - 2)))
-        placement = Placement(copy.deepcopy(self.piece), art_w=None if self.fit_var.get() == "fill" else self.art_w,
+        placement = Placement(copy.deepcopy(self.piece), art_w=self.art_w if self.fit_var.get() == "whole" else None,
                               fit=self.fit_var.get(), dx=self.dx, dy=self.dy)
         return mat, placement, look
 
@@ -468,6 +592,9 @@ class PlaceMixin:
                     "2 LASER INPUT - black means the laser fires": simulate.laser_input(job),
                     "3 IN LASERGRBL - how its preview draws the nc": simulate.lasergrbl_view(job),
                     "4 burn map - colour per pass": simulate.burn_map(job)}
+        if getattr(job, "ladder", None):
+            from . import ladder
+            previews["5 LADDER MAP - print this"] = ladder.ladder_map(job)
         folder = jobs.save_job(job, self.report, picture=None if self.grid_spec else self.picture, previews=previews,
                                extra=extra)
         self.saved[self.gen] = folder

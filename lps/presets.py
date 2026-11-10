@@ -11,23 +11,12 @@ Power is in Grbl S units: S1000 = 100% because the controller is set to $30=1000
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-def _documents() -> Path:
-    """The real Documents folder (OneDrive moves it on this PC)."""
-    try:
-        import ctypes
-        from ctypes import wintypes
-        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
-        if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:
-            return Path(buf.value)
-    except Exception:
-        pass
-    return Path.home() / "Documents"
-
-
-DATA_DIR = _documents() / "Laser Photo Studio"
+LOCAL_APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+DATA_DIR = Path(os.environ.get("LASER_PHOTO_STUDIO_DATA_DIR") or LOCAL_APP_DATA / "Laser Photo Studio")
 
 # ---------------------------------------------------------------------------------------------------------------
 # Print styles: how a picture becomes laser marks.
@@ -81,9 +70,9 @@ STYLES = {
         best="Logos, text, line art, silhouettes."),
     "centerline": dict(
         name="Thin lines (centerlines)",
-        what="Dark strokes are burned as 1-cell-wide centerlines.",
-        why="Char spreads about 0.1 mm per side, so a centerline grows back to the stroke's true width instead "
-            "of smearing. Proven for lettering on the pine plank (max S300).",
+        what="Thins dark strokes to a 1-cell skeleton, then engraves it in horizontal raster rows.",
+        why="Proven for lettering on the pine plank (max S300). This is not a continuous vector trace; "
+            "the physical line width depends on focus, material and exposure.",
         best="Lettering, signatures, line drawings on wood."),
     "sketch": dict(
         name="Pencil sketch",
@@ -143,6 +132,11 @@ class Material:
     test_speed: tuple = (3000, 6000)
     piece: str = ""                 # suggested workpiece
     based_on: str = ""              # my presets: the built-in preset they were saved from (for its photos)
+    scan_direction: str = "alternating"  # forward = every marked row left to right; return moves stay off
+
+    def __post_init__(self):
+        if self.scan_direction not in ("alternating", "forward"):
+            raise ValueError("Scan direction must be alternating or forward.")
 
     def copy(self, **changes) -> "Material":
         d = asdict(self)

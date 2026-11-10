@@ -10,6 +10,7 @@ run_xmas_pass / anodized card jobs).
 from __future__ import annotations
 
 import math
+import hashlib
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -33,6 +34,7 @@ class Placement:
     piece: dict
     art_w: float | None = None      # requested art width, mm (None = as large as fits)
     fit: str = "whole"              # whole = keep the whole picture | fill = fill the area, crop edges
+    #                                 exact = stretch the whole picture to exactly the piece's size
     dx: float = 0.0                 # nudge from centred, mm (+ = right)
     dy: float = 0.0                 # (+ = up / away from you)
 
@@ -47,28 +49,38 @@ class Geometry:
     crop: tuple | None
     piece_rect: tuple
     usable_rect: tuple
+    cell_w: float | None = None     # exact sizing can adjust sampling, never the requested box
+    cell_h: float | None = None
+
+    @property
+    def x_pitch(self):
+        return self.pitch if self.cell_w is None else self.cell_w
+
+    @property
+    def y_pitch(self):
+        return self.pitch if self.cell_h is None else self.cell_h
 
     @property
     def x1(self):
-        return self.x0 + self.cols * self.pitch
+        return self.x0 + self.cols * self.x_pitch
 
     @property
     def y0(self):
-        return self.yt - self.rows * self.pitch
+        return self.yt - self.rows * self.y_pitch
 
     @property
     def art_w(self):
-        return self.cols * self.pitch
+        return self.cols * self.x_pitch
 
     @property
     def art_h(self):
-        return self.rows * self.pitch
+        return self.rows * self.y_pitch
 
     def col_x(self, c):
-        return self.x0 + c * self.pitch
+        return self.x0 + c * self.x_pitch
 
     def row_y(self, r):
-        return self.yt - (r + 0.5) * self.pitch
+        return self.yt - (r + 0.5) * self.y_pitch
 
 
 def piece_rect(piece: dict) -> tuple:
@@ -90,6 +102,15 @@ def usable_rect(piece: dict) -> tuple:
 def layout(img_size: tuple, placement: Placement, pitch: float) -> Geometry:
     pw, ph = img_size
     aspect = pw / max(1, ph)
+    if placement.fit == "exact":
+        rect = piece_rect(placement.piece)
+        x0, y0, x1, yt = rect
+        aw, ah = x1 - x0, yt - y0
+        if not all(math.isfinite(v) and v > 0 for v in (aw, ah, pitch)):
+            raise ValueError("Width, height and row spacing must be positive finite numbers.")
+        cols, rows = max(1, round(aw / pitch)), max(1, round(ah / pitch))
+        # Changing resolution must not shrink the physical picture or shift its corner.
+        return Geometry(pitch, cols, rows, x0, yt, None, rect, rect, aw / cols, ah / rows)
     ux0, uy0, ux1, uy1 = usable_rect(placement.piece)
     uw, uh = max(1.0, ux1 - ux0), max(1.0, uy1 - uy0)
     crop = None
@@ -119,8 +140,8 @@ def layout(img_size: tuple, placement: Placement, pitch: float) -> Geometry:
 
 def allowed_cells(geom: Geometry, piece: dict) -> np.ndarray:
     """Cells whose centre lies in the usable area and outside every keep-out zone."""
-    xs = geom.x0 + (np.arange(geom.cols) + 0.5) * geom.pitch
-    ys = geom.yt - (np.arange(geom.rows) + 0.5) * geom.pitch
+    xs = geom.x0 + (np.arange(geom.cols) + 0.5) * geom.x_pitch
+    ys = geom.yt - (np.arange(geom.rows) + 0.5) * geom.y_pitch
     X, Y = np.meshgrid(xs, ys)
     px0, py0, px1, py1 = geom.piece_rect
     ux0, uy0, ux1, uy1 = geom.usable_rect
@@ -262,6 +283,23 @@ class JobPlan:
     allowed: np.ndarray | None = None
     labels: np.ndarray | None = None
     compiled: bool = False
+    _outlines: list | None = field(default=None,repr=False)
+    _outline_key: str | None = field(default=None,repr=False)
+
+    def trace_paths(self):
+        if self._outlines is None:
+            from .outlines import physical_contours
+            mask=np.zeros((self.geom.rows,self.geom.cols),bool)
+            for p in self.passes:
+                mask |= p.cells>0
+            self._outline_key=hashlib.sha256(mask.tobytes()).hexdigest()
+            self._outlines=physical_contours(mask,self.geom)
+        return self._outlines
+
+    def outline_key(self):
+        self.trace_paths()
+        g=self.geom
+        return (g.x0,g.y0,g.x1,g.yt,self._outline_key)
 
     @property
     def burn_cells(self) -> int:
@@ -276,8 +314,8 @@ class JobPlan:
         rr = np.flatnonzero(any_burn.any(axis=1))
         cc = np.flatnonzero(any_burn.any(axis=0))
         g = self.geom
-        return (round(g.col_x(cc[0]), 3), round(g.yt - (rr[-1] + 1) * g.pitch, 3),
-                round(g.col_x(cc[-1] + 1), 3), round(g.yt - rr[0] * g.pitch, 3))
+        return (round(g.col_x(cc[0]), 3), round(g.yt - (rr[-1] + 1) * g.y_pitch, 3),
+                round(g.col_x(cc[-1] + 1), 3), round(g.yt - rr[0] * g.y_pitch, 3))
 
     @property
     def est_s(self) -> float:
@@ -363,7 +401,7 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
 
 # --------------------------------------------------------------------------------------------- commands
 def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_feed: int, runup: float,
-                    row_feeds=None, accel: float = ACCEL) -> list:
+                    row_feeds=None, accel: float = ACCEL, *, bidirectional: bool = True) -> list:
     cmds = []
     flip = False
     for r in order if order is not None else range(cells.shape[0]):
@@ -387,12 +425,12 @@ def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_fee
                  f"G1 X{fmt(start)} Y{y} F{f} S0"]
         cmds += [f"G1 X{fmt(e)} Y{y} F{f} S{s}" for e, s in zip(ends, pw)]
         cmds += [f"G1 X{fmt(ends[-1] + d * ru)} Y{y} F{f} S0", "M5 S0"]
-        flip = not flip
+        flip = not flip if bidirectional else False
     return cmds
 
 
 def feature_commands(cells: np.ndarray, labels: np.ndarray, geom: Geometry, feed: int, hop_feed: int,
-                     runup: float, start=(0.0, 0.0)) -> list:
+                     runup: float, start=(0.0, 0.0), *, bidirectional: bool = True) -> list:
     """Thin features one at a time (nearest next), each as a tiny serpentine raster with short run-ups."""
     lab = np.where(cells > 0, labels, 0)
     ids = [int(i) for i in np.unique(lab) if i]
@@ -442,7 +480,7 @@ def feature_commands(cells: np.ndarray, labels: np.ndarray, geom: Geometry, feed
                      f"G1 X{fmt(st)} Y{y} F{feed} S0"]
             cmds += [f"G1 X{fmt(e)} Y{y} F{feed} S{s}" for e, s in zip(ends, pw)]
             cmds += [f"G1 X{fmt(ends[-1] + d * runup)} Y{y} F{feed} S0", "M5 S0"]
-            flip = not flip
+            flip = not flip if bidirectional else False
         pos = cen[i]
     return cmds
 
@@ -467,12 +505,17 @@ def estimate_seconds(cmds, accel: float = ACCEL, per_command: float = 0.003) -> 
 def compile_job(job: JobPlan, start=(0.0, 0.0)) -> JobPlan:
     """Generate the command lists for every pass (slower than plan_cells)."""
     m = job.material
+    if m.scan_direction not in ("alternating", "forward"):
+        raise ValueError("Scan direction must be alternating or forward.")
+    bidirectional = m.scan_direction == "alternating"
     pos = start
     for p in job.passes:
         if p.kind == "features":
-            p.commands = feature_commands(p.cells, job.labels, job.geom, p.feed, m.hop_feed, m.feature_runup, pos)
+            p.commands = feature_commands(p.cells, job.labels, job.geom, p.feed, m.hop_feed, m.feature_runup, pos,
+                                          bidirectional=bidirectional)
         else:
-            p.commands = raster_commands(p.cells, p.order, job.geom, p.feed, m.row_feed, m.runup, p.row_feeds)
+            p.commands = raster_commands(p.cells, p.order, job.geom, p.feed, m.row_feed, m.runup, p.row_feeds,
+                                         bidirectional=bidirectional)
         p.est_s = estimate_seconds(p.commands)
         for c in reversed(p.commands):
             if c.startswith("G1"):

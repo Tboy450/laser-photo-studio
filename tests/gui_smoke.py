@@ -125,14 +125,12 @@ def main():
     assert pump(app, 10, lambda: app.connected and app.last_status is not None), "demo connect failed"
     app.worker.submit("origin", machine.set_origin_here, 0.0, 0.0)
     assert pump(app, 5, lambda: app.origin_set), "origin not set"
-    pts = __import__("lps.planner", fromlist=["x"]).perimeter_points(app.job.burn_bbox())
-    app.perim_points = pts
-    app.perim_running = True
-    app.worker.submit("perimeter", machine.perimeter_check, pts, 1, 6000, cancel=app.worker.cancel,
-                      progress=lambda i, n, name, what: app.events.put(("perim", i, n, name, what)))
+    from tkinter import messagebox
+    messagebox.askokcancel = lambda *a, **k: True
+    app.run_perimeter("image")
     assert pump(app, 60, lambda: not app.perim_running), "perimeter timed out"
-    pulses = app.worker.ctrl.pulses
-    assert len(pulses) == 4 and all(p[2] == 10 for p in pulses), pulses
+    burns = app.worker.ctrl.burns
+    assert burns and all(p[4] == 10 for p in burns), burns
     shot(app, "4-laser")
     assert pump(app, 5, lambda: all(done for done, _, _ in app.ready_items())), app.ready_items()
     app.pages[4].canvas.yview_moveto(0.55)
@@ -144,7 +142,6 @@ def main():
     app.pages[4].canvas.yview_moveto(0.0)
     # Lining up by clicking the preview (demo laser): 'the dot is here', 'move the head there', then jogging with
     # 'Move the picture with the head' keeps the head's X/Y.
-    from tkinter import messagebox
     messagebox.askyesno = lambda *a, **k: True      # the confirmations would wait for a person
 
     def at(x, y):
@@ -153,6 +150,8 @@ def main():
     assert pump(app, 30, lambda: app.ready_items()[1][0]), "re-check after nudging"
     app.click_var.set("here")
     app.preview_clicked(5.0, 4.0, 5.0, 4.0)
+    assert at(0, 0) and app.current_observation()
+    app.apply_alignment()
     assert pump(app, 10, lambda: at(5.0, 4.0)), app.last_status
     app.click_var.set("goto")
     app.preview_clicked(20.0, 30.0, 20.0, 30.0)
@@ -199,6 +198,32 @@ def main():
     app.use_car(presets.car_values("mustang"))
     assert pump(app, 30, lambda: app.job.piece.get("name", "").startswith("Toy car")), "car job"
     shot(app, "2d-toy-car-piece")
+    app.zone_edit_var.set(True)
+    app.select_keepout(0)
+    app.preview.refresh()
+    app.pages[2].canvas.yview_moveto(0.43)
+    pump(app, .5)
+    shot(app, "2d-editable-windshield")
+    app.pages[2].canvas.yview_moveto(0.0)
+    app.zone_edit_var.set(False)
+    # Exact size: the box is what you type, and the perimeter is that box.
+    app.pw_var.set("14")
+    app.exact_var.set(True)
+    app._exact_toggled((14.0, 19.0))
+    assert pump(app, 30, lambda: app.job.geom.art_w == 14.0 and app.job.geom.art_h == 19.0), app.job.geom
+    assert app.picture_box() == (0.0, 0.0, 14.0, 19.0), app.picture_box()
+    assert "14 x 19 mm" in app.box_lbl.cget("text"), app.box_lbl.cget("text")
+    shot(app, "2e-exact-size")
+    roof = PIC.parents[1] / 'mazda-rx7-2026-11-05/sized/01-roof-14x19-IMPORT.png'
+    if roof.exists():
+        app.open_picture(roof)
+        app.v_neg.set(False)
+        app.changed(0)
+        assert pump(app,30,lambda: not app.layout_pending and app.picture_box()==(0.,0.,14.,19.)), 'roof box'
+        pump(app,.4)
+        shot(app,'2f-actual-roof-14x19')
+    app.use_car(presets.car_values("mustang"))
+    assert pump(app, 30, lambda: app.job.piece.get("name", "").startswith("Toy car")), "back to the car"
     # The grid follows the zoom: finer on the small car than on the plank; it can be switched off.
     cv = app.preview.canvas
     assert app.preview.grid_mm and app.preview.grid_mm <= 10 and cv.find_withtag("grid"), app.preview.grid_mm
