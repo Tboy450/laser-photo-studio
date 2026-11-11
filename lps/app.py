@@ -590,6 +590,7 @@ class App(PlaceMixin, LaserMixin):
                                                   skip_speeds=grid.get("skip_speeds", ()),
                                                   skip_patches=grid.get("skip_patches", ()),
                                                   patch=grid.get("patch"), spread=grid.get("spread", False),
+                                                  ramp=grid.get("ramp", False),
                                                   done_rows={int(k): v for k, v in grid.get("done_rows", {}).items()},
                                                   order=grid.get("order", "fast"), mark=grid.get("mark", True))
                 elif grid:

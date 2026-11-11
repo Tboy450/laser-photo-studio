@@ -12,6 +12,7 @@ import textwrap
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from . import imaging
 from .planner import JobPlan, PassPlan, Placement, allowed_cells, layout
 from .presets import Material, auto_runup
 
@@ -157,7 +158,7 @@ ORDERS = {"fast": "Fastest speed first (coolest first)",
 def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: int = 1,
                      material_note: str = "", name: str = "lid-ladder", *, skip_speeds=(), skip_patches=(),
                      done_rows=None, order: str = "fast", mark: bool = True, patch: float | None = None,
-                     spread: bool = False) -> JobPlan:
+                     spread: bool = False, ramp: bool = False) -> JobPlan:
     """skip_speeds / skip_patches ([speed, power]) / done_rows ({"speed" or "speed:power": [row Y, ...]}) leave out
     what a stopped run already burned; patches keep the spots they had, so the first run's map still applies."""
     piece = placement.piece
@@ -194,7 +195,15 @@ def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: i
         cells = np.zeros((n, n), np.int16)
         for q in group:
             rs, cs = span(q["x"], q["y"], pl["patch"])
-            cells[rs, cs] = int(round(q["power"] * 10))
+            s_val = int(round(q["power"] * 10))
+            if ramp:    # solid upper half; lower half a Floyd-Steinberg dot ramp, light on the left, dark on the right
+                h, w = rs.stop - rs.start, cs.stop - cs.start
+                top = h // 2
+                dots = imaging.fs_dots(np.tile(np.linspace(235, 20, w), (h - top, 1)))
+                cells[rs.start:rs.start + top, cs] = s_val
+                cells[rs.start + top:rs.stop, cs] = np.where(dots, s_val, 0)
+            else:
+                cells[rs, cs] = s_val
             q["order"] = k
         ys = done_rows.get(str(s), []) + (done_rows.get(patch_key(s, group[0]["power"]), []) if order == "hot" else [])
         for y in ys:                            # rows the stopped run already burned in this pass
@@ -218,7 +227,7 @@ def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: i
     job.ladder = dict(patches=patches, mark=mark_pos, mark_burns=mark_at is not None, patch=pl["patch"],
                       gap=pl["gap"], lid=lid, lids=pl["lids"], material_note=material_note,
                       notes=notes(powers, speeds, px, todo or patches, pl["patch"], order),
-                      skipped=sorted(skip), skipped_patches=sorted(skip_p), order=order)
+                      skipped=sorted(skip), skipped_patches=sorted(skip_p), order=order, ramp=ramp)
     return job
 
 
@@ -276,7 +285,8 @@ def ladder_map(job: JobPlan, px_per_mm: int | None = None) -> Image.Image:
     title = f"{job.name}  -  lid {lad['lid']} of {lad['lids']}" + (f"  -  {lad['material_note']}" if lad["material_note"] else "")
     dr.text((margin, 20), title, fill="black", font=big)
     dr.text((margin, 60), f"{len(lad['patches'])} patches of {lad['patch']:g} mm, {lad['gap']:g} mm gaps. Top line: "
-                          "power %. Bottom: speed mm/min. Seen from above, mark at the top.", fill="black", font=font)
+                          "power %. Bottom: speed mm/min. Seen from above, mark at the top."
+                          + (" Each patch: solid top half, dot ramp below (light left, dark right)." if lad.get("ramp") else ""), fill="black", font=font)
     order = " > ".join(p.title for p in job.passes)
     dr.text((margin, 84), f"Burn order: {order}"[:150], fill="black", font=font)
     if lad.get("skipped") or lad.get("skipped_patches"):
