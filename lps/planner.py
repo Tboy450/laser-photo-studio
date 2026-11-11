@@ -410,7 +410,7 @@ def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_fee
         if not len(nz):
             continue
         f = int(row_feeds[r]) if row_feeds is not None else int(feed)
-        ru = max(runup, auto_runup(f, accel))
+        ru = max(runup, auto_runup(f, accel, minimum=min(1.0, runup)))   # ladders ask for less than 1 mm when slow
         a0, a1 = int(nz[0]), int(nz[-1]) + 1
         seg = row[a0:a1]
         cuts = np.r_[0, np.flatnonzero(np.diff(seg)) + 1, len(seg)]

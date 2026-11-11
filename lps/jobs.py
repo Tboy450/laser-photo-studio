@@ -132,7 +132,9 @@ def lasergrbl_path(folder: Path) -> Path:
 def readme_text(job: JobPlan, negative: bool) -> str:
     m, g = job.material, job.geom
     style = STYLES.get(m.style, {}).get("name", m.style)
-    neg = ("Negative was ON: the LIGHT parts of the picture are burned. Right for materials that mark light "
+    neg = ("Test patches (no picture): each patch burns at its own power and speed; see the ladder map."
+           if job.gray is None else
+           "Negative was ON: the LIGHT parts of the picture are burned. Right for materials that mark light "
            "(black anodized aluminum, slate, black acrylic) when engraving a photo."
            if negative else
            "Negative was OFF: the DARK parts of the picture are burned (normal for wood and dark-marking materials, "

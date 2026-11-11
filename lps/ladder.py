@@ -67,10 +67,36 @@ def cells_in_circle(radius: float, patch: float, gap: float) -> list:
     return best
 
 
-def plan(powers, speeds, radius: float = 22.86, gap: float = 1.0) -> dict:
-    """Pick the largest patch that fits every power x speed (plus the orientation mark) on one lid; if none does,
-    use the smallest and say how many lids it takes."""
+def lid_material(base: Material, note: str) -> Material:
+    """The ladder's own material: the lid it really runs on (not whatever was picked in step 2), with a metal
+    preview. Power and speed come from each patch; only row spacing and scan direction come from `base`."""
+    black = "black" in note.lower()
+    return base.copy(key="lid-ladder-test", name=f"{note or 'Lid'} - ladder test", badge="EXPERIMENTAL",
+                     style="threshold", look="blacktin" if black else "tin", negative=False,
+                     runup=0.3,       # at 10-50 mm/min the head is at speed at once; fast speeds still get auto_runup
+                     summary="Test ladder: every patch has its own power and speed.",
+                     notes=["Power and speed are set per patch; see the ladder map in the job folder."])
+
+
+def patch_key(speed, power) -> str:
+    return f"{int(speed)}:{float(power):g}"
+
+
+def plan(powers, speeds, radius: float = 22.86, gap: float = 1.0, patch: float | None = None,
+         spread: bool = False) -> dict:
+    """Pick the largest patch that fits every power x speed (plus the orientation mark) on one lid, or use `patch`
+    if given; if none fits, use the smallest and say how many lids it takes. `spread`: the widest gap that still fits,
+    so the patches cover the whole lid instead of bunching at the top."""
     n = len(powers) * len(speeds)
+    if patch and spread:
+        for g in (8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5):
+            cells = cells_in_circle(radius, patch, g)
+            if len(cells) >= n + 1:
+                return dict(patch=patch, gap=g, cells=cells, lids=1, per_lid=n)
+    if patch:
+        cells = cells_in_circle(radius, patch, gap)
+        per = n if len(cells) >= n + 1 else max(len(powers), (len(cells) - 1) // len(powers) * len(powers))
+        return dict(patch=patch, gap=gap, cells=cells, lids=math.ceil(n / per), per_lid=per)
     for size in PATCH_SIZES:
         cells = cells_in_circle(radius, size, gap)
         if len(cells) >= n + 1:
@@ -81,14 +107,20 @@ def plan(powers, speeds, radius: float = 22.86, gap: float = 1.0) -> dict:
     return dict(patch=size, gap=gap, cells=cells, lids=math.ceil(n / per), per_lid=per)
 
 
-def assign(powers, speeds, cells, lid: int = 1, per_lid: int | None = None) -> tuple:
+def assign(powers, speeds, cells, lid: int = 1, per_lid: int | None = None, scatter: bool = False) -> tuple:
     """(patches, mark): the orientation mark takes the top row's right-hand cell, then patches fill the other
-    cells top to bottom, slowest speed first, powers left to right."""
+    cells top to bottom, slowest speed first, powers left to right. `scatter` (for hottest-first ladders): the
+    patches in burn order (most energy per mm first) go to cells far apart, so heat doesn't build in one spot."""
     combos = [(s, p) for s in sorted(speeds) for p in powers]
     per = per_lid or len(combos)
     combos = combos[(lid - 1) * per: lid * per]
     mark = max(cells, key=lambda c: (c[1], c[0])) if len(cells) > len(combos) else None
     rest = [c for c in cells if c != mark]
+    if scatter and combos:
+        combos = sorted(combos, key=lambda c: c[1] / c[0], reverse=True)
+        n = len(rest)
+        step = next(k for k in range(int(n * 0.38) or 1, n + 1) if math.gcd(k, n) == 1)   # far jumps, every cell once
+        rest = [rest[(i * step) % n] for i in range(n)]
     patches = [dict(x=x, y=y, speed=int(s), power=float(p)) for (x, y), (s, p) in zip(rest, combos)]
     return patches, mark
 
@@ -123,19 +155,22 @@ ORDERS = {"fast": "Fastest speed first (coolest first)",
 
 
 def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: int = 1,
-                     material_note: str = "", name: str = "lid-ladder", *, skip_speeds=(), done_rows=None,
-                     order: str = "fast", mark: bool = True) -> JobPlan:
-    """skip_speeds / done_rows ({speed: [row Y, ...]}) leave out what a stopped run already burned; patches keep the
-    spots they had, so the first run's map still applies."""
+                     material_note: str = "", name: str = "lid-ladder", *, skip_speeds=(), skip_patches=(),
+                     done_rows=None, order: str = "fast", mark: bool = True, patch: float | None = None,
+                     spread: bool = False) -> JobPlan:
+    """skip_speeds / skip_patches ([speed, power]) / done_rows ({"speed" or "speed:power": [row Y, ...]}) leave out
+    what a stopped run already burned; patches keep the spots they had, so the first run's map still applies."""
     piece = placement.piece
     p = mat.pitch
     px = float(piece["w"]) / 2
     radius = px - float(piece.get("margins", (0,))[0])
-    pl = plan(powers, speeds, radius)
-    patches, mark_at = assign(powers, speeds, pl["cells"], lid, pl["per_lid"])
+    pl = plan(powers, speeds, radius, patch=patch, spread=spread)
+    patches, mark_at = assign(powers, speeds, pl["cells"], lid, pl["per_lid"], scatter=spread)
     mark_pos, mark_at = mark_at, (mark_at if mark else None)
     skip = {int(s) for s in skip_speeds}
-    done_rows = {int(k): v for k, v in (done_rows or {}).items()}
+    skip_p = {patch_key(s, pw) for s, pw in skip_patches}
+    done_rows = {str(k): v for k, v in (done_rows or {}).items()}
+    is_done = lambda q: q["speed"] in skip or patch_key(q["speed"], q["power"]) in skip_p
     n = int(round(2 * radius / p))
     geom = layout((n, n), Placement(piece, art_w=n * p, fit="whole"), p)
     geom.cols, geom.rows = n, n
@@ -147,7 +182,7 @@ def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: i
         k = int(round(size / p))
         return slice(max(0, r0), min(n, r0 + k)), slice(max(0, c0), min(n, c0 + k))
 
-    todo = [q for q in patches if q["speed"] not in skip]
+    todo = [q for q in patches if not is_done(q)]
     if order == "hot":      # one patch per pass, most energy per mm first
         groups = [[q] for q in sorted(todo, key=lambda q: q["power"] / q["speed"], reverse=True)]
     else:
@@ -161,7 +196,8 @@ def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: i
             rs, cs = span(q["x"], q["y"], pl["patch"])
             cells[rs, cs] = int(round(q["power"] * 10))
             q["order"] = k
-        for y in done_rows.get(s, []):          # rows the stopped run already burned at this speed
+        ys = done_rows.get(str(s), []) + (done_rows.get(patch_key(s, group[0]["power"]), []) if order == "hot" else [])
+        for y in ys:                            # rows the stopped run already burned in this pass
             r = int(round((geom.yt - float(y)) / p - 0.5))
             if 0 <= r < n:
                 cells[r, :] = 0
@@ -178,11 +214,11 @@ def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: i
                                "rows", cells, list(range(n)), int(s), None))
     # Run-ups: each speed's own (auto_runup), not the material's minimum: slow passes reach speed at once, and a
     # 4 mm wood minimum at 50 mm/min was most of a one-patch pass's time.
-    job = JobPlan(name, mat.copy(style="threshold", runup=1.0), geom, piece, passes, None, None, allowed)
+    job = JobPlan(name, lid_material(mat, material_note), geom, piece, passes, None, None, allowed)
     job.ladder = dict(patches=patches, mark=mark_pos, mark_burns=mark_at is not None, patch=pl["patch"],
                       gap=pl["gap"], lid=lid, lids=pl["lids"], material_note=material_note,
                       notes=notes(powers, speeds, px, todo or patches, pl["patch"], order),
-                      skipped=sorted(skip), order=order)
+                      skipped=sorted(skip), skipped_patches=sorted(skip_p), order=order)
     return job
 
 
@@ -196,8 +232,14 @@ def continuation(folder) -> dict:
     doc = json.loads((folder / "job.json").read_text(encoding="utf-8"))
     st = json.loads((folder / "state.json").read_text(encoding="utf-8"))
     grid = dict(doc["grid"])
-    speed = lambda meta: int(re.match(r"F(\d+)", meta["key"])[1])
-    done = {speed(doc["passes"][i]) for i in st.get("completed", [])}
+    key = lambda meta: re.match(r"F(\d+)(?:P([\d.]+))?$", meta["key"])
+    speeds, pats = set(grid.get("skip_speeds", [])), {tuple(x) for x in grid.get("skip_patches", [])}
+    for i in st.get("completed", []):            # a finished pass: a whole speed, or one patch ("hottest first")
+        m = key(doc["passes"][i])
+        if m[2]:
+            pats.add((int(m[1]), float(m[2])))
+        else:
+            speeds.add(int(m[1]))
     rows = {}
     res = st.get("resume") or {}
     if res.get("start_pass") is not None and res["start_pass"] < len(doc["passes"]):
@@ -206,10 +248,11 @@ def continuation(folder) -> dict:
         body = lines[next(i for i, l in enumerate(lines) if "BODY" in l) + 1:]
         body = [l for l in body if l and not l.startswith(";")][:int(res.get("start_index", 0))]
         ys = sorted({m[1] for l in body if (m := re.search(r"Y(-?[\d.]+) F\d+ S([1-9]\d*)", l))})
+        m = key(meta)
         if ys:
-            rows[speed(meta)] = [float(y) for y in ys]
-    return dict(grid, skip_speeds=sorted(done), done_rows=rows, mark=False, from_job=folder.name,
-                phase=st.get("phase"))
+            rows[patch_key(m[1], m[2]) if m[2] else str(int(m[1]))] = [float(y) for y in ys]
+    return dict(grid, skip_speeds=sorted(speeds), skip_patches=sorted([s, p] for s, p in pats), done_rows=rows,
+                mark=False, from_job=folder.name, phase=st.get("phase"))
 
 
 def ladder_map(job: JobPlan, px_per_mm: int | None = None) -> Image.Image:
@@ -236,7 +279,7 @@ def ladder_map(job: JobPlan, px_per_mm: int | None = None) -> Image.Image:
                           "power %. Bottom: speed mm/min. Seen from above, mark at the top.", fill="black", font=font)
     order = " > ".join(p.title for p in job.passes)
     dr.text((margin, 84), f"Burn order: {order}"[:150], fill="black", font=font)
-    if lad.get("skipped"):
+    if lad.get("skipped") or lad.get("skipped_patches"):
         dr.text((margin, 104), "Continuing a stopped ladder: red outlines = burning now, white = already burned "
                                "(same spots as the first map).", fill="red", font=font)
     dr.ellipse([cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2], outline="black", width=3)
@@ -246,7 +289,7 @@ def ladder_map(job: JobPlan, px_per_mm: int | None = None) -> Image.Image:
     for q in lad["patches"]:
         (x0, y0), (x1, y1) = to(q["x"] - h, q["y"] + h), to(q["x"] + h, q["y"] - h)
         shade = int(235 - 150 * (q["power"] / 100) * min(1.0, 600 / q["speed"]))
-        done = q["speed"] in lad.get("skipped", [])
+        done = q["speed"] in lad.get("skipped", []) or patch_key(q["speed"], q["power"]) in lad.get("skipped_patches", [])
         dr.rectangle([x0, y0, x1, y1], fill=(shade, shade, shade) if not done else "white",
                      outline="black" if done else "red", width=1 if done else 3)
         if not done and lad.get("order") == "hot" and q.get("order"):

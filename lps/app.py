@@ -512,6 +512,8 @@ class App(PlaceMixin, LaserMixin):
             return
         c["order"] = next(k for k, v in ladder.ORDERS.items() if v == d["order"])
         self.grid_spec = c
+        self.mat = self.base_mat = ladder.lid_material(self.mat, c.get("material", ""))
+        self._show_material()
         self.piece_key = "custom"
         self.piece = ladder.lid_piece(c["diameter"], c["safe"])
         self.piece_user_set = True
@@ -532,6 +534,8 @@ class App(PlaceMixin, LaserMixin):
         if not d:
             return
         self.grid_spec = d
+        self.mat = self.base_mat = ladder.lid_material(self.mat, d.get("material", ""))   # the lid, not step 2's pick
+        self._show_material()
         self.piece_key = "custom"
         self.piece = ladder.lid_piece(d["diameter"], d["safe"])
         self.piece_user_set = True
@@ -584,6 +588,8 @@ class App(PlaceMixin, LaserMixin):
                     job = ladder.build_lid_ladder(mat, placement, grid["powers"], grid["speeds"], grid["lid"],
                                                   grid["material"], name=name,
                                                   skip_speeds=grid.get("skip_speeds", ()),
+                                                  skip_patches=grid.get("skip_patches", ()),
+                                                  patch=grid.get("patch"), spread=grid.get("spread", False),
                                                   done_rows={int(k): v for k, v in grid.get("done_rows", {}).items()},
                                                   order=grid.get("order", "fast"), mark=grid.get("mark", True))
                 elif grid:

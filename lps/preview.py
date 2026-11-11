@@ -190,7 +190,7 @@ class PreviewPanel(ttk.Frame):
         ty = lambda y: oy + (vy1 - y) * s
         app = self.app
         job = None if app.gfile else app.job
-        look = LOOKS.get(app.mat.look, LOOKS["pine"])
+        look = LOOKS.get((app.job.material if app.job is not None else app.mat).look, LOOKS["pine"])
         piece = job.piece if job is not None else app.piece
         px0, py0, px1, py1 = planner.piece_rect(piece)
         if app.gfile:

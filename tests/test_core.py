@@ -212,6 +212,24 @@ class Placement_(unittest.TestCase):
         self.assertEqual((cont.passes[0].feed, cont.passes[0].title), (50, "50 mm/min 100%"))   # hottest first
         r = int(round((cont.geom.yt - y99) / cont.geom.pitch - 0.5))
         self.assertFalse(any(p.cells[r].any() for p in cont.passes if p.feed == 100))
+        # The job says what it's burned on, not whatever step 2 had picked (it used to say "Pine plank").
+        pine = next(m for m in presets.BUILTIN if m.key == "pine-layers")
+        tin = ladder.build_lid_ladder(pine, Placement(ladder.lid_piece()), [90, 100], [10, 12], material_note="Reflective tin lid",
+                                      order="hot", patch=1.5)
+        self.assertEqual((tin.material.look, tin.material.name), ("tin", "Reflective tin lid - ladder test"))
+        self.assertEqual(tin.ladder["patch"], 1.5)
+        # Stopped part way through a hottest-first run: finished patches are skipped one by one, not whole speeds.
+        rep = verify.verify_job(planner.compile_job(tin))
+        with tempfile.TemporaryDirectory() as td:
+            folder = jobs.save_job(tin, rep, folder=Path(td) / "hot", extra=dict(grid=dict(
+                kind="lid", material="Reflective tin lid", powers=[90, 100], speeds=[10, 12], diameter=50.8,
+                safe=45.72, lid=1)))
+            jobs.write_json(folder / "state.json", dict(phase="stopped", completed=[0, 1]))
+            c = ladder.continuation(folder)
+        self.assertEqual((c["skip_speeds"], c["skip_patches"]), ([], [[10, 90.0], [10, 100.0]]))
+        rest = ladder.build_lid_ladder(pine, Placement(ladder.lid_piece()), [90, 100], [10, 12], order="hot", patch=1.5,
+                                       skip_patches=c["skip_patches"], mark=False)
+        self.assertEqual([p.title for p in rest.passes], ["12 mm/min 100%", "12 mm/min 90%"])
         big = ladder.plan(list(range(50, 101, 5)), ladder.log_speeds(50, 6000, 16))     # too many: more lids
         self.assertGreater(big["lids"], 1)
 

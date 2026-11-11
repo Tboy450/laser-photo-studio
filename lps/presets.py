@@ -93,6 +93,8 @@ LOOKS = {  # preview colours: (bare material RGB, fully marked RGB)
     "tile": ((242, 242, 238), (28, 28, 28)),
     "glass": ((210, 222, 222), (40, 44, 44)),
     "acrylic": ((16, 16, 18), (150, 150, 152)),
+    "tin": ((214, 216, 220), (110, 100, 92)),          # reflective tin lid: bright silver, grey-brown marks
+    "blacktin": ((30, 30, 33), (196, 196, 202)),       # black aluminum tin: marks come out light
 }
 
 
