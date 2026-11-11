@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from . import imaging
-from .planner import JobPlan, PassPlan, Placement, allowed_cells, layout
+from .planner import JobPlan, PassPlan, Placement, allowed_cells, layout, piece_rect
 from .presets import Material, auto_runup
 
 LID_MATERIALS = ["Reflective tin lid", "Black aluminum 1 oz tin", "Other (write it in the job name)"]
@@ -45,7 +45,7 @@ def log_speeds(lo: float, hi: float, n: int) -> list:
     return sorted(set(out))
 
 
-def cells_in_circle(radius: float, patch: float, gap: float) -> list:
+def _cells_in_circle(radius: float, patch: float, gap: float) -> list:
     """Patch centres (mm from the centre) whose whole square lies inside the circle, rows top to bottom.
     Tries the lattice on and between the centre lines and keeps whichever fits most."""
     step = patch + gap
@@ -84,11 +84,17 @@ def patch_key(speed, power) -> str:
 
 
 def plan(powers, speeds, radius: float = 22.86, gap: float = 1.0, patch: float | None = None,
-         spread: bool = False) -> dict:
+         spread: bool = False, count: int | None = None, avoid=()) -> dict:
     """Pick the largest patch that fits every power x speed (plus the orientation mark) on one lid, or use `patch`
     if given; if none fits, use the smallest and say how many lids it takes. `spread`: the widest gap that still fits,
-    so the patches cover the whole lid instead of bunching at the top."""
-    n = len(powers) * len(speeds)
+    so the patches cover the whole lid instead of bunching at the top. `avoid`: (x, y, size) squares already
+    burned; no patch goes within 1 mm of them."""
+    n = count or len(powers) * len(speeds)
+
+    def cells_in_circle(r, size, g):
+        return [c for c in _cells_in_circle(r, size, g)
+                if all(abs(c[0] - ax) > (size + asz) / 2 + 1.0 or abs(c[1] - ay) > (size + asz) / 2 + 1.0
+                       for ax, ay, asz in avoid)]
     if patch and spread:
         for g in (8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5):
             cells = cells_in_circle(radius, patch, g)
@@ -108,11 +114,16 @@ def plan(powers, speeds, radius: float = 22.86, gap: float = 1.0, patch: float |
     return dict(patch=size, gap=gap, cells=cells, lids=math.ceil(n / per), per_lid=per)
 
 
-def assign(powers, speeds, cells, lid: int = 1, per_lid: int | None = None, scatter: bool = False) -> tuple:
+def cells_in_circle(radius: float, patch: float, gap: float) -> list:
+    return _cells_in_circle(radius, patch, gap)
+
+
+def assign(powers, speeds, cells, lid: int = 1, per_lid: int | None = None, scatter: bool = False,
+           combos=None) -> tuple:
     """(patches, mark): the orientation mark takes the top row's right-hand cell, then patches fill the other
     cells top to bottom, slowest speed first, powers left to right. `scatter` (for hottest-first ladders): the
     patches in burn order (most energy per mm first) go to cells far apart, so heat doesn't build in one spot."""
-    combos = [(s, p) for s in sorted(speeds) for p in powers]
+    combos = [tuple(c) for c in combos] if combos else [(s, p) for s in sorted(speeds) for p in powers]
     per = per_lid or len(combos)
     combos = combos[(lid - 1) * per: lid * per]
     mark = max(cells, key=lambda c: (c[1], c[0])) if len(cells) > len(combos) else None
@@ -130,7 +141,7 @@ def notes(powers, speeds, piece_radius: float, patches, patch: float, order: str
     """Plain warnings for the operator: heat at slow speeds, run-ups past the lid edge, M4 at speed."""
     out = []
     e0 = STRONGEST_SO_FAR[0] / STRONGEST_SO_FAR[1]
-    worst = max(p / s for p in powers for s in speeds)
+    worst = max(q["power"] / q["speed"] for q in patches) if patches else max(p / s for p in powers for s in speeds)
     if worst > e0 * 1.5:
         out.append(f"Heat: the slowest, strongest patch puts {worst / e0:.0f}x the energy per mm into the lid of the "
                    f"strongest lid patch so far ({STRONGEST_SO_FAR[0]:g}% at {STRONGEST_SO_FAR[1]:g} mm/min). Expect "
@@ -158,15 +169,18 @@ ORDERS = {"fast": "Fastest speed first (coolest first)",
 def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: int = 1,
                      material_note: str = "", name: str = "lid-ladder", *, skip_speeds=(), skip_patches=(),
                      done_rows=None, order: str = "fast", mark: bool = True, patch: float | None = None,
-                     spread: bool = False, ramp: bool = False) -> JobPlan:
+                     spread: bool = False, ramp: bool = False, combos=None, avoid=()) -> JobPlan:
     """skip_speeds / skip_patches ([speed, power]) / done_rows ({"speed" or "speed:power": [row Y, ...]}) leave out
     what a stopped run already burned; patches keep the spots they had, so the first run's map still applies."""
     piece = placement.piece
     p = mat.pitch
     px = float(piece["w"]) / 2
     radius = px - float(piece.get("margins", (0,))[0])
-    pl = plan(powers, speeds, radius, patch=patch, spread=spread)
-    patches, mark_at = assign(powers, speeds, pl["cells"], lid, pl["per_lid"], scatter=spread)
+    combos = [(int(s), float(pw)) for s, pw in combos] if combos else None     # explicit (speed, power) pairs
+    if combos:
+        powers, speeds = sorted({pw for _, pw in combos}), sorted({s for s, _ in combos})
+    pl = plan(powers, speeds, radius, patch=patch, spread=spread, count=len(combos) if combos else None, avoid=avoid)
+    patches, mark_at = assign(powers, speeds, pl["cells"], lid, pl["per_lid"], scatter=spread, combos=combos)
     mark_pos, mark_at = mark_at, (mark_at if mark else None)
     skip = {int(s) for s in skip_speeds}
     skip_p = {patch_key(s, pw) for s, pw in skip_patches}
@@ -177,7 +191,11 @@ def build_lid_ladder(mat: Material, placement: Placement, powers, speeds, lid: i
     geom.cols, geom.rows = n, n
     allowed = allowed_cells(geom, piece)
 
+    pr = piece_rect(piece)
+    ox, oy = (pr[0] + pr[2]) / 2, (pr[1] + pr[3]) / 2      # the lid's centre in work coordinates
+
     def span(cx, cy, size):
+        cx, cy = cx + ox, cy + oy
         c0 = int(round((cx - size / 2 - geom.x0) / p))
         r0 = int(round((geom.yt - (cy + size / 2)) / p))
         k = int(round(size / p))
