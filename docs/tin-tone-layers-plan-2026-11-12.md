@@ -1,13 +1,26 @@
-# Plan: gold and charcoal tone layers for tin lids (2026-11-12)
+# Plan: tone layers for tin lids: gold + frost etch (2026-11-12)
+
+> **Update, 2026-11-12 about 6:48 AM: the fast "charcoal" tone is soot.** On these reflective lids the fast tone
+> (about 2200–4300 mm/min) is soot sitting on the surface. After wiping it's only a **light frosted etch that still
+> looks like stainless**. The gold stays. Source: `pine salve - red hill\UPDATE-2026-11-12-soot-finding\`.
+>
+> - In this plan the fast tone is now called **"frost etch (soot until wiped)"**.
+> - **Judge every result after wiping**, and say whether a photo is before or after.
+> - A permanent dark tone on these lids is **unproven**. It needs more exposure: repeat passes, finer row pitch, or
+>   wiping between passes. It can't come from a slower speed, because of the ~24 mm/min floor.
+> - Idea, proposed only: soot as a temporary stencil for gold.
+>
+> The tone-layer feature itself doesn't change: tones are just presets, so their names and settings can follow the
+> tests.
 
 **Status:** a plan only. Nothing here is built yet. The user is printing, so **no app changes until the prints are
 done.**
 
 ## The goal
 
-- Gold and charcoal (black) **tint standards** for the Red Hill tin lids, so a design prints in those two tones the
+- Gold and frost-etch **tint standards** (and a dark tone, if one proves permanent) for the Red Hill tin lids, so a design prints in those two tones the
   same way every time. No AI image tools in the loop.
-- **A simple way in Laser Photo Studio to split one design into a gold layer and a charcoal layer and burn one, then
+- **A simple way in Laser Photo Studio to split one design into a gold layer and a frost-etch layer and burn one, then
   the other.** The order should be a one-click choice.
 
 ## What we know (from the lid tests, Nov 10–12)
@@ -19,11 +32,12 @@ On these lids, **speed sets the colour; power barely matters** between 70 and 10
 | Tone | Setting |
 |---|---|
 | Gold / rose-copper | about 80 % / 140 mm/min |
-| Charcoal | about 80 % / 2200–4300 mm/min |
+| Frost etch (soot until wiped; looked like charcoal before wiping) | about 80 % / 2200–4300 mm/min |
 
 - Below about 24 mm/min the machine doesn't go any slower.
 - Ladder squares don't predict colours on a real design: shapes and stroke width change the shade.
-- **Thin charcoal lettering is the weak point.** It's still missing detail after two passes.
+- **Thin fast-tone lettering is the weak point.** It's still missing detail after two passes, and after wiping the
+  fast tone is only a light frost.
 
 ### Each tone is its own pass
 
@@ -34,14 +48,14 @@ That's what this plan replaces.
 ### Order test (prepared, not yet run)
 
 `pine salve - red hill\tests\red-hill-forest-products-two-tone-2026-11-12\` has two jobs:
-- gold first: gold 80 % / 140, then charcoal 80 % / 2200;
-- black first: the same two passes, other way round.
+- gold first: gold 80 % / 140, then frost etch 80 % / 2200 (**ran 2026-11-12**: after wiping, the fast tone is a light frost);
+- black first: the same two passes, other way round (**held** after the soot finding, until reviewed).
 
 Both use the same two masks, left to right only, zero at the lid centre. Its result decides the **default order**.
 
 ### Material
 
-The user thinks the lids are bare aluminium alloy. Gold, copper and charcoal heat tints are typical of **tin-plated
+The user thinks the lids are bare aluminium alloy. Gold and copper heat tints are typical of **tin-plated
 steel**, not aluminium.
 
 Quick check: **a fridge magnet sticks to tinplate (steel) and not to aluminium.** The answer matters for the preset
@@ -60,21 +74,27 @@ names and for what to buy next time. It doesn't change anything else in this pla
 3. **Tone overlap test** (prepared: `pine salve - red hill\tests\tone-overlap-2026-11-12\`, about 40 min, one
    fresh lid).
    - It compares gap 0.2 mm, touching, 0.1 mm overlap and 0.3 mm overlap.
-   - It tests **gold over black** (upper half) and **black over gold** (lower half).
+   - It tests **gold over the fast tone** (upper half) and **the fast tone over gold** (lower half). Set A also
+     tests the soot-as-stencil idea: does soot from the fast pass change the gold burned over it?
+   - **Held** after the soot finding, until reviewed. If it runs, photograph it before and after wiping.
    - It adds a half-overprinted square and 0.1–0.5 mm lines of one tone on a solid field of the other.
    - Results decide the layer feature's edge setting: gap, touch or overlap. If one tone reads well **on top of**
      the other, add an "on top" layer option: burn the field solid, then the detail over it, with no cut-out
      needed. That's simpler for drawings and keeps fine detail.
-4. Run the lettering speed test when the user sends the image. This decides the charcoal standard (2200 vs
+4. Run the lettering speed test when the user sends the image. This decides the fast-tone standard (2200 vs
    3000 vs bolder strokes).
 
 ## Phase 1: tone standards (small, low risk)
+
+Every tone preset's note says **"judge after wiping"**. The preset preview colours come from photos taken after
+wiping.
 
 ### Tone presets
 
 Add **tone presets** for this lid stock. Each tone is a name, power, speed and preview colour:
 - `Tin lid - Gold` 80 % / 140
-- `Tin lid - Charcoal` 80 % / 2200, changed by the lettering test
+- `Tin lid - Frost etch` 80 % / 2200: **soot until wiped; judge after wiping**
+- `Tin lid - Dark`: only if a permanent dark is found (repeat passes, finer pitch, or wiping between passes)
 - `Tin lid - Copper` kept for later
 
 All marked **EXPERIMENTAL** until confirmed on two lids. Where:
@@ -97,7 +117,7 @@ lid centre, with keep-clear spots.
 ### What the user sees (one new style, "Tone layers")
 
 1. **Step 1 – Picture.** Open the design as **one flat-colour picture**:
-   - charcoal parts black;
+   - fast-tone (frost etch) parts black;
    - gold parts a gold or yellow colour;
    - background white, meaning bare tin.
 
@@ -109,7 +129,7 @@ lid centre, with keep-clear spots.
 
    ```
    Layer        Picture colour   Burns as              Order
-   ■ Charcoal   black            Tin - Charcoal 80/2200   1  [↑][↓]
+   ■ Frost      black            Tin - Frost etch 80/2200 1  [↑][↓]
    ■ Gold       yellow           Tin - Gold 80/140         2  [↑][↓]
    □ Bare       white            (not burned)
    [Swap order]   Silver gap between tones: [0.25] mm   [x] One tone per shape
@@ -123,14 +143,14 @@ lid centre, with keep-clear spots.
 3. **Preview.**
    - "What burns" shows each layer in its tone colour.
    - The burn map shows one colour per pass.
-   - "Show one layer" buttons isolate gold or charcoal, so the user can check each one before burning.
-   - Thin strokes in the charcoal layer get a warning badge ("below 0.3 mm: may come out faint") with a
+   - "Show one layer" buttons isolate gold or frost etch, so the user can check each one before burning.
+   - Thin strokes in the fast-tone layer get a warning badge ("below 0.3 mm: may come out faint") with a
      **"Make strokes bolder (+0.05 mm)"** option, depending on the lettering test.
 
 4. **Step 5 – Burn.**
    - The passes run in the listed order from one Start: one connection, one zero (the lid centre).
    - *Pause after each pass* defaults to on for tone layers, so the lid can cool and be photographed.
-   - The step 5 header names the passes: "Pass 1 of 2: CHARCOAL 80 % / 2200 · Pass 2 of 2: GOLD 80 % / 140".
+   - The step 5 header names the passes: "Pass 1 of 2: FROST ETCH 80 % / 2200 · Pass 2 of 2: GOLD 80 % / 140".
 
 5. **Saving.** The job folder keeps:
    - the original picture;
