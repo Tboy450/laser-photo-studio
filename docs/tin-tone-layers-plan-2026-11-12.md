@@ -57,7 +57,15 @@ names and for what to buy next time. It doesn't change anything else in this pla
    - one shot tilted about 30°;
    - a bare lid in the frame if possible.
 2. Do the magnet test on a lid.
-3. Run the lettering speed test when the user sends the image. This decides the charcoal standard (2200 vs
+3. **Tone overlap test** (prepared: `pine salve - red hill\tests\tone-overlap-2026-11-12\`, about 40 min, one
+   fresh lid).
+   - It compares gap 0.2 mm, touching, 0.1 mm overlap and 0.3 mm overlap.
+   - It tests **gold over black** (upper half) and **black over gold** (lower half).
+   - It adds a half-overprinted square and 0.1–0.5 mm lines of one tone on a solid field of the other.
+   - Results decide the layer feature's edge setting: gap, touch or overlap. If one tone reads well **on top of**
+     the other, add an "on top" layer option: burn the field solid, then the detail over it, with no cut-out
+     needed. That's simpler for drawings and keeps fine detail.
+4. Run the lettering speed test when the user sends the image. This decides the charcoal standard (2200 vs
    3000 vs bolder strokes).
 
 ## Phase 1: tone standards (small, low risk)
