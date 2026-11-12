@@ -94,7 +94,12 @@ wiping.
 Add **tone presets** for this lid stock. Each tone is a name, power, speed and preview colour:
 - `Tin lid - Gold` 80 % / 140
 - `Tin lid - Frost etch` 80 % / 2200: **soot until wiped; judge after wiping**
-- `Tin lid - Dark`: only if a permanent dark is found (repeat passes, finer pitch, or wiping between passes)
+- `Tin lid - Dark`: **only if a test proves a permanent dark.** The research note
+  (`pine salve - red hill\UPDATE-2026-11-12-soot-finding\RESEARCH-permanent-dark-2026-11-12.md`) says:
+  - a bare lid is unlikely to go black under this diode;
+  - more heat may reach a permanent purple or dark-blue temper colour.
+- Idea only, untested: `Coating mark (spray / dry moly)`, a real black from a marking coating or black tins with the
+  background ablated
 - `Tin lid - Copper` kept for later
 
 All marked **EXPERIMENTAL** until confirmed on two lids. Where:
