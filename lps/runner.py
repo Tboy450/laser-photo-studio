@@ -14,6 +14,8 @@ import sys
 import time
 import traceback
 from collections import deque
+
+NL = chr(10)
 from pathlib import Path
 
 from . import jobs, recovery, position_memory
@@ -50,6 +52,10 @@ class Runner:
         self.parking = False
         self.next_save = 0.0
         self.dwell_pass = False   # current pass burns in place (M3 + G4 at chosen spots)
+        self.t0_mono = self.t0_wall = None   # print timer: monotonic clock for durations, wall clock for display
+        self.timing = []          # one entry per pass started: ms timings, planned vs real
+        self.cur_timing = None
+        self.trace = None         # status-trace.csv: every status report, timestamped
         self.inflight = deque()   # commands handed to the controller and not yet acknowledged, oldest first
         self.memory = position_memory.PositionMemory(self.spec.get("position_memory_path") or
                                                      self.folder / "position-memory.json")
@@ -83,6 +89,11 @@ class Runner:
             self.active_s += now - self.active_mark
             self.active_mark = now
         self.state["elapsed_s"] = round(self.active_s, 1)
+        if self.trace is not None:
+            try:
+                self.trace.flush()
+            except OSError:
+                pass
         self.state["updated"] = dt.datetime.now().isoformat(timespec="seconds")
         self.state["position_record"] = self.memory.data
         if self.memory.enabled:
@@ -95,6 +106,88 @@ class Runner:
             jobs.write_json(self.folder / "state.json", self.state)
         except OSError:
             pass
+
+    # ---------------------------------------------------------------- print timer
+    def ms(self, mono: float) -> float:
+        return round((mono - self.t0_mono) * 1000.0, 1)
+
+    def wall(self, mono: float) -> float:
+        return self.t0_wall + (mono - self.t0_mono)
+
+    def start_timer(self):
+        self.t0_mono, self.t0_wall = time.monotonic(), time.time()
+        prev = jobs.read_json(self.folder / "timing.json", {}) or {}
+        self.timing = list(prev.get("passes", []))          # a resumed job keeps the earlier runs' timings
+        self.state["timer"] = dict(job_t0=self.t0_wall, job_end=None, pass_t0=None, pass_end=None, pass_index=None)
+        f = self.folder / "status-trace.csv"
+        new = not f.exists()
+        self.trace = open(f, "a", encoding="utf-8", newline="")
+        if new:
+            self.trace.write("t_ms,wall,run_start,pass,state,wx,wy,feed_mm_min,laser_s,ov,sent" + NL)
+        self.trace_start = dt.datetime.fromtimestamp(self.t0_wall).isoformat(timespec="milliseconds")
+
+    def record_status(self, st):
+        if self.trace is None or self.t0_mono is None:
+            return
+        w = st.wpos or ("", "")
+        ov = "/".join(str(v) for v in st.ov) if st.ov else ""
+        state = st.state + (f":{st.sub}" if st.sub else "")
+        wall = dt.datetime.fromtimestamp(self.wall(st.at)).isoformat(timespec="milliseconds")
+        pi = self.cur_timing["pass_index"] + 1 if self.cur_timing else ""
+        self.trace.write(f"{self.ms(st.at)},{wall},{self.trace_start},{pi},{state},{w[0]},{w[1]},{st.feed:g},"
+                         f"{st.spindle:g},{ov},{self.state.get('sent', '')}" + NL)
+        c = self.cur_timing
+        if c is not None and c["first_motion_ms"] is None and st.state in ("Run", "Jog") and not self.parking:
+            c["first_motion_ms"] = self.ms(st.at)
+            c["first_motion_wall"] = wall
+
+    def pass_started(self, pi, p):
+        now = time.monotonic()
+        self.cur_timing = dict(pass_index=pi, title=p["title"], est_s=float(p.get("est_s", 0.0)),
+                               run_start=self.trace_start, sent_ms=self.ms(now),
+                               sent_wall=dt.datetime.fromtimestamp(self.wall(now)).isoformat(timespec="milliseconds"),
+                               first_motion_ms=None, first_motion_wall=None, idle_ms=None, idle_wall=None,
+                               real_s=None, real_over_planned=None, ended=None)
+        self.state["timer"].update(pass_t0=self.wall(now), pass_end=None, pass_index=pi)
+        self.timing.append(self.cur_timing)
+        self.write_timing()
+
+    def pass_ended(self, how: str, at: float | None = None):
+        c = self.cur_timing
+        if c is None:
+            return
+        at = time.monotonic() if at is None else at
+        c["idle_ms"] = self.ms(at)
+        c["idle_wall"] = dt.datetime.fromtimestamp(self.wall(at)).isoformat(timespec="milliseconds")
+        start = c["first_motion_ms"] if c["first_motion_ms"] is not None else c["sent_ms"]
+        c["real_s"] = round((c["idle_ms"] - start) / 1000.0, 3)
+        c["start_basis"] = ("first reported movement" if c["first_motion_ms"] is not None else
+                            "handed to the controller (no movement report before it ended)")
+        c["real_over_planned"] = round(c["real_s"] / c["est_s"], 4) if c["est_s"] > 0 else None
+        c["ended"] = how
+        self.state["timer"]["pass_end"] = self.wall(at)
+        self.state["timer"]["last_pass"] = dict(title=c["title"], real_s=c["real_s"], est_s=c["est_s"],
+                                                ratio=c["real_over_planned"])
+        self.log(f"[timing] {c['title']}: {c['real_s']:.3f} s from first movement to idle "
+                 f"(planned {c['est_s']:.1f} s, real/planned {c['real_over_planned']})")
+        self.cur_timing = None
+        self.write_timing()
+
+    def write_timing(self):
+        doc = dict(note="Times in ms from this run's start (monotonic clock). real_s = first reported movement to "
+                        "the controller reporting Idle after the pass. 'sent' only means handed to the controller.",
+                   passes=self.timing)
+        jobs.write_json(self.folder / "timing.json", doc)
+
+    def stop_timer(self):
+        if self.t0_mono is None:
+            return
+        if self.cur_timing is not None:
+            self.pass_ended(self.state.get("phase") or "ended")
+        self.state.setdefault("timer", {})["job_end"] = time.time()
+        if self.trace is not None:
+            self.trace.close()
+            self.trace = None
 
     def phase(self, phase: str, message: str):
         self.state["phase"], self.state["message"] = phase, message
@@ -157,6 +250,7 @@ class Runner:
         st = g.status
         if st is not None and st.at > self.last_status_at:
             self.last_status_at = st.at
+            self.record_status(st)
             self.state["controller"] = st.state + (f":{st.sub}" if st.sub else "")
             self.state["laser_on"] = st.laser_on
             if st.wpos:
@@ -388,6 +482,7 @@ class Runner:
             keep_awake(True)
             bodies = self.load_passes()
             self.connect()
+            self.start_timer()
             n = len(bodies)
             start_index = int(self.spec.get("start_index", 0))
             lead = list(self.spec.get("lead") or [])
@@ -404,6 +499,7 @@ class Runner:
                     self.state["sent"] = 0
                 self.last_written = (start_index - 1) if pi == int(self.spec.get("start_pass", 0)) else -1
                 self.state.update(pass_index=pi, pass_key=p["key"], pass_title=p["title"])
+                self.pass_started(pi, p)
                 self.dwell_pass = recovery.is_dwell(body)
                 self.inflight.clear()
                 self.phase("running", f"{p['title']} ({pi + 1} of {n}) running.")
@@ -412,7 +508,7 @@ class Runner:
                     return self.finish_estop(bodies)
                 if res.startswith("stop:"):
                     idx = int(res.split(":")[1])
-                    self.wait_idle(120)
+                    self.pass_ended("stopped", self.wait_idle(120).at)
                     self.g.command("M5 S0")
                     point = self.last_xy or self.park_xy
                     self.state["resume"] = recovery.resume_spec(body, pi, idx, point, self.hop)
@@ -420,7 +516,8 @@ class Runner:
                     self.phase("stopped", f"Stopped after a row in {p['title']}. Position kept, laser off. "
                                           "Resume will continue with the next row.")
                     return "stopped"
-                self.wait_idle(300)
+                idle = self.wait_idle(300)
+                self.pass_ended("complete", idle.at)
                 self.g.command("M5 S0")
                 self.state["completed"].append(pi)
                 self.save(force=True)
@@ -443,6 +540,10 @@ class Runner:
             self.log(traceback.format_exc())
             return self.fault(f"Unexpected error: {e}", bodies)
         finally:
+            try:
+                self.stop_timer()
+            except OSError as e:
+                self.log(f"Timing record could not be saved: {e}")
             try:
                 self.memory.disconnect()
             except OSError as e:

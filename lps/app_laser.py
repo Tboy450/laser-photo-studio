@@ -225,6 +225,8 @@ class LaserMixin:
         self.laser_lbl = tk.Label(m, text=" laser off ", bg=COLORS["ok_bg"], fg=COLORS["ok"],
                                   font=("Segoe UI", 10, "bold"))
         self.laser_lbl.pack(anchor="w")
+        self.timer_lbl = ttk.Label(m, text="", font=("Consolas", 11))
+        self.timer_lbl.pack(anchor="w", pady=(4, 0))
         self.run_lbl = wrap_label(m, "", style="Muted.TLabel")
         self.run_lbl.pack(anchor="w", pady=(4, 0))
         cr = ttk.Frame(m)
@@ -260,7 +262,16 @@ class LaserMixin:
                 self.say(f"Your last job ({st.get('job')}) stopped before finishing. Step 5 can resume it.", "warn")
         self.root.after(300, self._poll_runner)
         self.root.after(3000, self._scan_photos)
+        self.root.after(100, self._tick_timer)
         self.refresh_laser_page()
+
+    def _tick_timer(self):
+        """Print timer, redrawn every 0.1 s from the job's own start times (state.json). The exact ms figures for
+        every pass are in the job folder's timing.json; every status report is in status-trace.csv."""
+        try:
+            self.timer_lbl.configure(text=timer_text((self.run_state or {}).get("timer"), time.time()))
+        finally:
+            self.root.after(100, self._tick_timer)
 
     # ================================================================ connection
     def connect(self):
@@ -1196,3 +1207,28 @@ class LaserMixin:
             self.say(f"Photo copy skipped: {e}", "warn")
         finally:
             self.root.after(3000, self._scan_photos)
+
+
+def clock(sec: float, ms: bool = False) -> str:
+    """m:ss.s (or h:mm:ss.s); ms=True gives m:ss.sss."""
+    sec = max(0.0, sec)
+    h, rest = divmod(sec, 3600)
+    m, s = divmod(rest, 60)
+    s_txt = f"{s:06.3f}" if ms else f"{s:04.1f}"
+    return f"{int(h)}:{int(m):02d}:{s_txt}" if h else f"{int(m)}:{s_txt}"
+
+
+def timer_text(timer, now: float) -> str:
+    """Live while running (0.1 s); to the ms once a pass or the job has ended."""
+    if not timer or not timer.get("job_t0"):
+        return ""
+    end = timer.get("job_end")
+    bits = [f"Print timer {clock((end or now) - timer['job_t0'], ms=bool(end))}"]
+    if timer.get("pass_t0"):
+        pe = timer.get("pass_end")
+        bits.append(f"pass {int(timer.get('pass_index') or 0) + 1}: {clock((pe or now) - timer['pass_t0'], ms=bool(pe))}")
+    lp = timer.get("last_pass")
+    if lp and lp.get("real_s") is not None:
+        bits.append(f"last pass {lp['real_s']:.3f} s moving (planned {lp['est_s']:.1f} s"
+                    + (f", x{lp['ratio']:.3f}" if lp.get("ratio") else "") + ")")
+    return "   ".join(bits)
