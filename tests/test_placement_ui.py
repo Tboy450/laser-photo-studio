@@ -264,3 +264,18 @@ class PlacementUI(unittest.TestCase):
             self.assertAlmostEqual(a.piece['keepouts'][0]['w'],moved['w']+1,places=2)
             motion.assert_not_called()
         self.assertFalse(a.job.passes[0].cells[~a.job.allowed].any())
+
+
+class SpeedValue(unittest.TestCase):
+    def test_slow_speeds_allowed_and_changes_explained(self):
+        from lps.app import speed_value
+        self.assertEqual(speed_value(140.0), (140, ""))
+        self.assertEqual(speed_value(50.0), (50, ""))
+        v, note = speed_value(12.0)
+        self.assertEqual(v, 12)
+        self.assertIn("24 mm/min", note)                     # accepted, with the measured-floor caution
+        self.assertEqual(speed_value(7000.0)[0], 6000)
+        self.assertIn("6000", speed_value(7000.0)[1])
+        self.assertEqual(speed_value(0.0)[0], 1)
+        self.assertIn("changed", speed_value(12.4)[1])
+

@@ -269,7 +269,7 @@ class App(PlaceMixin, LaserMixin):
         self.adv_vars = {}
         grid = ttk.Frame(adv)
         grid.pack(fill="x")
-        fields = [("feed", "Speed (mm/min)", 100, 6000, 50), ("power", "Power (%)", 1, 100, 1),
+        fields = [("feed", "Speed (mm/min)", 1, 6000, 50), ("power", "Power (%)", 1, 100, 1),
                   ("power_min", "Lightest power (%) - grayscale", 0, 100, 1),
                   ("tp1", "Layer power light (%)", 1, 100, 1), ("tp2", "Layer power mid (%)", 1, 100, 1),
                   ("tp3", "Layer power dark (%)", 1, 100, 1), ("pitch", "Row spacing (mm)", 0.05, 0.5, 0.01),
@@ -430,7 +430,12 @@ class App(PlaceMixin, LaserMixin):
             return
         m = self.mat
         rule = ((1, 0), (2, 1), (3, 2)) if self.rule_box.current() == 1 else ((1, 0), (1, 1), (3, 2))
-        changes = dict(feed=int(min(6000, max(100, v["feed"]))), power=int(round(v["power"] * 10)),
+        feed, note = speed_value(v["feed"])
+        if note:
+            self.say(note, "warn")
+        if feed != v["feed"]:
+            self.adv_vars["feed"][0].set(str(feed))       # show the value that will be used
+        changes = dict(feed=feed, power=int(round(v["power"] * 10)),
                        power_min=int(round(v["power_min"] * 10)),
                        tone_power=tuple(int(round(v[k] * 10)) for k in ("tp1", "tp2", "tp3")),
                        pitch=round(max(0.05, v["pitch"]), 3), passes=int(v["passes"]),
@@ -731,6 +736,20 @@ def adv_hint(key: str, text: str) -> str:
     if key in ("halftone_cell", "runup"):
         return f"= {v / 25.4:.3f} in"
     return ""
+
+
+def speed_value(raw: float) -> tuple:
+    """Advanced-settings speed: any whole mm/min from 1 to 6000 (the controller's maximum, $110). Returns (value,
+    message): the message says what was changed and why, so nothing changes silently."""
+    feed = int(round(min(6000.0, max(1.0, raw))))
+    if feed != raw:
+        why = ("the controller's maximum is 6000 ($110)" if raw > 6000 else
+               "the slowest is 1" if raw < 1 else "speeds are whole mm/min")
+        return feed, f"Speed {raw:g} mm/min was changed to {feed} mm/min: {why}."
+    if feed < 24:
+        return feed, (f"Speed {feed} mm/min accepted. Earlier runs suggest this machine may not go slower than about "
+                      "24 mm/min; the print timer in step 5 will show the real time.")
+    return feed, ""
 
 
 def main(argv=None):
