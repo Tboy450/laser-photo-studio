@@ -58,6 +58,20 @@ class DwellPlan(unittest.TestCase):
             self.assertLessEqual(abs(sp["x"] - want["x"]), 0.0501)
             self.assertLessEqual(abs(sp["y"] - want["y"]), 0.0501)
 
+    def test_saved_previews_ring_and_label_each_spot(self):
+        from lps import simulate
+        job = lid_job()
+        plain = simulate.appearance(job)
+        marked = np.asarray(simulate.mark_spots(plain, job))
+        self.assertEqual(marked.shape[:2], (plain.height * 4, plain.width * 4))
+        g = job.geom
+        for sp in job.passes[-1].spots:                                 # red ring pixels around every spot
+            x, y = int((sp["x"] - g.x0) / g.pitch * 4), int((g.yt - sp["y"]) / g.pitch * 4)
+            box = marked[y - 40:y + 40, x - 40:x + 40]
+            self.assertTrue(((box[..., 0] == 200) & (box[..., 1] == 0)).any())
+        self.assertEqual(simulate.spot_label(job.passes[-1].spots[2]).split(chr(10)), ["40s", "100%"])
+        self.assertIs(simulate.mark_spots(plain, lid_job(raster=False), passes={"R"}), plain)   # pass not shown
+
     def test_spots_outside_or_too_long_are_refused(self):
         with self.assertRaises(ValueError):
             lid_job([dict(x=24.0, y=0.0, seconds=5, power=80)])        # off the lid's usable circle

@@ -588,10 +588,10 @@ class PlaceMixin:
         mat, placement, look = self.build_params()
         extra = dict(look=look, placement=dict(fit=placement.fit, art_w=placement.art_w, dx=self.dx, dy=self.dy),
                      picture_file=str(self.picture_path) if self.picture_path else None, grid=self.grid_spec)
-        previews = {"1 LOOKS LIKE - finished piece": simulate.appearance(job),
+        previews = {"1 LOOKS LIKE - finished piece": simulate.mark_spots(simulate.appearance(job), job),
                     "2 LASER INPUT - black means the laser fires": simulate.laser_input(job),
                     "3 IN LASERGRBL - how its preview draws the nc": simulate.lasergrbl_view(job),
-                    "4 burn map - colour per pass": simulate.burn_map(job)}
+                    "4 burn map - colour per pass": simulate.mark_spots(simulate.burn_map(job), job)}
         if getattr(job, "ladder", None):
             from . import ladder
             previews["5 LADDER MAP - print this"] = ladder.ladder_map(job)

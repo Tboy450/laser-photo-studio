@@ -223,6 +223,16 @@ class PreviewPanel(ttk.Frame):
                                    dash=(3,4),tags="size-box")
             c.create_text(tx(g.x1), ty(g.y0) + 12, anchor="ne", fill=COLORS["muted"], font=("Segoe UI", 9),
                           text=f"Image size {g.art_w:g} x {g.art_h:g} mm (size guide only)")
+            sel = self.selected_passes()
+            for p in job.passes:                       # burn-in-place spots: one dot each, so ring and label them
+                if p.kind != "dwell" or (sel is not None and p.key not in sel):
+                    continue
+                r = max(5.0, 0.6 * s)
+                for sp in p.spots or []:
+                    x, y = tx(sp["x"]), ty(sp["y"])
+                    c.create_oval(x - r, y - r, x + r, y + r, outline=COLORS["bad"], width=2)
+                    c.create_text(x, y + r + 1, anchor="n", justify="center", fill=COLORS["bad"],
+                                  font=("Segoe UI", 7), text=simulate.spot_label(sp))
             zones = app.piece.get("keepouts", []) if app.zone_editing() else piece.get("keepouts", [])
             for index, k in enumerate(zones):
                 bx0,by0,bx1,by1 = keepouts.zone_bounds(k)
@@ -579,6 +589,8 @@ class PreviewPanel(ttk.Frame):
             items.append(("dash", COLORS["usable"], "usable area / optional image size guide"))
             if (app.job.piece or {}).get("keepouts"):
                 items.append(("keepout", COLORS["bad"], "no-burn zone"))
+            if any(p.kind == "dwell" for p in app.job.passes):
+                items.append(("dot", COLORS["bad"], "burn-in-place spot: laser on, standing still, for the time shown"))
         if app.check_mode in ("image", "sticker"):
             items.append(("line", COLORS["art"], "image perimeter" if app.check_mode == "image" else "sticker outline"))
         elif app.check_mode == "travel":

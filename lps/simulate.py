@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .planner import JobPlan
 from .presets import LOOKS
@@ -42,6 +42,32 @@ def appearance(job: JobPlan, passes=None) -> Image.Image:
         dark = np.clip(_blur(np.clip(energy, 0, 1), 0.35), 0, 1)
     rgb = base[None, None, :] + (mark - base)[None, None, :] * dark[:, :, None]
     return Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8), "RGB")
+
+
+def spot_label(sp) -> str:
+    return f"{float(sp['seconds']):g}s" + chr(10) + f"{int(sp['s']) / 10:g}%"
+
+
+def mark_spots(im: Image.Image, job: JobPlan, passes=None) -> Image.Image:
+    """Burn-in-place spots are single dots, too small to see: ring each one and label its time and power.
+    `im` is a picture at the job's dot resolution (one pixel per cell), as appearance() and burn_map() make."""
+    spots = [sp for p in job.passes if p.kind == "dwell" and (passes is None or p.key in passes) for sp in p.spots or []]
+    if not spots:
+        return im
+    g = job.geom
+    out = im.convert("RGB").resize((im.width * 4, im.height * 4), Image.Resampling.NEAREST)   # room for labels
+    d = ImageDraw.Draw(out)
+    px = 4 / g.pitch                                            # output pixels per mm
+    try:
+        font = ImageFont.truetype("arial.ttf", max(10, int(0.75 * px)))
+    except OSError:
+        font = ImageFont.load_default()
+    r = max(6, 0.5 * px)
+    for sp in spots:
+        x, y = (sp["x"] - g.x0) * px, (g.yt - sp["y"]) * px
+        d.ellipse((x - r, y - r, x + r, y + r), outline=(200, 0, 0), width=max(2, int(r / 5)))
+        d.multiline_text((x, y + r + 2), spot_label(sp), fill=(200, 0, 0), font=font, anchor="ma", align="center")
+    return out
 
 
 def burn_map(job: JobPlan, passes=None) -> Image.Image:
