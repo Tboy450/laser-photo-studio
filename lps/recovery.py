@@ -77,6 +77,23 @@ def _on_segment(p, a, b, tol):
     return (p[0] - qx) ** 2 + (p[1] - qy) ** 2 <= tol * tol
 
 
+def dwell_resume(body: list, index: int, last_written: int):
+    """Burn-in-place passes: never burn a spot twice. If the spot whose M3 was last handed to the controller hadn't
+    reached its M5 by `index`, continue after that spot instead (it's left part-burned, never repeated).
+    Returns (index, spot_number_skipped_or_None)."""
+    k3 = next((k for k in range(min(last_written, len(body) - 1), -1, -1) if body[k].startswith("M3 ")), None)
+    if k3 is None:
+        return index, None
+    m5 = next((k for k in range(k3 + 1, len(body)) if body[k] == "M5 S0"), len(body) - 1)
+    if index <= m5:
+        return m5 + 1, sum(1 for k in range(k3 + 1) if body[k].startswith("M3 "))
+    return index, None
+
+
+def is_dwell(body: list) -> bool:
+    return any(c.startswith("M3 ") for c in body)
+
+
 def resume_spec(body: list, pass_index: int, index: int, point, hop_feed: int = 3000, partial: str | None = None):
     lead = lead_in(body, index, point, hop_feed)
     if partial:

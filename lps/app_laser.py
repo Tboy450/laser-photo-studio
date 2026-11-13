@@ -1008,8 +1008,7 @@ class LaserMixin:
         feed = int(self.settings.get("perimeter_feed", 1500))
         events = self.events
         moves = verify.trace_moves(self.job) if replay else None
-        count = 1 + sum(len(p.commands) - p.commands.count("M5 S0") - p.commands.count("M4 S0")
-                        for p in self.job.passes) if replay else 0
+        count = 1 + sum(sum(1 for c in p.commands if c.startswith("G1 ")) for p in self.job.passes) if replay else 0
         self.worker.submit("perimeter", machine.trace_outline, paths, feed, cancel=self.worker.cancel,
                            shutdown=self.worker.quit,
                            progress=self.worker.trace_progress,

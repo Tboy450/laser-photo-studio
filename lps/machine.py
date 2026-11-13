@@ -1,5 +1,6 @@
 """Talking to the controller (MKS DLC32, Grbl 1.1h): serial link, status parsing, safety checks, the 1% positioning
-pulse and the perimeter check. Nothing here homes the machine, writes settings or uses G0/M3 for engraving.
+pulse and the perimeter check. Nothing here homes the machine, writes settings or uses G0 for engraving. M3 appears
+only in the positioning dot and in checked burn-in-place passes (verify.verify_dwell).
 
 Rules carried over from the project (LASER-AUTOMATION-BRIEF.md, apps/positioning-laser):
   * COM4 at 115200, DTR and RTS off (so opening the port doesn't reboot the controller).

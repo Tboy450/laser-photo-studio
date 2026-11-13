@@ -278,6 +278,10 @@ class PreviewPanel(ttk.Frame):
                     else:
                         travel_draw.line((prev, point), fill=travel_color)
                     prev = point
+                for p in app.job.passes:              # burn-in-place spots: a ring at each, standing still
+                    for sp in (p.spots or []) if p.kind == "dwell" else []:
+                        px, py = tx(sp["x"]), ty(sp["y"])
+                        mark_draw.ellipse((px - 4, py - 4, px + 4, py + 4), outline=COLORS["art"], width=2)
                 self._check_photo = ImageTk.PhotoImage(Image.alpha_composite(travel, marks))
                 self._check_cache = key
             c.create_image(0, 0, image=self._check_photo, anchor="nw")

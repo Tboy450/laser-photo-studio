@@ -13,6 +13,7 @@ import os
 import sys
 import time
 import traceback
+from collections import deque
 from pathlib import Path
 
 from . import jobs, recovery, position_memory
@@ -20,6 +21,8 @@ from .machine import (ControllerError, Grbl, LinkError, SerialWire, check_settin
 
 
 class Runner:
+    ACK_TIMEOUT = 15.0      # s with no acknowledgement and no movement before the job stops (plus any queued burn time)
+
     def __init__(self, folder, wire=None, settle: float = 1.0, heartbeat: float = 5.0):
         self.folder = Path(folder)
         self.job = jobs.read_json(self.folder / "job.json")
@@ -46,6 +49,8 @@ class Runner:
         self.active_mark = None
         self.parking = False
         self.next_save = 0.0
+        self.dwell_pass = False   # current pass burns in place (M3 + G4 at chosen spots)
+        self.inflight = deque()   # commands handed to the controller and not yet acknowledged, oldest first
         self.memory = position_memory.PositionMemory(self.spec.get("position_memory_path") or
                                                      self.folder / "position-memory.json")
         m = self.job["material"]
@@ -121,7 +126,12 @@ class Runner:
         self.ctl_seq = seq
         cmd = c.get("cmd")
         self.log(f"request: {cmd}")
-        if cmd == "pause" and not self.paused:
+        if cmd == "pause" and not self.paused and self.dwell_pass:
+            # a feed hold can't be trusted to hold the laser off mid-burn, so finish this spot and stop there
+            self.stop_req = True
+            self.phase("stopping", "Burn-in-place pass: Pause stops after the current spot (laser off), so no "
+                                   "spot is ever held half-burned. Resume continues with the next spot.")
+        elif cmd == "pause" and not self.paused:
             self.g.realtime(b"!")
             self.paused = True
             self.phase("paused", "Paused (feed hold). Laser is off while held. Press Resume to continue.")
@@ -134,7 +144,8 @@ class Runner:
             if self.paused:
                 self.g.realtime(b"~")
                 self.paused = False
-            self.phase("stopping", "Stopping after the current row (keeps position)...")
+            self.phase("stopping", "Stopping after the current spot (keeps position)..." if self.dwell_pass else
+                       "Stopping after the current row (keeps position)...")
         elif cmd == "estop":
             self.estop_req = True
         return cmd
@@ -176,9 +187,12 @@ class Runner:
             raise ControllerError(f"The controller rejected a command ({g.errors[0]}).")
         if g.alarm:
             raise ControllerError(f"Controller alarm ({g.alarm}).")
-        if g.pending and not self.paused and now - g.last_ack_at > 15:
+        while len(self.inflight) > len(g.pending):
+            self.inflight.popleft()
+        budget = sum(float(c[4:]) for c in self.inflight if c.startswith("G4 P"))   # a G4 is acknowledged when it ends
+        if g.pending and not self.paused and now - g.last_ack_at > self.ACK_TIMEOUT + budget:
             if (st is None or st.state not in ("Run", "Jog")) or now - self.last_motion_at > 5:
-                raise ControllerError("No acknowledgement and no movement for 15 s.")
+                raise ControllerError(f"No acknowledgement and no movement for {self.ACK_TIMEOUT + budget:.0f} s.")
 
     def poll(self, interval=0.2):
         now = time.monotonic()
@@ -268,8 +282,11 @@ class Runner:
                         break
                     if not g.can_send(cmd):
                         break
+                    if cmd.startswith("M3 ") and g.pending:
+                        break   # one spot at a time, so Stop/Pause act after the spot that's burning
                     g.send(cmd)
-                    if cmd == "M4 S0":
+                    self.inflight.append(cmd)
+                    if cmd == "M4 S0" or cmd.startswith("M3 "):
                         armed = True
                     elif cmd == "M5 S0":
                         armed = False
@@ -334,9 +351,13 @@ class Runner:
     def estop(self) -> tuple:
         """Feed hold, wait for the stop, then reset: laser off at once, position kept if the hold completed."""
         g = self.g
-        g.realtime(b"!")
-        held = False
-        end = time.monotonic() + 2.0
+        st0 = g.status
+        if self.dwell_pass and st0 is not None and not float(getattr(st0, "feed", 0) or 0):
+            # burning in place: the head is standing still, so reset at once (laser off now, nothing to hold)
+            held, end = True, time.monotonic()
+        else:
+            g.realtime(b"!")
+            held, end = False, time.monotonic() + 2.0
         while time.monotonic() < end:
             try:
                 st = g.query_status(0.5)
@@ -383,6 +404,8 @@ class Runner:
                     self.state["sent"] = 0
                 self.last_written = (start_index - 1) if pi == int(self.spec.get("start_pass", 0)) else -1
                 self.state.update(pass_index=pi, pass_key=p["key"], pass_title=p["title"])
+                self.dwell_pass = recovery.is_dwell(body)
+                self.inflight.clear()
                 self.phase("running", f"{p['title']} ({pi + 1} of {n}) running.")
                 res = self.stream(items, body)
                 if res == "estop":
@@ -442,6 +465,11 @@ class Runner:
         body = bodies[self.pi]
         point = tuple(st.wpos[:2]) if st.wpos else self.last_xy
         loc = recovery.locate(body, point, max(0, self.last_written - 400), self.last_written + 1) if point else None
+        if ok and loc and recovery.is_dwell(body):
+            idx, skipped = recovery.dwell_resume(body, loc[0], self.last_written)
+            if skipped:
+                self.log(f"spot {skipped} was interrupted (laser off at once); resume skips it, never repeats it")
+            loc = (idx, None)
         if ok and loc:
             idx, partial = loc
             self.state["resume"] = recovery.resume_spec(body, self.pi, idx, point, self.hop, partial)
@@ -464,6 +492,10 @@ class Runner:
             return recovery.resume_spec(bodies[pi + 1], pi + 1, 0, point, self.hop)
         body = bodies[pi]
         idx = self.last_written + 1
+        if recovery.is_dwell(body):
+            idx, skipped = recovery.dwell_resume(body, idx, self.last_written)
+            if skipped:
+                self.log(f"spot {skipped} may have been interrupted; resume skips it, never repeats it")
         point = self.last_xy or point_hint
         if point is None:
             return None

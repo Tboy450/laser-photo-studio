@@ -146,7 +146,8 @@ class FakeController:
             self.out.append("ok\r\n")
 
     def _soft_reset(self):
-        moving = self.cur is not None and not self.hold
+        # Grbl only alarms on a reset during motion; a G4 dwell runs after the buffer has synced (state Idle)
+        moving = self.cur is not None and self.cur["kind"] != "dwell" and not self.hold
         self._interrupt()
         self._boot()
         if moving:

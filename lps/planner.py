@@ -4,6 +4,9 @@ Command forms (the only ones a job may contain, checked again by verify.py befor
   M5 S0            laser off (start/end of every row and every pass)
   M4 S0            dynamic laser mode armed at zero power
   G1 Xx Yy Ff Ss   every move, including laser-off travel (G0 is never used)
+Burn-in-place ("dwell") passes only, checked by their own rules in verify.py:
+  M3 Sn            constant power at a chosen spot, with the head standing still
+  G4 Ps            wait s seconds (the burn, or a laser-off cool-down after M5 S0)
 Rows run serpentine with laser-off run-ups so the head is at speed before the first mark (as in the proven
 run_xmas_pass / anodized card jobs).
 """
@@ -21,6 +24,8 @@ from .presets import STYLES, Material, auto_runup
 
 ACCEL = 500.0          # mm/s^2 ($120/$121 on the U20)
 MAX_FEED = 6000        # mm/min ($110/$111)
+DWELL_MAX_S = 60.0     # longest single burn-in-place spot
+COOL_MAX_S = 300.0     # longest laser-off wait between spots
 
 
 def fmt(v: float) -> str:
@@ -262,13 +267,15 @@ class PassPlan:
     key: str
     title: str
     explain: str
-    kind: str                         # rows | features
-    cells: np.ndarray                 # int16 power per cell, 0 = not burned in this pass
+    kind: str                         # rows | features | dwell
+    cells: np.ndarray                 # int16 power per cell, 0 = not burned in this pass (dwell: the spot cells)
     order: list | None = None         # row order (rows passes)
-    feed: int = 2250
+    feed: int = 2250                  # burn feed (dwell: the laser-off travel feed)
     row_feeds: np.ndarray | None = None   # per-row burn feed (test grids)
     commands: list = field(default_factory=list)
     est_s: float = 0.0
+    spots: list | None = None         # dwell: [dict(x, y, s, seconds)] on cell centres, burned in this order
+    cool_s: float = 0.0               # dwell: laser-off wait after each spot (not after the last)
 
 
 @dataclass
@@ -485,10 +492,51 @@ def feature_commands(cells: np.ndarray, labels: np.ndarray, geom: Geometry, feed
     return cmds
 
 
+def dwell_pass(geom: Geometry, allowed: np.ndarray, spots, key: str = "D", title: str = "Burn in place",
+               explain: str = "Laser on, standing still, only at the chosen spots", travel_feed: int = 3000,
+               cool_s: float = 0.0) -> PassPlan:
+    """A burn-in-place pass: the head travels with the laser off to each spot, then burns there standing still
+    (M3 + G4) for its own time, then the laser goes off. spots: dicts with x, y (mm from job zero), power (%) or s,
+    and seconds. Each spot snaps to the nearest dot centre (at most half a dot away)."""
+    out = []
+    cells = np.zeros((geom.rows, geom.cols), np.int16)
+    for sp in spots:
+        s = int(sp["s"]) if "s" in sp else int(round(float(sp["power"]) * 10))
+        sec = float(sp["seconds"])
+        if not 0 < s <= 1000:
+            raise ValueError(f"Spot power S{s} must be 1-1000.")
+        if not 0 < sec <= DWELL_MAX_S:
+            raise ValueError(f"Spot time {sec:g} s must be more than 0 and at most {DWELL_MAX_S:g} s.")
+        c = int(math.floor((float(sp["x"]) - geom.x0) / geom.x_pitch))
+        r = int(math.floor((geom.yt - float(sp["y"])) / geom.y_pitch))
+        if not (0 <= r < geom.rows and 0 <= c < geom.cols) or not allowed[r, c]:
+            raise ValueError(f"Spot at X{sp['x']} Y{sp['y']} is outside the usable area.")
+        if cells[r, c]:
+            raise ValueError(f"Two spots share the dot at X{sp['x']} Y{sp['y']}.")
+        cells[r, c] = s
+        out.append(dict(x=round(geom.col_x(c + 0.5), 3), y=round(geom.row_y(r), 3), s=s, seconds=sec))
+    if not 0 <= cool_s <= COOL_MAX_S:
+        raise ValueError(f"Cool-down {cool_s:g} s must be 0-{COOL_MAX_S:g} s.")
+    return PassPlan(key, title, explain, "dwell", cells, None, int(travel_feed), spots=out, cool_s=float(cool_s))
+
+
+def dwell_commands(spots, travel_feed: int, cool_s: float = 0.0) -> list:
+    cmds = ["M5 S0"]
+    for k, sp in enumerate(spots):
+        cmds += [f"G1 X{fmt(sp['x'])} Y{fmt(sp['y'])} F{int(travel_feed)} S0", f"M3 S{int(sp['s'])}",
+                 f"G4 P{float(sp['seconds']):g}", "M5 S0"]
+        if cool_s > 0 and k < len(spots) - 1:
+            cmds.append(f"G4 P{float(cool_s):g}")
+    return cmds
+
+
 def estimate_seconds(cmds, accel: float = ACCEL, per_command: float = 0.003) -> float:
     x = y = 0.0
     t = 0.0
     for c in cmds:
+        if c.startswith("G4 P"):
+            t += float(c[4:])
+            continue
         if c[0] != "G":
             if c.startswith("M4"):
                 t += 0.05
@@ -510,7 +558,9 @@ def compile_job(job: JobPlan, start=(0.0, 0.0)) -> JobPlan:
     bidirectional = m.scan_direction == "alternating"
     pos = start
     for p in job.passes:
-        if p.kind == "features":
+        if p.kind == "dwell":
+            p.commands = dwell_commands(p.spots or [], p.feed, p.cool_s)
+        elif p.kind == "features":
             p.commands = feature_commands(p.cells, job.labels, job.geom, p.feed, m.hop_feed, m.feature_runup, pos,
                                           bidirectional=bidirectional)
         else:
