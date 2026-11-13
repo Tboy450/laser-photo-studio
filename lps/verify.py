@@ -2,6 +2,7 @@
 only allowed power and speed values, inside the envelope, and every intended cell burned exactly once."""
 from __future__ import annotations
 
+import math
 import re
 
 import numpy as np
@@ -39,10 +40,13 @@ def allowed_values(job: JobPlan, p: PassPlan):
 
 
 def verify_dwell(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30.0) -> dict:
-    """Burn-in-place pass rules: the laser is off (M5) on every move; each spot is exactly travel, M3 S<n>, one
-    G4 P<s>, M5 S0, at a planned spot with its planned power and time; spots inside the usable area; only
-    laser-off waits otherwise; starts and ends laser off."""
-    from .planner import COOL_MAX_S, DWELL_MAX_S
+    """Burn-in-place pass rules (the user's: on only for each spot's burn, never while moving, never stacked):
+      * every move is S0 and comes straight after M5 S0, so the laser is off before and during all travel;
+      * every spot is exactly: M5 S0, a laser-off move to the spot, M3 S<n>, one G4 P<s>, M5 S0;
+      * only the planned spots, in order, each with its planned power and time (at most DWELL_MAX_S);
+      * spots at least SPOT_GAP_MIN apart and never the same dot twice: each spot is its own burn;
+      * spots inside the usable area; other waits only with the laser off; starts and ends laser off."""
+    from .planner import COOL_MAX_S, DWELL_MAX_S, SPOT_GAP_MIN
     cmds = p.commands if cmds is None else cmds
     g = job.geom
     spots = list(p.spots or [])
@@ -61,6 +65,7 @@ def verify_dwell(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30
     want = np.zeros((g.rows, g.cols), np.int16)
     x = y = None
     done = 0
+    burned = []
     dwell_s = 0.0
     tx0 = ty0 = float("inf")
     tx1 = ty1 = float("-inf")
@@ -76,6 +81,8 @@ def verify_dwell(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30
             nx, ny, f, s = float(mo[1]), float(mo[2]), int(mo[3]), int(mo[4])
             if s != 0:
                 bad(f"command {i + 1}: a move with the laser on (burn-in-place moves must be S0)")
+            if i == 0 or cmds[i - 1] != "M5 S0":
+                bad(f"command {i + 1}: a move must come straight after M5 S0 (laser off before every move)")
             if f not in f_ok:
                 bad(f"command {i + 1}: speed F{f} not allowed")
             if not (px0 - travel_margin <= nx <= px1 + travel_margin and py0 - travel_margin <= ny <= py1 + travel_margin):
@@ -90,6 +97,13 @@ def verify_dwell(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30
                 i += 1
                 continue
             sec = float(DWELL.fullmatch(cmds[i + 1])[1])
+            if i == 0 or not MOVE.fullmatch(cmds[i - 1]):
+                bad(f"command {i + 1}: M3 must come straight after the laser-off move to its spot")
+            if x is not None and any(math.hypot(x - bx, y - by) < SPOT_GAP_MIN - 1e-9 for bx, by in burned):
+                bad(f"command {i + 1}: spot at {x},{y} is closer than {SPOT_GAP_MIN:g} mm to another spot "
+                    "(each spot must be its own burn)")
+            if x is not None:
+                burned.append((x, y))
             if done >= len(spots):
                 bad(f"command {i + 1}: more spots burned than planned")
             else:

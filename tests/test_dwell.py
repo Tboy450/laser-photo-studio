@@ -80,10 +80,34 @@ class DwellPlan(unittest.TestCase):
         self.assertTrue(problems(job, c[:k + 3]))                       # spots missing
         self.assertTrue(problems(job, c + c[1:]))                       # spots burned twice
         self.assertTrue(problems(job, c[:-1]))                          # doesn't end laser off
+        j = c.index("G4 P2")                                               # the cool-down after spot 1
+        self.assertEqual(c[j + 1:j + 3][0], "M5 S0")
+        self.assertTrue(problems(job, c[:j + 1] + c[j + 2:]))           # a move not straight after M5 S0
+        self.assertTrue(problems(job, c[:k] + ["M5 S0"] + c[k:]))       # M3 not straight after its travel move
+        for x, cmd in enumerate(c):                                     # every move: laser off just before it
+            if cmd.startswith("G1 "):
+                self.assertEqual(c[x - 1], "M5 S0")
+                self.assertTrue(cmd.endswith(" S0"))
         raster = job.passes[0]
         bad = list(raster.commands)
         bad.insert(1, "M3 S800")
         self.assertTrue(verify.verify_pass(job, raster, bad)["problems"])   # raster passes still refuse M3
+
+    def test_spots_are_never_stacked_in_one_place(self):
+        with self.assertRaises(ValueError):                             # 0.5 mm apart: not its own burn
+            lid_job([dict(x=0.0, y=-10.0, seconds=5, power=80), dict(x=0.5, y=-10.0, seconds=5, power=80)])
+        job = lid_job([dict(x=0.0, y=-10.0, seconds=5, power=80), dict(x=3.0, y=-10.0, seconds=5, power=80)],
+                      raster=False)
+        d = job.passes[0]
+        near = dict(d.spots[1], x=round(d.spots[0]["x"] + 0.3, 3))      # hand-edited plan: second spot 0.3 mm away
+        cells = np.zeros_like(d.cells)
+        for sp in (d.spots[0], near):
+            cells[int(np.floor((job.geom.yt - sp["y"]) / job.geom.y_pitch)),
+                  int(np.floor((sp["x"] - job.geom.x0) / job.geom.x_pitch))] = sp["s"]
+        stacked = planner.PassPlan("D", "d", "", "dwell", cells, None, 3000, spots=[d.spots[0], near])
+        job.passes = [stacked]
+        planner.compile_job(job)
+        self.assertTrue(any("closer than" in m for m in verify.verify_pass(job, stacked)["problems"]))
 
     def test_resume_never_repeats_a_spot(self):
         body = lid_job(raster=False).passes[0].commands
@@ -91,7 +115,8 @@ class DwellPlan(unittest.TestCase):
         idx, skipped = recovery.dwell_resume(body, k3, k3)              # stopped mid-spot 1
         self.assertEqual(body[idx - 1], "M5 S0")
         self.assertEqual(skipped, 1)
-        self.assertTrue(body[idx].startswith("G1 "))                    # next: travel to spot 2
+        self.assertEqual(body[idx], "M5 S0")                            # next: laser off, then travel to spot 2
+        self.assertTrue(body[idx + 1].startswith("G1 "))
         self.assertEqual(recovery.dwell_resume(body, idx, idx - 1), (idx, None))   # between spots: unchanged
 
 

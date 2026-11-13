@@ -26,6 +26,7 @@ ACCEL = 500.0          # mm/s^2 ($120/$121 on the U20)
 MAX_FEED = 6000        # mm/min ($110/$111)
 DWELL_MAX_S = 60.0     # longest single burn-in-place spot
 COOL_MAX_S = 300.0     # longest laser-off wait between spots
+SPOT_GAP_MIN = 1.0     # mm between burn-in-place spot centres: each spot is its own burn, never stacked in one place
 
 
 def fmt(v: float) -> str:
@@ -511,19 +512,23 @@ def dwell_pass(geom: Geometry, allowed: np.ndarray, spots, key: str = "D", title
         r = int(math.floor((geom.yt - float(sp["y"])) / geom.y_pitch))
         if not (0 <= r < geom.rows and 0 <= c < geom.cols) or not allowed[r, c]:
             raise ValueError(f"Spot at X{sp['x']} Y{sp['y']} is outside the usable area.")
-        if cells[r, c]:
-            raise ValueError(f"Two spots share the dot at X{sp['x']} Y{sp['y']}.")
+        x, y = round(geom.col_x(c + 0.5), 3), round(geom.row_y(r), 3)
+        near = next((o for o in out if math.hypot(o["x"] - x, o["y"] - y) < SPOT_GAP_MIN - 1e-9), None)
+        if near is not None:
+            raise ValueError(f"Spots at X{sp['x']} Y{sp['y']} and X{near['x']} Y{near['y']} are closer than "
+                             f"{SPOT_GAP_MIN:g} mm: each spot must be its own burn.")
         cells[r, c] = s
-        out.append(dict(x=round(geom.col_x(c + 0.5), 3), y=round(geom.row_y(r), 3), s=s, seconds=sec))
+        out.append(dict(x=x, y=y, s=s, seconds=sec))
     if not 0 <= cool_s <= COOL_MAX_S:
         raise ValueError(f"Cool-down {cool_s:g} s must be 0-{COOL_MAX_S:g} s.")
     return PassPlan(key, title, explain, "dwell", cells, None, int(travel_feed), spots=out, cool_s=float(cool_s))
 
 
 def dwell_commands(spots, travel_feed: int, cool_s: float = 0.0) -> list:
-    cmds = ["M5 S0"]
+    """Per spot: laser off, travel there (laser off), on for the spot's time standing still, off."""
+    cmds = [] if spots else ["M5 S0"]
     for k, sp in enumerate(spots):
-        cmds += [f"G1 X{fmt(sp['x'])} Y{fmt(sp['y'])} F{int(travel_feed)} S0", f"M3 S{int(sp['s'])}",
+        cmds += ["M5 S0", f"G1 X{fmt(sp['x'])} Y{fmt(sp['y'])} F{int(travel_feed)} S0", f"M3 S{int(sp['s'])}",
                  f"G4 P{float(sp['seconds']):g}", "M5 S0"]
         if cool_s > 0 and k < len(spots) - 1:
             cmds.append(f"G4 P{float(cool_s):g}")
