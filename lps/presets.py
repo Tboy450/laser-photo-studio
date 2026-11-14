@@ -313,6 +313,8 @@ PIECES = {
                            margins=(4.0, 2.0, 4.0, 2.0), corner=0.0, keepouts=[]),
     "lid76": dict(name="Jar lid 3 in (flat face 49 mm)", shape="circle", w=76.2, h=76.2, origin="center",
                   margins=(13.6, 13.6, 13.6, 13.6), corner=0.0, keepouts=[]),
+    "tin50": dict(name="Reflective tin lid 2 in (45.72 mm face)", shape="circle", w=50.8, h=50.8,
+                  origin="center", margins=(2.54, 2.54, 2.54, 2.54), corner=0.0, keepouts=[]),
     "coaster100": dict(name="Slate coaster 100 mm, rounded", shape="rect", w=100.0, h=100.0,
                        origin="lower-left", margins=(5.0, 5.0, 5.0, 5.0), corner=8.0, keepouts=[]),
     "tile108": dict(name="Tile 4.25 in (108 mm)", shape="rect", w=108.0, h=108.0, origin="lower-left",
