@@ -33,8 +33,19 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
 5. **Laser.** Connect, set the origin, **perimeter check**, then Start.
 
 The **Guide** button (top right) explains everything in plain words: too light or too dark, negatives and
-LaserGRBL's preview, print styles, LaserGRBL settings, origin and perimeter check, USB dropouts, safety and files.
-Blue links in the steps open the right Guide page.
+LaserGRBL's preview, print styles, wood grain and finishing, LaserGRBL settings, origin and perimeter check,
+USB dropouts, safety and files. Blue links in the steps open the right Guide page.
+
+### Centered workpiece preset: 2 in reflective tin lid
+
+The `Reflective tin lid 2 in (45.72 mm face)` workpiece preset describes a 50.8 mm circular lid, a centre origin,
+and a 45.72 mm usable face (2.54 mm margin on each side). It is a geometry/placement preset, **not** a proven
+reflective-tin engraving recipe. The Red Hill tin tests remain experimental until a durable result is established.
+
+For a centering jig, seat the lid, register the jig to the bed, place the pointer at the lid's measured centre,
+then use **Set origin here** in step 5. The perimeter check confirms the job footprint relative to that origin;
+it cannot tell whether the lid itself is off-centre in the jig. A repeatable fixture reference and a verified
+centre are still required.
 
 ## Perimeter check with the 1% dot
 
