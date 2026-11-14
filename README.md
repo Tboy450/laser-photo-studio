@@ -21,7 +21,7 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
 ## The five steps
 
 1. **Picture.** Photos, drawings or logos; phone HEIC photos work. Turn or mirror it if needed.
-2. **Material & style.** Green = proven on your U20, yellow = a starting point from other 20 W lasers (test first).
+2. **Material & style.** Green = proven on the recorded U20 setup, yellow = a starting point from other 20 W lasers (test first).
    Each preset explains itself, shows the matching **LaserGRBL settings**, and shows the **energy** of any changes
    compared with the preset. Proven presets show **photos**: the ladder and grid tests, their charts, and finished
    pieces made with them (click to enlarge). Add your own test photos to any preset, and save your own presets.
@@ -46,6 +46,13 @@ For a centering jig, seat the lid, register the jig to the bed, place the pointe
 then use **Set origin here** in step 5. The perimeter check confirms the job footprint relative to that origin;
 it cannot tell whether the lid itself is off-centre in the jig. A repeatable fixture reference and a verified
 centre are still required.
+
+## Revalidating after a hardware change
+
+A preset marked **Proven** belongs to the recorded U20 setup used for that test. Changing the diode module, lens,
+controller, firmware or axis calibration can change the physical result. Treat earlier tests as historical evidence,
+not automatic proof for the new configuration. Recheck focus and placement, run new material test grids, and save
+the resulting photos and settings before promoting a preset to **Proven** again.
 
 ## Perimeter check with the 1% dot
 
