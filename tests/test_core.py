@@ -114,6 +114,8 @@ class Placement_(unittest.TestCase):
         self.assertAlmostEqual(x0, -22.86)
         self.assertAlmostEqual(y0, -22.86)
         self.assertAlmostEqual(x1, 22.86)
+        self.assertAlmostEqual(pc["w"] / 2 - pc["margins"][0], 22.86)
+        self.assertAlmostEqual(2 * (pc["w"] / 2 - pc["margins"][0]), 45.72)
         self.assertAlmostEqual(y1, 22.86)
 
     def test_keepouts_and_corners(self):
