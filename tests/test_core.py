@@ -104,6 +104,18 @@ class Styles(unittest.TestCase):
 
 
 class Placement_(unittest.TestCase):
+    def test_two_inch_tin_preset_is_centered_with_45_72mm_face(self):
+        pc = presets.PIECES["tin50"]
+        self.assertEqual(pc["shape"], "circle")
+        self.assertEqual(pc["origin"], "center")
+        self.assertAlmostEqual(pc["w"], 50.8)
+        self.assertAlmostEqual(pc["h"], 50.8)
+        x0, y0, x1, y1 = planner.usable_rect(pc)
+        self.assertAlmostEqual(x0, -22.86)
+        self.assertAlmostEqual(y0, -22.86)
+        self.assertAlmostEqual(x1, 22.86)
+        self.assertAlmostEqual(y1, 22.86)
+
     def test_keepouts_and_corners(self):
         pc = piece(60.0, 60.0, corner=10.0, keepouts=[dict(kind="circle", x=30.0, y=30.0, r=6.0)])
         mat = next(m for m in presets.BUILTIN if m.key == "logo-wood")
