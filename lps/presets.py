@@ -1,7 +1,7 @@
 """Material presets, print styles and workpieces, with plain-English explanations.
 
 Three kinds of settings, always labelled in the app:
-  PROVEN  - burned on this Tronxy U20 and judged by the operator (LASER-AUTOMATION-BRIEF.md,
+  PROVEN  - burned on the recorded Tronxy U20 setup and judged by the operator (LASER-AUTOMATION-BRIEF.md,
             WOOD-ENGRAVING-REFERENCE.md, LID-ETCHING-REFERENCE.md, outputs/anodized-cards-2026-11-01).
   START   - published starting points for ~20 W diode lasers (Snapmaker's tested 20 W table, community charts).
             Not tested on this machine: this U20 needed about 3x Snapmaker's energy on pine, so run a test grid.
@@ -326,7 +326,7 @@ PIECES = {
 }
 
 BADGES = {
-    "PROVEN": "Proven on your U20",
+    "PROVEN": "Proven on this U20 setup",
     "START": "Starting point - test first",
     "EXPERIMENTAL": "Experimental - test first",
     "MINE": "My preset",
