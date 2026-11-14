@@ -6,7 +6,7 @@ from .presets import STYLES, lasergrbl_recipe
 
 START = """# Five steps
 1. Picture - open a photo, drawing or logo (phone HEIC photos work). Turn it if it's sideways.
-2. Material - pick your material. Green = proven on your U20. Yellow = a starting point from other 20 W lasers: run a test grid first. Proven settings show photos of their test ladders and charts, and of finished pieces made with them; click a photo to enlarge it.
+2. Material - pick your material. Green = proven on the recorded U20 setup. Yellow = a starting point from other 20 W lasers: run a test grid first. Proven settings show photos of their test ladders and charts, and of finished pieces made with them; click a photo to enlarge it.
 3. Size - enter the piece size, where the origin is (lower-left corner or centre) and any no-burn zones like twine holes.
 4. Check - adjust the picture while watching the preview. The app replays every command before anything can run.
 5. Laser - connect, set the origin, run the perimeter check with the 1% dot, then Start.
@@ -118,6 +118,14 @@ When the USB drops out, the controller restarts and forgets where the head is. T
 - Keep the USB cable away from the laser's power lead.
 - Don't move the cable during a job."""
 
+MACHINE_CHANGE = """# When the laser hardware changes
+The PROVEN label belongs to the exact machine setup used for the test, not just the frame name or advertised wattage.
+- A different diode module, lens, controller, firmware or axis calibration can change the result.
+- Treat old material results as historical evidence after a hardware change; do not carry their PROVEN label forward automatically.
+- Recheck focus and placement, then make new material test grids and compare actual samples before saving new proven presets.
+- Keep the old photos and settings so the new setup can be compared with the previous one."""
+
+
 WOOD_SURFACE = """# Read the wood surface
 A wood image is not a flat, uniform sheet:
 - Grain, knots and uneven coloration can change how the finished mark reads.
@@ -170,6 +178,7 @@ def topics(mat) -> list:
             ("Negatives & LaserGRBL", NEGATIVE),
             ("Print styles", styles_text()),
             ("Wood grain & finishing", WOOD_SURFACE),
+            ("Machine changes & revalidation", MACHINE_CHANGE),
             ("Using LaserGRBL", LASERGRBL.format(name=mat.name, recipe=lasergrbl_recipe(mat))),
             ("Origin & perimeter check", PERIMETER),
             ("USB dropouts", DROPOUT),
