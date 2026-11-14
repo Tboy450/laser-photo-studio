@@ -60,7 +60,9 @@ class PlaceMixin:
                         command=self._piece_edited).pack(anchor="w")
         ttk.Radiobutton(o, text="Centre of the piece", value="center", variable=self.origin_var,
                         command=self._piece_edited).pack(anchor="w")
-        wrap_label(o, "Corners are easiest to find by eye. Lids are usually centred.", style="Small.TLabel").pack(
+        wrap_label(o, "For round tins, choose the matching diameter preset and Centre origin. Put the pointer on the "
+                      "physical centre, then press Set origin here in step 5. A centering jig helps repeat the "
+                      "placement; run the perimeter check before burning.", style="Small.TLabel").pack(
             anchor="w", pady=(2, 0))
         m = ttk.LabelFrame(f, text="Margins and keep-out zones", style="Card.TLabelframe")
         m.pack(fill="x", pady=4)
