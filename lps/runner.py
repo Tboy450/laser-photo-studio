@@ -52,6 +52,7 @@ class Runner:
         self.parking = False
         self.next_save = 0.0
         self.dwell_pass = False   # current pass burns in place (M3 + G4 at chosen spots)
+        self.crawl_pass = False   # current pass crawls (M3 + tiny steps and pauses along planned lines)
         self.t0_mono = self.t0_wall = None   # print timer: monotonic clock for durations, wall clock for display
         self.timing = []          # one entry per pass started: ms timings, planned vs real
         self.cur_timing = None
@@ -219,11 +220,14 @@ class Runner:
         self.ctl_seq = seq
         cmd = c.get("cmd")
         self.log(f"request: {cmd}")
-        if cmd == "pause" and not self.paused and self.dwell_pass:
-            # a feed hold can't be trusted to hold the laser off mid-burn, so finish this spot and stop there
+        if cmd == "pause" and not self.paused and (self.dwell_pass or self.crawl_pass):
+            # a feed hold can't be trusted to hold an M3 laser off, so finish this spot / line and stop there
             self.stop_req = True
             self.phase("stopping", "Burn-in-place pass: Pause stops after the current spot (laser off), so no "
-                                   "spot is ever held half-burned. Resume continues with the next spot.")
+                                   "spot is ever held half-burned. Resume continues with the next spot."
+                       if self.dwell_pass else
+                       "Crawl pass: Pause stops after the current line (laser off); use EMERGENCY STOP to stop "
+                       "at once. Resume continues with the next line.")
         elif cmd == "pause" and not self.paused:
             self.g.realtime(b"!")
             self.paused = True
@@ -238,6 +242,7 @@ class Runner:
                 self.g.realtime(b"~")
                 self.paused = False
             self.phase("stopping", "Stopping after the current spot (keeps position)..." if self.dwell_pass else
+                       "Stopping after the current line (keeps position)..." if self.crawl_pass else
                        "Stopping after the current row (keeps position)...")
         elif cmd == "estop":
             self.estop_req = True
@@ -446,7 +451,7 @@ class Runner:
         """Feed hold, wait for the stop, then reset: laser off at once, position kept if the hold completed."""
         g = self.g
         st0 = g.status
-        if self.dwell_pass and st0 is not None and not float(getattr(st0, "feed", 0) or 0):
+        if self.crawl_pass or (self.dwell_pass and st0 is not None and not float(getattr(st0, "feed", 0) or 0)):
             # burning in place: the head is standing still, so reset at once (laser off now, nothing to hold)
             held, end = True, time.monotonic()
         else:
@@ -500,7 +505,8 @@ class Runner:
                 self.last_written = (start_index - 1) if pi == int(self.spec.get("start_pass", 0)) else -1
                 self.state.update(pass_index=pi, pass_key=p["key"], pass_title=p["title"])
                 self.pass_started(pi, p)
-                self.dwell_pass = recovery.is_dwell(body)
+                kind = recovery.pass_kind(body)
+                self.dwell_pass, self.crawl_pass = kind == "dwell", kind == "crawl"
                 self.inflight.clear()
                 self.phase("running", f"{p['title']} ({pi + 1} of {n}) running.")
                 res = self.stream(items, body)
@@ -566,7 +572,16 @@ class Runner:
         body = bodies[self.pi]
         point = tuple(st.wpos[:2]) if st.wpos else self.last_xy
         loc = recovery.locate(body, point, max(0, self.last_written - 400), self.last_written + 1) if point else None
-        if ok and loc and recovery.is_dwell(body):
+        if self.crawl_pass:
+            idx = recovery.crawl_resume(body, self.last_acked())
+            point = point or recovery.endpoint_before(body, idx)
+            self.state["resume"] = recovery.resume_spec(body, self.pi, idx, point, self.hop)
+            self.state["resume"]["kept_position"] = bool(ok)
+            self.phase("stopped" if ok else "fault",
+                       "Emergency stop: laser off at once. Resume continues the line from the last finished step."
+                       + ("" if ok else " Position may have shifted - check it with the dot first."))
+            return self.state["phase"]
+        if ok and loc and self.dwell_pass:
             idx, skipped = recovery.dwell_resume(body, loc[0], self.last_written)
             if skipped:
                 self.log(f"spot {skipped} was interrupted (laser off at once); resume skips it, never repeats it")
@@ -582,6 +597,10 @@ class Runner:
                                 "to check it with the dot first.")
         return self.state["phase"]
 
+    def last_acked(self) -> int:
+        la = self.state.get("last_accepted")
+        return int(la[1]) if la and int(la[0]) == self.pi else -1
+
     def dropout_resume(self, bodies, point_hint=None):
         if bodies is None:
             return None
@@ -593,7 +612,11 @@ class Runner:
             return recovery.resume_spec(bodies[pi + 1], pi + 1, 0, point, self.hop)
         body = bodies[pi]
         idx = self.last_written + 1
-        if recovery.is_dwell(body):
+        if self.crawl_pass:
+            idx = recovery.crawl_resume(body, self.last_acked())
+            point = recovery.endpoint_before(body, idx) or point_hint
+            return recovery.resume_spec(body, pi, idx, point, self.hop) if point else None
+        if self.dwell_pass:
             idx, skipped = recovery.dwell_resume(body, idx, self.last_written)
             if skipped:
                 self.log(f"spot {skipped} may have been interrupted; resume skips it, never repeats it")

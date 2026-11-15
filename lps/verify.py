@@ -20,8 +20,8 @@ def trace_moves(job):
     contribute their laser-off travel moves (the spots are standing still, so they add no line)."""
     for p in job.passes:
         for command in p.commands:
-            if command in ("M5 S0", "M4 S0") or (p.kind == "dwell" and (M3.fullmatch(command)
-                                                                        or DWELL.fullmatch(command))):
+            if command in ("M5 S0", "M4 S0") or (p.kind in ("dwell", "crawl") and (M3.fullmatch(command)
+                                                                                   or DWELL.fullmatch(command))):
                 continue
             move = MOVE.fullmatch(command)
             if move is None:
@@ -150,9 +150,121 @@ def verify_dwell(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30
                 s_values=sorted(s_ok), f_values=sorted(f_ok), spots=done, dwell_s=round(dwell_s, 3))
 
 
+def verify_crawl(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30.0) -> dict:
+    """Crawl pass rules: the laser is on only along planned lines. Every line is exactly: M5 S0, a laser-off move to
+    its start, M3 S<n>, then for each step a left-to-right G1 exactly one step long on the line's y at the planned
+    feed and power followed by exactly one G4 of the planned pause, then M5 S0. Nothing else; pauses at most
+    CRAWL_MAX_PAUSE_S; the average speed matches the plan; every step inside the usable area."""
+    from .planner import CRAWL_MAX_PAUSE_S, CRAWL_MIN_AVG, CRAWL_MIN_FEED
+    cmds = p.commands if cmds is None else cmds
+    g = job.geom
+    lines = list(p.lines or [])
+    problems = []
+
+    def bad(msg):
+        if len(problems) < 25:
+            problems.append(msg)
+
+    f_ok = {int(p.feed), int(job.material.row_feed)}
+    if not cmds or cmds[0] != "M5 S0" or cmds[-1] != "M5 S0":
+        bad("pass must start and end with M5 S0 (laser off)")
+    ux0, uy0, ux1, uy1 = g.usable_rect
+    px0, py0, px1, py1 = g.piece_rect
+    want = np.zeros((g.rows, g.cols), np.int16)
+    x = y = None
+    on = None            # the line being burned (laser on), else None
+    li = 0
+    steps = 0
+    burn_s = 0.0
+    tx0 = ty0 = float("inf")
+    tx1 = ty1 = float("-inf")
+    i, n = 0, len(cmds)
+    while i < n:
+        c = cmds[i]
+        mo, m3, dw = MOVE.fullmatch(c), M3.fullmatch(c), DWELL.fullmatch(c)
+        if c == "M5 S0":
+            if on is not None:
+                if steps != on["steps"] or x is None or abs(x - on["x1"]) > 0.0011:
+                    bad(f"command {i + 1}: line {li + 1} ended after {steps} of {on['steps']} steps")
+                li += 1
+                on = None
+            i += 1
+        elif mo and on is None:
+            nx, ny, f, s = float(mo[1]), float(mo[2]), int(mo[3]), int(mo[4])
+            if s != 0:
+                bad(f"command {i + 1}: a powered move outside a crawl line")
+            if i == 0 or cmds[i - 1] != "M5 S0":
+                bad(f"command {i + 1}: a travel move must come straight after M5 S0")
+            if f not in f_ok:
+                bad(f"command {i + 1}: speed F{f} not allowed")
+            if not (px0 - travel_margin <= nx <= px1 + travel_margin and py0 - travel_margin <= ny <= py1 + travel_margin):
+                bad(f"command {i + 1}: move to {nx},{ny} is far outside the piece")
+            tx0, tx1, ty0, ty1 = min(tx0, nx), max(tx1, nx), min(ty0, ny), max(ty1, ny)
+            x, y = nx, ny
+            i += 1
+        elif m3 and on is None:
+            if li >= len(lines):
+                bad(f"command {i + 1}: more lines burned than planned")
+                i += 1
+                continue
+            ln = lines[li]
+            if i == 0 or not MOVE.fullmatch(cmds[i - 1]) or x is None or abs(x - ln["x0"]) > 0.00051 \
+                    or abs(y - ln["y"]) > 0.00051:
+                bad(f"command {i + 1}: M3 must come straight after the laser-off move to line {li + 1}'s start")
+            if int(m3[1]) != int(ln["s"]):
+                bad(f"command {i + 1}: line {li + 1} power S{m3[1]}, planned S{ln['s']}")
+            if ln["pause"] > CRAWL_MAX_PAUSE_S or ln["v_avg"] < CRAWL_MIN_AVG or ln["feed"] < CRAWL_MIN_FEED - 6:
+                bad(f"line {li + 1}: pause, average or move speed outside the crawl limits")
+            v = ln["step"] / (ln["step"] / ln["feed"] + ln["pause"] / 60.0)
+            if abs(v - ln["v_avg"]) / ln["v_avg"] > 0.001 or abs(v - ln["v_target"]) / ln["v_target"] > 0.01:
+                bad(f"line {li + 1}: steps average {v:.3f} mm/min, planned {ln['v_avg']} (asked {ln['v_target']})")
+            on, steps = ln, 0
+            i += 1
+        elif mo and on is not None:
+            nx, ny, f, s = float(mo[1]), float(mo[2]), int(mo[3]), int(mo[4])
+            if abs(ny - on["y"]) > 0.00051 or abs((nx - x) - on["step"]) > 0.0011:
+                bad(f"command {i + 1}: a laser-on move off line {li + 1} (must be one {on['step']:g} mm step to the right)")
+            if s != int(on["s"]) or f != int(on["feed"]):
+                bad(f"command {i + 1}: step at F{f} S{s}, planned F{on['feed']} S{on['s']}")
+            if not (ux0 - 0.00051 <= nx <= ux1 + 0.00051 and uy0 - 0.00051 <= ny <= uy1 + 0.00051):
+                bad(f"command {i + 1}: burn outside the usable area of the piece")
+            nd = DWELL.fullmatch(cmds[i + 1]) if i + 1 < n else None
+            if nd is None or abs(float(nd[1]) - on["pause"]) > 1e-9:
+                bad(f"command {i + 1}: each step must be followed by exactly one G4 P{on['pause']:g}")
+            else:
+                burn_s += float(nd[1])
+            burn_s += abs(nx - x) / f * 60.0
+            tx0, tx1, ty0, ty1 = min(tx0, nx), max(tx1, nx), min(ty0, ny), max(ty1, ny)
+            x, y = nx, ny
+            steps += 1
+            i += 2 if nd is not None else 1
+        else:
+            bad(f"command {i + 1}: not allowed here in a crawl pass: {c!r}")
+            i += 1
+    if on is not None:
+        bad("the pass ends with the laser on")
+    if li != len(lines):
+        bad(f"{len(lines)} lines planned, {li} burned")
+    for ln in lines:
+        r = int(np.floor((g.yt - ln["y"]) / g.y_pitch))
+        c0 = int(round((ln["x0"] - g.x0) / g.x_pitch))
+        c1 = int(np.ceil((ln["x1"] - g.x0) / g.x_pitch - 1e-6))
+        if job.allowed is not None and not job.allowed[r, c0:c1].all():
+            bad(f"line at Y{ln['y']} leaves the usable area")
+        want[r, c0:c1] = ln["s"]
+    if not np.array_equal(want, p.cells):
+        bad("the lines don't match the pass's planned dots")
+    return dict(ok=not problems, problems=problems, cells=int((p.cells > 0).sum()), segments=len(lines),
+                travel=(tx0, ty0, tx1, ty1) if tx0 != float("inf") else None,
+                s_values=sorted({int(ln["s"]) for ln in lines}), f_values=sorted(f_ok | {ln["feed"] for ln in lines}),
+                lines=li, crawl_s=round(burn_s, 1))
+
+
 def verify_pass(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30.0) -> dict:
     if p.kind == "dwell":
         return verify_dwell(job, p, cmds, travel_margin)
+    if p.kind == "crawl":
+        return verify_crawl(job, p, cmds, travel_margin)
     cmds = p.commands if cmds is None else cmds
     g = job.geom
     H, W = g.rows, g.cols
@@ -258,6 +370,10 @@ def summary_text(report: dict) -> str:
     if report["ok"]:
         s = (f"Checked: {report['cells']:,} dots, each burned exactly once at its planned power; "
              f"only allowed powers/speeds; laser off at every start and end.")
+        crawl = sum(r.get("lines", 0) for r in report["passes"])
+        if crawl:
+            s += (f" Includes {crawl} crawl line{'s' if crawl != 1 else ''}: laser on only along those lines, "
+                  "left to right in single steps, each followed by its planned pause.")
         spots = sum(r.get("spots", 0) for r in report["passes"])
         if spots:
             s += (f" Includes {spots} burn-in-place spot{'s' if spots != 1 else ''} "

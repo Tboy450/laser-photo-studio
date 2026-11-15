@@ -224,6 +224,17 @@ class PreviewPanel(ttk.Frame):
             c.create_text(tx(g.x1), ty(g.y0) + 12, anchor="ne", fill=COLORS["muted"], font=("Segoe UI", 9),
                           text=f"Image size {g.art_w:g} x {g.art_h:g} mm (size guide only)")
             sel = self.selected_passes()
+            for p in job.passes:                       # crawl lines: label the average speed and step once per line
+                if p.kind != "crawl" or (sel is not None and p.key not in sel):
+                    continue
+                seen = []
+                for ln in p.lines or []:
+                    k = (ln["x0"], ln["x1"], ln["v_avg"], ln["step"])
+                    if any(k == q and abs(ln["y"] - qy) < 0.5 for q, qy in seen):
+                        continue
+                    seen.append((k, ln["y"]))
+                    c.create_text(tx(ln["x1"]) + 4, ty(ln["y"]), anchor="w", fill=COLORS["bad"], font=("Segoe UI", 7),
+                                  text=f"crawl {ln['v_avg']:g} mm/min avg, {ln['step']:g} mm steps")
             for p in job.passes:                       # burn-in-place spots: one dot each, so ring and label them
                 if p.kind != "dwell" or (sel is not None and p.key not in sel):
                     continue

@@ -4,9 +4,9 @@ Command forms (the only ones a job may contain, checked again by verify.py befor
   M5 S0            laser off (start/end of every row and every pass)
   M4 S0            dynamic laser mode armed at zero power
   G1 Xx Yy Ff Ss   every move, including laser-off travel (G0 is never used)
-Burn-in-place ("dwell") passes only, checked by their own rules in verify.py:
-  M3 Sn            constant power at a chosen spot, with the head standing still
-  G4 Ps            wait s seconds (the burn, or a laser-off cool-down after M5 S0)
+Burn-in-place ("dwell") and crawl passes only, checked by their own rules in verify.py:
+  M3 Sn            constant power: at a chosen spot standing still (dwell), or along one planned line (crawl)
+  G4 Ps            wait s seconds (the burn, a crawl step's pause, or a laser-off cool-down after M5 S0)
 Rows run serpentine with laser-off run-ups so the head is at speed before the first mark (as in the proven
 run_xmas_pass / anodized card jobs).
 """
@@ -27,6 +27,10 @@ MAX_FEED = 6000        # mm/min ($110/$111)
 DWELL_MAX_S = 60.0     # longest single burn-in-place spot
 COOL_MAX_S = 300.0     # longest laser-off wait between spots
 SPOT_GAP_MIN = 1.0     # mm between burn-in-place spot centres: each spot is its own burn, never stacked in one place
+CRAWL_MIN_FEED = 30    # crawl moves run at or above this (the controller ignores feeds below about 24 mm/min)
+CRAWL_QUANTUM_S = 0.05 # Grbl 1.1h rounds every G4 up to a whole number of 50 ms steps
+CRAWL_MAX_PAUSE_S = 2.0
+CRAWL_MIN_AVG = 0.5    # slowest crawl average, mm/min
 
 
 def fmt(v: float) -> str:
@@ -277,6 +281,7 @@ class PassPlan:
     est_s: float = 0.0
     spots: list | None = None         # dwell: [dict(x, y, s, seconds)] on cell centres, burned in this order
     cool_s: float = 0.0               # dwell: laser-off wait after each spot (not after the last)
+    lines: list | None = None         # crawl: [dict(x0, x1, y, s, step, steps, feed, pause, v_avg, v_target)]
 
 
 @dataclass
@@ -535,6 +540,80 @@ def dwell_commands(spots, travel_feed: int, cool_s: float = 0.0) -> list:
     return cmds
 
 
+def crawl_timing(step: float, v_avg: float, min_feed: int = CRAWL_MIN_FEED, quantum: float = CRAWL_QUANTUM_S):
+    """Move feed f and pause t per step so the average along the line is v_avg (mm/min), while every move runs at
+    or above min_feed (the controller follows feeds above its floor) and every pause is a whole number of the
+    firmware's dwell steps (Grbl 1.1h rounds G4 up to 50 ms). Picks the slowest move that works, so the burn is as
+    even as possible. Returns (f, t, planned average)."""
+    if not CRAWL_MIN_AVG <= v_avg <= min_feed:
+        raise ValueError(f"Crawl average {v_avg:g} mm/min must be {CRAWL_MIN_AVG:g}-{min_feed} mm/min "
+                         "(faster lines don't need crawling).")
+    if not 0.005 <= step <= 1.0:
+        raise ValueError(f"Crawl step {step:g} mm must be 0.005-1 mm.")
+    for k in range(1, int(round(CRAWL_MAX_PAUSE_S / quantum)) + 1):
+        t = round(k * quantum, 3)
+        per_mm = 1.0 / v_avg - t / (60.0 * step)            # minutes per mm left for moving
+        if per_mm <= 0:
+            break
+        f = int(round(1.0 / per_mm))
+        if f < min_feed:
+            continue
+        if f > MAX_FEED:
+            break
+        v = step / (step / f + t / 60.0)
+        if abs(v - v_avg) / v_avg <= 0.01:
+            return f, t, v
+    raise ValueError(f"A {step:g} mm step can't average {v_avg:g} mm/min with moves at {min_feed} mm/min or more and "
+                     f"pauses in {quantum * 1000:g} ms steps (up to {CRAWL_MAX_PAUSE_S:g} s). Use a bigger step or a "
+                     "lower minimum move speed.")
+
+
+def crawl_pass(geom: Geometry, allowed: np.ndarray, lines, key: str = "C", title: str = "Crawl lines",
+               explain: str = "Laser on along each line only: tiny steps, each followed by a short pause",
+               travel_feed: int = 3000) -> PassPlan:
+    """Lines burned at an average speed below the controller's floor. Per line: laser-off travel to its start, M3,
+    then a tiny left-to-right step (G1 at feed f) and a pause (G4 t) repeated, then laser off. lines: dicts with x0,
+    x1, y (mm from job zero), power (%) or s, v_avg (mm/min), step (mm), optional min_feed. y snaps to its row's
+    centre and x0 to a dot edge; x1 becomes x0 + a whole number of steps."""
+    out = []
+    cells = np.zeros((geom.rows, geom.cols), np.int16)
+    for ln in lines:
+        s = int(ln["s"]) if "s" in ln else int(round(float(ln["power"]) * 10))
+        if not 0 < s <= 1000:
+            raise ValueError(f"Line power S{s} must be 1-1000.")
+        step, v_target = float(ln["step"]), float(ln["v_avg"])
+        f, t, v = crawl_timing(step, v_target, int(ln.get("min_feed", CRAWL_MIN_FEED)))
+        r = int(math.floor((geom.yt - float(ln["y"])) / geom.y_pitch))
+        c0 = int(round((float(ln["x0"]) - geom.x0) / geom.x_pitch))
+        x0 = round(geom.col_x(c0), 3)
+        n = int(round((float(ln["x1"]) - float(ln["x0"])) / step))
+        if n < 1:
+            raise ValueError("A crawl line must run left to right, at least one step long.")
+        x1 = round(x0 + n * step, 3)
+        c1 = int(math.ceil((x1 - geom.x0) / geom.x_pitch - 1e-6))
+        if not (0 <= r < geom.rows and 0 <= c0 and c1 <= geom.cols) or not allowed[r, c0:c1].all():
+            raise ValueError(f"Line at Y{ln['y']} from X{ln['x0']} to X{ln['x1']} leaves the usable area.")
+        if cells[r, c0:c1].any():
+            raise ValueError(f"Line at Y{ln['y']} overlaps another crawl line.")
+        cells[r, c0:c1] = s
+        out.append(dict(x0=x0, x1=x1, y=round(geom.row_y(r), 3), s=s, step=step, steps=n, feed=f, pause=t,
+                        v_avg=round(v, 4), v_target=v_target))
+    return PassPlan(key, title, explain, "crawl", cells, None, int(travel_feed), lines=out)
+
+
+def crawl_commands(lines, travel_feed: int) -> list:
+    """Per line: laser off, travel to its start (laser off), M3, then step + pause repeated, then laser off."""
+    cmds = [] if lines else ["M5 S0"]
+    for ln in lines:
+        y = fmt(ln["y"])
+        cmds += ["M5 S0", f"G1 X{fmt(ln['x0'])} Y{y} F{int(travel_feed)} S0", f"M3 S{int(ln['s'])}"]
+        for k in range(1, ln["steps"] + 1):
+            cmds += [f"G1 X{fmt(ln['x0'] + k * ln['step'])} Y{y} F{int(ln['feed'])} S{int(ln['s'])}",
+                     f"G4 P{float(ln['pause']):g}"]
+        cmds.append("M5 S0")
+    return cmds
+
+
 def estimate_seconds(cmds, accel: float = ACCEL, per_command: float = 0.003) -> float:
     x = y = 0.0
     t = 0.0
@@ -565,6 +644,8 @@ def compile_job(job: JobPlan, start=(0.0, 0.0)) -> JobPlan:
     for p in job.passes:
         if p.kind == "dwell":
             p.commands = dwell_commands(p.spots or [], p.feed, p.cool_s)
+        elif p.kind == "crawl":
+            p.commands = crawl_commands(p.lines or [], p.feed)
         elif p.kind == "features":
             p.commands = feature_commands(p.cells, job.labels, job.geom, p.feed, m.hop_feed, m.feature_runup, pos,
                                           bidirectional=bidirectional)

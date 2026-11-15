@@ -184,7 +184,8 @@ def save_job(job: JobPlan, report: dict, picture=None, previews: dict | None = N
         assert read_body(f) == p.commands
         passes.append(dict(key=p.key, title=p.title, explain=p.explain, file=f"passes/{f.name}", sha256=sha256(f),
                            commands=len(p.commands), est_s=round(p.est_s, 1), cells=int((p.cells > 0).sum()),
-                           kind=p.kind, **(dict(spots=p.spots, cool_s=p.cool_s) if p.kind == "dwell" else {})))
+                           kind=p.kind, **(dict(spots=p.spots, cool_s=p.cool_s) if p.kind == "dwell" else
+                                           dict(lines=p.lines) if p.kind == "crawl" else {})))
     (folder / lasergrbl_name(job)).write_text(all_text(job), encoding="ascii")
     if picture is not None:
         picture.save(folder / "picture.png")
