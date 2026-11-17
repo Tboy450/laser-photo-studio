@@ -207,6 +207,9 @@ def save_job(job: JobPlan, report: dict, picture=None, previews: dict | None = N
                verified=bool(report.get("ok")), est_s=round(job.est_s, 1),
                origin=origin_text(job.piece), lasergrbl_file=lasergrbl_name(job))
     doc.update(extra or {})
+    if picture is not None:
+        doc['editable_picture'] = dict(file='picture.png', sha256=sha256(folder / 'picture.png'),
+                                      orientation='already applied; tone/dither not applied')
     write_json(folder / "job.json", doc)
     (folder / "README.txt").write_text(readme_text(job, bool((extra or {}).get("look", {}).get("negative"))),
                                       encoding="utf-8")

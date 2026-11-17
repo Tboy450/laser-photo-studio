@@ -474,6 +474,8 @@ class PlaceMixin:
     # ================================================================ step 4
     def page_check(self, f):
         ttk.Label(f, text="4. Look & check", style="H1.TLabel").pack(anchor="w")
+        self.edit_mode_lbl = wrap_label(f, '', style='Small.TLabel')
+        self.edit_mode_lbl.pack(anchor='w', pady=(2, 4))
         wrap_label(f, "Adjust the picture while watching the preview, then check the job. Nothing reaches the "
                       "laser until it passes the check.", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
         c = ttk.LabelFrame(f, text="Picture adjustments", style="Card.TLabelframe")
@@ -512,6 +514,8 @@ class PlaceMixin:
         ttk.Button(t, text="Back to the proven values", command=lambda: self._set_cuts((110, 78, 48))).pack(
             anchor="w", pady=(4, 0))
         k = ttk.LabelFrame(f, text="Check", style="Card.TLabelframe")
+        self.look_frames = (c, t)
+        self._locked_picture_widgets = {}
         k.pack(fill="x", pady=4)
         ttk.Button(k, text="Check job", command=self.check_job).pack(anchor="w")
         self.check_text = wrap_label(k, "Open a picture first.")
@@ -537,6 +541,36 @@ class PlaceMixin:
         for v, c in zip(self.v_cut, cuts):
             v.set(c)
         self.changed()
+
+    def sync_picture_edit_mode(self):
+        if not hasattr(self, 'look_frames'):
+            return
+        locked = bool(self.gfile or self.picture is None)
+        if self.gfile:
+            message = ('G-code check only: movement/power are already encoded. Picture, material and size controls '
+                       'cannot edit these commands. Open saved Studio picture job or the original picture in step 1.')
+        elif self.picture is None:
+            message = ('No editable picture loaded. Open saved Studio picture job or the original picture in step 1. '
+                       'Generated grids use their own grid parameters, not these picture sliders.')
+        else:
+            message = 'Editable source picture: adjustments rebuild the preview and must pass verification before printing.'
+        self.edit_mode_lbl.configure(text=message)
+        for i in (1, 2):
+            self.nb.tab(i, state='disabled' if self.gfile else 'normal')
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+        for frame in self.look_frames:
+            for widget in descendants(frame):
+                if widget.winfo_class() not in ('TScale', 'TCheckbutton', 'TButton'):
+                    continue
+                if locked:
+                    if widget not in self._locked_picture_widgets:
+                        self._locked_picture_widgets[widget] = widget.instate(['disabled'])
+                    widget.state(['disabled'])
+                elif widget in self._locked_picture_widgets:
+                    widget.state(['disabled'] if self._locked_picture_widgets.pop(widget) else ['!disabled'])
 
     def reset_look_from_material(self):
         m = self.mat
@@ -612,7 +646,14 @@ class PlaceMixin:
         job = self.job
         mat, placement, look = self.build_params()
         extra = dict(look=look, placement=dict(fit=placement.fit, art_w=placement.art_w, dx=self.dx, dy=self.dy),
-                     picture_file=str(self.picture_path) if self.picture_path else None, grid=self.grid_spec)
+                     picture_file=str(self.picture_path) if self.picture_path else None, grid=self.grid_spec,
+                     source_provenance=self.source_provenance or dict(
+                         original_picture=str(self.picture_path) if self.picture_path else None,
+                         original_sha256=jobs.sha256(self.picture_path) if self.picture_path else None,
+                         rotate=self.rotate, mirror=self.mirror),
+                     saved_source_transform=dict(file=str(self.picture_path) if self.picture_path else None,
+                         rotate=self.rotate, mirror=self.mirror),
+                     keep_proportions=self.proportions_var.get())
         previews = {"1 LOOKS LIKE - finished piece": simulate.mark_spots(simulate.appearance(job), job),
                     "2 LASER INPUT - black means the laser fires": simulate.laser_input(job),
                     "3 IN LASERGRBL - how its preview draws the nc": simulate.lasergrbl_view(job),

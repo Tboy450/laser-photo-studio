@@ -61,6 +61,8 @@ class App(PlaceMixin, LaserMixin):
         self.event_hooks = []
         self._build_after = None
         self.layout_pending = False
+        self.layout_error = None
+        self.source_provenance = None
         self._loading = False
         self._closing = False
         self.init_machine_state()
@@ -75,6 +77,17 @@ class App(PlaceMixin, LaserMixin):
             self.root.after(200, lambda: self.open_picture(args.picture))
         if args.perimeter is not None:
             self.root.after(250, lambda: self.perimeter_mode(args.perimeter or None))
+        if getattr(args, 'job', None):
+            def open_initial_job():
+                if self.open_saved_job(args.job):
+                    self.goto(3)
+                    if getattr(args, 'connect', None):
+                        self.port_var.set(args.connect)
+                        self.goto(4)
+                        self.root.after(100, self.connect)
+                    if getattr(args, 'startup_report', None):
+                        self._startup_report(Path(args.startup_report))
+            self.root.after(200, open_initial_job)
 
     # ================================================================ layout
     def _build_ui(self):
@@ -155,6 +168,7 @@ class App(PlaceMixin, LaserMixin):
         wrap_label(f, "Open a photo, drawing or logo. Phone photos (HEIC) work too.",
                    style="Muted.TLabel").pack(anchor="w", pady=(2, 10))
         ttk.Button(f, text="Open picture...", style="Big.TButton", command=self.open_picture).pack(anchor="w")
+        ttk.Button(f, text="Open saved Studio picture job...", command=self.open_saved_job).pack(anchor="w", pady=(6, 0))
         self.pic_info = wrap_label(f, "No picture yet.")
         self.pic_info.pack(anchor="w", pady=(8, 4))
         box = ttk.LabelFrame(f, text="Is it the right way up?", style="Card.TLabelframe")
@@ -180,6 +194,8 @@ class App(PlaceMixin, LaserMixin):
                                                ("All files", "*.*")])
         if not path:
             return
+        if Path(path).name.lower() == 'job.json' or Path(path).is_dir():
+            return self.open_saved_job(path)
         if Path(path).suffix.lower() in (".nc", ".gcode", ".gc", ".ngc", ".tap", ".txt"):
             self.perimeter_mode(path)
             return
@@ -189,6 +205,7 @@ class App(PlaceMixin, LaserMixin):
             messagebox.showerror("Can't open picture", f"{Path(path).name}\n\n{e}")
             return
         self.picture_path = Path(path)
+        self.source_provenance = None
         if self.picture_path.stem.upper().endswith('IMPORT'):
             self.v_neg.set(False)       # prepared black-on-white laser inputs must not be inverted again
         self.rotate, self.mirror = 0, False
@@ -210,6 +227,92 @@ class App(PlaceMixin, LaserMixin):
         self._apply_orientation()
         self.show_saved_size()
 
+    def _adopt_material_snapshot(self, material):
+        """A loaded snapshot owns its values; queued tree events must not replace them."""
+        self.base_mat = next((m for m in self.materials if m.key == material.key), material)
+        self.mat = material
+        self.materials = [m for m in self.materials if m.key != material.key] + [material]
+        self._fill_tree()
+        self.tree.selection_set('m:' + material.key)
+        self.tree.see('m:' + material.key)
+        self._show_material()
+
+    def _startup_report(self, path, attempts=40):
+        """Optional local diagnostic receipt for a CLI-opened job, without sending motion."""
+        m, placement, look = self.build_params()
+        status = self.last_status
+        ready = bool(self.connected and status and status.idle_off and not self.status_stale()
+                     and not self.layout_pending and not self.layout_error and self.report
+                     and self.report['ok'] and self.compiled_gen == self.gen)
+        try:
+            jobs.write_json(path, dict(connected=self.connected, port=self.port_var.get(),
+                controller=status.state if status else None, wpos=status.wpos if status else None,
+                zero_workflow_ready=ready, origin_set=self.origin_set, layout_pending=self.layout_pending,
+                layout_error=self.layout_error, gen=self.gen, compiled_gen=self.compiled_gen,
+                editable_source=str(self.picture_path), source_sha256=jobs.sha256(self.picture_path),
+                material=m.__dict__, placement=placement.__dict__, look=look,
+                selected_material=list(self.tree.selection()), job_started=False))
+        except OSError as exc:
+            self.say('Could not write startup diagnostic: ' + str(exc), 'warn')
+            return
+        if not ready and attempts > 0 and not self._closing:
+            self.root.after(250, lambda: self._startup_report(path, attempts-1))
+
+    def open_saved_job(self, path=None):
+        if jobs.active_runner() or self.perim_running or (self.worker and
+                (self.worker.busy or not self.worker.tasks.empty())):
+            self.say('Finish the active operation before loading another picture job.', 'warn')
+            return False
+        path = path or filedialog.askopenfilename(title='Open saved Studio picture job',
+                                                   filetypes=[('Studio job', 'job.json')])
+        if not path:
+            return False
+        from . import picture_jobs
+        try:
+            raw, picture, job, report, look, placement, provenance = picture_jobs.read(path)
+        except Exception as exc:
+            messagebox.showerror('Cannot open editable job', str(exc))
+            return False
+        self._loading = True
+        try:
+            if self._build_after:
+                self.root.after_cancel(self._build_after)
+                self._build_after = None
+            self.gen += 1  # reject outstanding builds of the previous picture
+            self._adopt_material_snapshot(job.material)
+            self.picture = self.picture_raw = raw
+            self.picture_path = picture
+            self.rotate, self.mirror = 0, False
+            self.source_provenance = provenance
+            self.grid_spec = self.gfile = None
+            self.piece = copy.deepcopy(job.piece)
+            self.piece_key, self.piece_user_set = 'custom', True
+            self.art_w, self.dx, self.dy = placement.get('art_w'), placement.get('dx', 0), placement.get('dy', 0)
+            self.fit_var.set(placement['fit'])
+            for k, var in (('brightness',self.v_bright),('contrast',self.v_contrast),('gamma',self.v_gamma),
+                           ('sharpen',self.v_sharpen),('autolevel',self.v_auto),('negative',self.v_neg)):
+                var.set(look[k])
+            for v, value in zip(self.v_cut, job.material.tone_cuts):
+                v.set(value)
+            self.proportions_var.set(provenance['keep_proportions'])
+            self.sync_place_fields()
+            self.origin_set = False
+            self.observed_dot = None
+            self.completed_checks.clear()
+            self.layout_pending, self.layout_error = False, None
+            self.job, self.report, self.compiled_gen = job, report, self.gen
+            self.pic_info.configure(text='Editable saved picture job: ' + job.name +
+                '\nLoaded job values override preset defaults; subsequent edits rebuild the job. '
+                'Custom size preserves saved dimensions. Connection/port unchanged.' +
+                ('\nLegacy material defaults used: ' + ', '.join(provenance['defaults_used']) if provenance['defaults_used'] else ''))
+        finally:
+            self._loading = False
+        self.preview.set_job(job)
+        self.update_check_panel()
+        self.refresh_laser_page()
+        self.say('Editable job loaded and verified. Picture controls are live; establish job zero for this setup.', 'ok')
+        return True
+
     def flip(self):
         if self.picture_raw is None:
             return
@@ -229,6 +332,10 @@ class App(PlaceMixin, LaserMixin):
         ttk.Label(f, text="2. Material & print style", style="H1.TLabel").pack(anchor="w")
         wrap_label(f, "Green = proven on your machine. Yellow = good starting points from other 20 W lasers - "
                       "run a test grid first.", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
+        wrap_label(f, "A saved job restores its own recipe and image adjustments. Your later edits take precedence. "
+                      "Selecting another material replaces the recipe and image defaults; an explicitly chosen "
+                      "piece size stays yours. Loading a job does not change the USB port.",
+                   style="Small.TLabel").pack(anchor="w", pady=(0, 6))
         self.tree = ttk.Treeview(f, show="tree", height=12, selectmode="browse")
         self.tree.pack(fill="x")
         self.tree.bind("<<TreeviewSelect>>", self._tree_pick)
@@ -485,13 +592,14 @@ class App(PlaceMixin, LaserMixin):
     def save_preset(self):
         d = FormDialog(self.root, "Save as my preset", [("name", "Name", self.mat.name.replace(" (adjusted)", ""),
                                                          "str")],
-                       intro="Saves these settings so they appear under 'My presets'. Tip: note what you tested, "
-                             "e.g. 'Cherry - 45% 3000'.").result
+                       intro="Saves the material recipe AND current picture adjustments (including Negative). "
+                             "Piece dimensions, placement and the photo are saved with a job, not this preset.").result
         if not d or not d["name"].strip():
             return
         key = "my-" + jobs.safe_name(d["name"]).lower()
         base = self.base_mat
-        m = self.mat.copy(key=key, name=d["name"].strip(), badge="MINE",
+        effective, _, look = self.build_params()
+        m = effective.copy(**look).copy(key=key, name=d["name"].strip(), badge="MINE",
                           summary=self.mat.summary if self.mat.badge == "MINE" else f"Saved from {self.mat.name}.",
                           based_on=base.based_on if base.badge == "MINE" else base.key)
         presets.save_user_material(m)
@@ -590,6 +698,7 @@ class App(PlaceMixin, LaserMixin):
         if self._loading:
             return
         self.gen += 1                  # reject old build/check results immediately, before debounce
+        self.layout_error = None
         self.layout_pending = True
         if hasattr(self, "clearance_lbl"):
             self.clearance_lbl.configure(text="Updating layout — edge clearances are not current yet.")
@@ -612,9 +721,24 @@ class App(PlaceMixin, LaserMixin):
     def _start_build(self):
         self._build_after = None
         if self.picture is None and not self.grid_spec:
+            self.layout_pending = False
+            self.layout_error = (('No editable picture loaded. Open saved Studio picture job or the original picture. '
+                                  'A finished job injected without its source cannot use picture controls.')
+                                 if self.job is not None else None)
+            self.report = None
+            self.refresh_laser_page()
+            self.say(self.layout_error or 'Open a picture or saved Studio picture job.', 'warn')
             return
         gen = self.gen
-        mat, placement, look = self.build_params()
+        try:
+            mat, placement, look = self.build_params()
+        except (ValueError, tk.TclError) as exc:
+            self.layout_pending = False
+            self.layout_error = 'Invalid layout setting: ' + str(exc)
+            self.report = None
+            self.refresh_laser_page()
+            self.say(self.layout_error, 'warn')
+            return
         pic, grid, name = self.picture, self.grid_spec, self.job_name()
         self.say("Updating preview...")
 
@@ -644,7 +768,7 @@ class App(PlaceMixin, LaserMixin):
         threading.Thread(target=work, daemon=True).start()
 
     def check_job(self):
-        if self.job is None or self.layout_pending:
+        if self.job is None or self.layout_pending or self.layout_error:
             return
         gen, job = self.gen, self.job
         self.say("Checking every command offline...")
@@ -687,6 +811,10 @@ class App(PlaceMixin, LaserMixin):
             if gen != self.gen:
                 return
             if err:
+                self.layout_pending = False
+                self.layout_error = 'Layout failed. Correct the source/settings before setting job zero.'
+                self.report = None
+                self.refresh_laser_page()
                 self.say("Couldn't build the job - see details.", "bad")
                 messagebox.showerror("Build failed", err[-1500:])
                 return
@@ -787,9 +915,16 @@ def speed_value(raw: float) -> tuple:
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="Laser Photo Studio")
     ap.add_argument("picture", nargs="?")
+    ap.add_argument('--job', help='open an editable saved Studio picture job folder or job.json')
+    ap.add_argument('--connect', metavar='PORT', help='explicitly connect after a saved picture job loads; no motion or print')
+    ap.add_argument('--startup-report', metavar='JSON', help='write a local loading/connection diagnostic for --job')
     ap.add_argument("--perimeter", nargs="?", const="", default=None, help="open the perimeter check (optional .nc)")
     ap.add_argument("--demo", action="store_true", help="simulated laser")
     args = ap.parse_args(argv)
+    if args.job and (args.picture or args.perimeter is not None):
+        ap.error('Use --job by itself; do not combine it with picture or perimeter check mode.')
+    if args.connect and not args.job:
+        ap.error('--connect requires --job; connection is attempted only after successful editable loading.')
     try:
         from ctypes import windll
         windll.shcore.SetProcessDpiAwareness(1)
