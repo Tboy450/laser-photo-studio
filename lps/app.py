@@ -591,6 +591,8 @@ class App(PlaceMixin, LaserMixin):
             return
         self.gen += 1                  # reject old build/check results immediately, before debounce
         self.layout_pending = True
+        if hasattr(self, "clearance_lbl"):
+            self.clearance_lbl.configure(text="Updating layout — edge clearances are not current yet.")
         self.report = None
         if self._build_after:
             self.root.after_cancel(self._build_after)

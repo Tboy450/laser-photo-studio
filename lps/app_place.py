@@ -28,8 +28,9 @@ class PlaceMixin:
         self.exact_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(c, text="Use exact image size",
                         variable=self.exact_var, command=self._exact_toggled).pack(anchor="w")
-        wrap_label(c, "Width and Height below set the image size and stay editable. Changing materials keeps these "
-                      "dimensions. The perimeter check traces the actual marks.", style="Small.TLabel").pack(anchor="w")
+        wrap_label(c, "Normally Width and Height measure the outside of your physical piece. Set the picture's "
+                      "width under Picture size below. Exact image size instead makes this box the image itself: "
+                      "it uses no margins and can stretch the picture.", style="Small.TLabel").pack(anchor="w")
         self.saved_btn = ttk.Button(c, text="Use the size saved in the file", command=self.use_saved_size)
         self.saved_btn.pack(anchor="w", pady=(4, 8))
         self.saved_btn.state(["disabled"])
@@ -113,6 +114,10 @@ class PlaceMixin:
             self.margin_vars.append(v)
             self.exact_disabled.append(sp)
         ttk.Label(mr, text="mm").grid(row=0, column=4, sticky="w")
+        wrap_label(m, "Margins reserve unprinted space inside the piece. Whole picture fits within that area; "
+                      "Fill crops source edges. Nudging can move art into a margin, where its marks are masked. "
+                      "Margins do not remove a border drawn inside the image.",
+                   style="Small.TLabel").pack(anchor="w", pady=(4, 0))
         ttk.Label(m, text="No-burn zones (holes, twine, screws, existing art):").pack(anchor="w", pady=(8, 2))
         self.ko_list = paint(tk.Listbox(m, height=4, activestyle="none", exportselection=False), background="field", foreground="ink",
                              selectbackground="select", selectforeground="select_ink", highlightbackground="border")
@@ -153,12 +158,17 @@ class PlaceMixin:
         self.exact_disabled.append(b)
         self.arth_lbl = wrap_label(a, "", style="Muted.TLabel")
         self.arth_lbl.pack(anchor="w", pady=(4, 0))
+        self.clearance_lbl = wrap_label(a, "Open a picture to see edge clearances.", style="Small.TLabel")
+        self.clearance_lbl.pack(anchor="w", pady=(4, 0))
         p = ttk.LabelFrame(f, text="Move the picture (the machine doesn't move)", style="Card.TLabelframe")
         p.pack(fill="x", pady=4)
         self.nudge_step = tk.StringVar(value="1")
         self._nudge_pad(p, self.nudge)
         self.offset_lbl = ttk.Label(p, style="Muted.TLabel")
         self.offset_lbl.pack(anchor="w", pady=(4, 0))
+        wrap_label(p, "Left/right and up/down move the artwork from its fitted position. They do not move "
+                      "the head or change job zero. Set the physical head at the selected start point in step 5.",
+                   style="Small.TLabel").pack(anchor="w", pady=(4, 0))
         self._next(f, "Next: look & check  >", 3)
         self.sync_place_fields()
 
@@ -432,7 +442,11 @@ class PlaceMixin:
 
     def after_build_place(self):
         """Called when a new job arrives: show the actual art size."""
+        if self.layout_pending:
+            self.clearance_lbl.configure(text="Updating layout — edge clearances are not current yet.")
+            return
         if self.job is None:
+            self.clearance_lbl.configure(text="Open a picture to see edge clearances.")
             return
         g = self.job.geom
         old, self._loading = self._loading, True
@@ -445,6 +459,17 @@ class PlaceMixin:
                                      "and right (grey dashes in the preview).\n"
                                      f"Picture lower-left: X {g.x0:.3f}, Y {g.y0:.3f} mm from start 0,0. "
                                      "Blank space inside the file stays inside this box.")
+        px0, py0, px1, py1 = g.piece_rect
+        gaps = (g.x0 - px0, g.y0 - py0, px1 - g.x1, py1 - g.yt)
+        text = "Picture-box gaps to outside edges (mm): " + ", ".join(
+            f"{side} {value:.2f}" for side, value in zip(("Left", "Bottom", "Right", "Top"), gaps))
+        ux0, uy0, ux1, uy1 = g.usable_rect
+        if min(g.x0 - ux0, g.y0 - uy0, ux1 - g.x1, uy1 - g.yt) < -0.001:
+            text += "\nPicture enters a margin or extends outside the piece; affected marks are masked."
+        text += ("\nNegative gap = extends outside the piece. These are box clearances, not the nearest marks. "
+                 "Round edges and no-burn zones can clip marks inside the box. Image perimeter checks the picture; "
+                 "Total travel includes laser-off run-ups.")
+        self.clearance_lbl.configure(text=text)
 
     # ================================================================ step 4
     def page_check(self, f):

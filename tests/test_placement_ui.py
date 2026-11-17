@@ -120,6 +120,43 @@ class PlacementUI(unittest.TestCase):
             self.assertEqual(a.mat.row_feed, 6000)
             self.assertEqual(a.return_var.get(), '6000')
 
+    def test_clearances_follow_origin_nudge_and_saved_setup(self):
+        from lps import verify
+        a = self.app
+        # Use a square so asymmetric margins/offsets have known physical gaps.
+        Image.new('L', (100, 100), 0).save(self.picture)
+        a.open_picture(self.picture)
+        a.piece.update(w=100.6, h=100.6, shape='rect', margins=(5.8,)*4, origin='lower-left')
+        a.art_w=89.; a.dx=-.5; a.dy=-1.
+        a.fit_var.set('whole'); a.sync_place_fields(); a.changed(0)
+        self.assertIn('not current', a.clearance_lbl.cget('text'))
+        self.pump()
+        text=a.clearance_lbl.cget('text')
+        for expected in ('Left 5.30', 'Bottom 4.80', 'Right 6.30', 'Top 6.80', 'affected marks are masked'):
+            self.assertIn(expected, text)
+        original_geom=a.job.geom
+        original_cells=a.job.passes[0].cells.copy()
+        a.piece['origin']='center'; a.sync_place_fields(); a.changed(0); self.pump()
+        self.assertEqual(a.clearance_lbl.cget('text'), text)
+        planner.compile_job(a.job)
+        a.report=verify.verify_job(a.job); a.compiled_gen=a.gen
+        folder=a.save_current_job(quiet=True)
+        saved=jobs.read_json(folder/'job.json')
+        self.assertEqual(saved['placement']['dx'], -.5)
+        self.assertEqual(saved['piece']['origin'], 'center')
+        ctx=a.setup_context()
+        jobs.write_json(self.folder/'saved-setup.json', ctx)
+        a.dx=a.dy=7.;a.piece['w']=120.;a.art_w=25.
+        a.load_setup_context(jobs.read_json(self.folder/'saved-setup.json'));self.pump()
+        self.assertEqual(a.clearance_lbl.cget('text'),text)
+        self.assertTrue((a.job.passes[0].cells==original_cells).all())
+        self.assertEqual(a.job.geom.art_w,original_geom.art_w)
+        a.dx=-10.;a.sync_place_fields();a.changed(0);self.pump()
+        self.assertIn('Left -4.20',a.clearance_lbl.cget('text'))
+        self.assertIn('affected marks are masked',a.clearance_lbl.cget('text'))
+        a.exact_var.set(True);a._exact_toggled((40.,30.));self.pump()
+        self.assertIn('Left 0.00, Bottom 0.00, Right 0.00, Top 0.00',a.clearance_lbl.cget('text'))
+
     def test_window_close_waits_for_setup_disconnect_without_a_modal(self):
         a = self.app
         with patch.object(a, "disconnect") as disconnect, \
