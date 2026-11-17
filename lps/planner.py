@@ -4,12 +4,16 @@ Command forms (the only ones a job may contain, checked again by verify.py befor
   M5 S0            laser off (start/end of every row and every pass)
   M4 S0            dynamic laser mode armed at zero power
   G1 Xx Yy Ff Ss   every move, including laser-off travel (G0 is never used)
+Burn-in-place ("dwell") and crawl passes only, checked by their own rules in verify.py:
+  M3 Sn            constant power: at a chosen spot standing still (dwell), or along one planned line (crawl)
+  G4 Ps            wait s seconds (the burn, a crawl step's pause, or a laser-off cool-down after M5 S0)
 Rows run serpentine with laser-off run-ups so the head is at speed before the first mark (as in the proven
 run_xmas_pass / anodized card jobs).
 """
 from __future__ import annotations
 
 import math
+import hashlib
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -20,6 +24,13 @@ from .presets import STYLES, Material, auto_runup
 
 ACCEL = 500.0          # mm/s^2 ($120/$121 on the U20)
 MAX_FEED = 6000        # mm/min ($110/$111)
+DWELL_MAX_S = 60.0     # longest single burn-in-place spot
+COOL_MAX_S = 300.0     # longest laser-off wait between spots
+SPOT_GAP_MIN = 1.0     # mm between burn-in-place spot centres: each spot is its own burn, never stacked in one place
+CRAWL_MIN_FEED = 30    # crawl moves run at or above this (the controller ignores feeds below about 24 mm/min)
+CRAWL_QUANTUM_S = 0.05 # Grbl 1.1h rounds every G4 up to a whole number of 50 ms steps
+CRAWL_MAX_PAUSE_S = 2.0
+CRAWL_MIN_AVG = 0.5    # slowest crawl average, mm/min
 
 
 def fmt(v: float) -> str:
@@ -33,6 +44,7 @@ class Placement:
     piece: dict
     art_w: float | None = None      # requested art width, mm (None = as large as fits)
     fit: str = "whole"              # whole = keep the whole picture | fill = fill the area, crop edges
+    #                                 exact = stretch the whole picture to exactly the piece's size
     dx: float = 0.0                 # nudge from centred, mm (+ = right)
     dy: float = 0.0                 # (+ = up / away from you)
 
@@ -47,34 +59,47 @@ class Geometry:
     crop: tuple | None
     piece_rect: tuple
     usable_rect: tuple
+    cell_w: float | None = None     # exact sizing can adjust sampling, never the requested box
+    cell_h: float | None = None
+
+    @property
+    def x_pitch(self):
+        return self.pitch if self.cell_w is None else self.cell_w
+
+    @property
+    def y_pitch(self):
+        return self.pitch if self.cell_h is None else self.cell_h
 
     @property
     def x1(self):
-        return self.x0 + self.cols * self.pitch
+        return self.x0 + self.cols * self.x_pitch
 
     @property
     def y0(self):
-        return self.yt - self.rows * self.pitch
+        return self.yt - self.rows * self.y_pitch
 
     @property
     def art_w(self):
-        return self.cols * self.pitch
+        return self.cols * self.x_pitch
 
     @property
     def art_h(self):
-        return self.rows * self.pitch
+        return self.rows * self.y_pitch
 
     def col_x(self, c):
-        return self.x0 + c * self.pitch
+        return self.x0 + c * self.x_pitch
 
     def row_y(self, r):
-        return self.yt - (r + 0.5) * self.pitch
+        return self.yt - (r + 0.5) * self.y_pitch
 
 
 def piece_rect(piece: dict) -> tuple:
     w, h = float(piece["w"]), float(piece["h"])
     if piece.get("origin") == "center":
         return (-w / 2, -h / 2, w / 2, h / 2)
+    if piece.get("origin") == "spot":      # a spot the user picked, measured from the piece's lower-left corner
+        ax, ay = (float(v) for v in piece.get("spot") or (0.0, 0.0))
+        return (-ax, -ay, w - ax, h - ay)
     return (0.0, 0.0, w, h)
 
 
@@ -87,6 +112,15 @@ def usable_rect(piece: dict) -> tuple:
 def layout(img_size: tuple, placement: Placement, pitch: float) -> Geometry:
     pw, ph = img_size
     aspect = pw / max(1, ph)
+    if placement.fit == "exact":
+        rect = piece_rect(placement.piece)
+        x0, y0, x1, yt = rect
+        aw, ah = x1 - x0, yt - y0
+        if not all(math.isfinite(v) and v > 0 for v in (aw, ah, pitch)):
+            raise ValueError("Width, height and row spacing must be positive finite numbers.")
+        cols, rows = max(1, round(aw / pitch)), max(1, round(ah / pitch))
+        # Changing resolution must not shrink the physical picture or shift its corner.
+        return Geometry(pitch, cols, rows, x0, yt, None, rect, rect, aw / cols, ah / rows)
     ux0, uy0, ux1, uy1 = usable_rect(placement.piece)
     uw, uh = max(1.0, ux1 - ux0), max(1.0, uy1 - uy0)
     crop = None
@@ -103,6 +137,10 @@ def layout(img_size: tuple, placement: Placement, pitch: float) -> Geometry:
         aw = placement.art_w or min(uw, uh * aspect)
         ah = aw / aspect
     cols, rows = max(1, int(round(aw / pitch))), max(1, int(round(ah / pitch)))
+    if cols * pitch > uw + 1e-9:     # rounding up mustn't push the art past the usable area (e.g. 84.36 mm wide)
+        cols = max(1, int(uw / pitch + 1e-9))
+    if rows * pitch > uh + 1e-9:
+        rows = max(1, int(uh / pitch + 1e-9))
     cx = (ux0 + ux1) / 2 + placement.dx
     cy = (uy0 + uy1) / 2 + placement.dy
     x0 = round(cx - cols * pitch / 2, 2)
@@ -112,8 +150,8 @@ def layout(img_size: tuple, placement: Placement, pitch: float) -> Geometry:
 
 def allowed_cells(geom: Geometry, piece: dict) -> np.ndarray:
     """Cells whose centre lies in the usable area and outside every keep-out zone."""
-    xs = geom.x0 + (np.arange(geom.cols) + 0.5) * geom.pitch
-    ys = geom.yt - (np.arange(geom.rows) + 0.5) * geom.pitch
+    xs = geom.x0 + (np.arange(geom.cols) + 0.5) * geom.x_pitch
+    ys = geom.yt - (np.arange(geom.rows) + 0.5) * geom.y_pitch
     X, Y = np.meshgrid(xs, ys)
     px0, py0, px1, py1 = geom.piece_rect
     ux0, uy0, ux1, uy1 = geom.usable_rect
@@ -234,13 +272,16 @@ class PassPlan:
     key: str
     title: str
     explain: str
-    kind: str                         # rows | features
-    cells: np.ndarray                 # int16 power per cell, 0 = not burned in this pass
+    kind: str                         # rows | features | dwell
+    cells: np.ndarray                 # int16 power per cell, 0 = not burned in this pass (dwell: the spot cells)
     order: list | None = None         # row order (rows passes)
-    feed: int = 2250
+    feed: int = 2250                  # burn feed (dwell: the laser-off travel feed)
     row_feeds: np.ndarray | None = None   # per-row burn feed (test grids)
     commands: list = field(default_factory=list)
     est_s: float = 0.0
+    spots: list | None = None         # dwell: [dict(x, y, s, seconds)] on cell centres, burned in this order
+    cool_s: float = 0.0               # dwell: laser-off wait after each spot (not after the last)
+    lines: list | None = None         # crawl: [dict(x0, x1, y, s, step, steps, feed, pause, v_avg, v_target)]
 
 
 @dataclass
@@ -255,6 +296,23 @@ class JobPlan:
     allowed: np.ndarray | None = None
     labels: np.ndarray | None = None
     compiled: bool = False
+    _outlines: list | None = field(default=None,repr=False)
+    _outline_key: str | None = field(default=None,repr=False)
+
+    def trace_paths(self):
+        if self._outlines is None:
+            from .outlines import physical_contours
+            mask=np.zeros((self.geom.rows,self.geom.cols),bool)
+            for p in self.passes:
+                mask |= p.cells>0
+            self._outline_key=hashlib.sha256(mask.tobytes()).hexdigest()
+            self._outlines=physical_contours(mask,self.geom)
+        return self._outlines
+
+    def outline_key(self):
+        self.trace_paths()
+        g=self.geom
+        return (g.x0,g.y0,g.x1,g.yt,self._outline_key)
 
     @property
     def burn_cells(self) -> int:
@@ -269,8 +327,8 @@ class JobPlan:
         rr = np.flatnonzero(any_burn.any(axis=1))
         cc = np.flatnonzero(any_burn.any(axis=0))
         g = self.geom
-        return (round(g.col_x(cc[0]), 3), round(g.yt - (rr[-1] + 1) * g.pitch, 3),
-                round(g.col_x(cc[-1] + 1), 3), round(g.yt - rr[0] * g.pitch, 3))
+        return (round(g.col_x(cc[0]), 3), round(g.yt - (rr[-1] + 1) * g.y_pitch, 3),
+                round(g.col_x(cc[-1] + 1), 3), round(g.yt - rr[0] * g.y_pitch, 3))
 
     @property
     def est_s(self) -> float:
@@ -356,7 +414,7 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
 
 # --------------------------------------------------------------------------------------------- commands
 def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_feed: int, runup: float,
-                    row_feeds=None, accel: float = ACCEL) -> list:
+                    row_feeds=None, accel: float = ACCEL, *, bidirectional: bool = True) -> list:
     cmds = []
     flip = False
     for r in order if order is not None else range(cells.shape[0]):
@@ -365,7 +423,7 @@ def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_fee
         if not len(nz):
             continue
         f = int(row_feeds[r]) if row_feeds is not None else int(feed)
-        ru = max(runup, auto_runup(f, accel))
+        ru = max(runup, auto_runup(f, accel, minimum=min(1.0, runup)))   # ladders ask for less than 1 mm when slow
         a0, a1 = int(nz[0]), int(nz[-1]) + 1
         seg = row[a0:a1]
         cuts = np.r_[0, np.flatnonzero(np.diff(seg)) + 1, len(seg)]
@@ -380,12 +438,12 @@ def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_fee
                  f"G1 X{fmt(start)} Y{y} F{f} S0"]
         cmds += [f"G1 X{fmt(e)} Y{y} F{f} S{s}" for e, s in zip(ends, pw)]
         cmds += [f"G1 X{fmt(ends[-1] + d * ru)} Y{y} F{f} S0", "M5 S0"]
-        flip = not flip
+        flip = not flip if bidirectional else False
     return cmds
 
 
 def feature_commands(cells: np.ndarray, labels: np.ndarray, geom: Geometry, feed: int, hop_feed: int,
-                     runup: float, start=(0.0, 0.0)) -> list:
+                     runup: float, start=(0.0, 0.0), *, bidirectional: bool = True) -> list:
     """Thin features one at a time (nearest next), each as a tiny serpentine raster with short run-ups."""
     lab = np.where(cells > 0, labels, 0)
     ids = [int(i) for i in np.unique(lab) if i]
@@ -435,8 +493,124 @@ def feature_commands(cells: np.ndarray, labels: np.ndarray, geom: Geometry, feed
                      f"G1 X{fmt(st)} Y{y} F{feed} S0"]
             cmds += [f"G1 X{fmt(e)} Y{y} F{feed} S{s}" for e, s in zip(ends, pw)]
             cmds += [f"G1 X{fmt(ends[-1] + d * runup)} Y{y} F{feed} S0", "M5 S0"]
-            flip = not flip
+            flip = not flip if bidirectional else False
         pos = cen[i]
+    return cmds
+
+
+def dwell_pass(geom: Geometry, allowed: np.ndarray, spots, key: str = "D", title: str = "Burn in place",
+               explain: str = "Laser on, standing still, only at the chosen spots", travel_feed: int = 3000,
+               cool_s: float = 0.0) -> PassPlan:
+    """A burn-in-place pass: the head travels with the laser off to each spot, then burns there standing still
+    (M3 + G4) for its own time, then the laser goes off. spots: dicts with x, y (mm from job zero), power (%) or s,
+    and seconds. Each spot snaps to the nearest dot centre (at most half a dot away)."""
+    out = []
+    cells = np.zeros((geom.rows, geom.cols), np.int16)
+    for sp in spots:
+        s = int(sp["s"]) if "s" in sp else int(round(float(sp["power"]) * 10))
+        sec = float(sp["seconds"])
+        if not 0 < s <= 1000:
+            raise ValueError(f"Spot power S{s} must be 1-1000.")
+        if not 0 < sec <= DWELL_MAX_S:
+            raise ValueError(f"Spot time {sec:g} s must be more than 0 and at most {DWELL_MAX_S:g} s.")
+        c = int(math.floor((float(sp["x"]) - geom.x0) / geom.x_pitch))
+        r = int(math.floor((geom.yt - float(sp["y"])) / geom.y_pitch))
+        if not (0 <= r < geom.rows and 0 <= c < geom.cols) or not allowed[r, c]:
+            raise ValueError(f"Spot at X{sp['x']} Y{sp['y']} is outside the usable area.")
+        x, y = round(geom.col_x(c + 0.5), 3), round(geom.row_y(r), 3)
+        near = next((o for o in out if math.hypot(o["x"] - x, o["y"] - y) < SPOT_GAP_MIN - 1e-9), None)
+        if near is not None:
+            raise ValueError(f"Spots at X{sp['x']} Y{sp['y']} and X{near['x']} Y{near['y']} are closer than "
+                             f"{SPOT_GAP_MIN:g} mm: each spot must be its own burn.")
+        cells[r, c] = s
+        out.append(dict(x=x, y=y, s=s, seconds=sec))
+    if not 0 <= cool_s <= COOL_MAX_S:
+        raise ValueError(f"Cool-down {cool_s:g} s must be 0-{COOL_MAX_S:g} s.")
+    return PassPlan(key, title, explain, "dwell", cells, None, int(travel_feed), spots=out, cool_s=float(cool_s))
+
+
+def dwell_commands(spots, travel_feed: int, cool_s: float = 0.0) -> list:
+    """Per spot: laser off, travel there (laser off), on for the spot's time standing still, off."""
+    cmds = [] if spots else ["M5 S0"]
+    for k, sp in enumerate(spots):
+        cmds += ["M5 S0", f"G1 X{fmt(sp['x'])} Y{fmt(sp['y'])} F{int(travel_feed)} S0", f"M3 S{int(sp['s'])}",
+                 f"G4 P{float(sp['seconds']):g}", "M5 S0"]
+        if cool_s > 0 and k < len(spots) - 1:
+            cmds.append(f"G4 P{float(cool_s):g}")
+    return cmds
+
+
+def crawl_timing(step: float, v_avg: float, min_feed: int = CRAWL_MIN_FEED, quantum: float = CRAWL_QUANTUM_S):
+    """Move feed f and pause t per step so the average along the line is v_avg (mm/min), while every move runs at
+    or above min_feed (the controller follows feeds above its floor) and every pause is a whole number of the
+    firmware's dwell steps (Grbl 1.1h rounds G4 up to 50 ms). Picks the slowest move that works, so the burn is as
+    even as possible. Returns (f, t, planned average)."""
+    if not CRAWL_MIN_AVG <= v_avg <= min_feed:
+        raise ValueError(f"Crawl average {v_avg:g} mm/min must be {CRAWL_MIN_AVG:g}-{min_feed} mm/min "
+                         "(faster lines don't need crawling).")
+    if not 0.005 <= step <= 1.0:
+        raise ValueError(f"Crawl step {step:g} mm must be 0.005-1 mm.")
+    for k in range(1, int(round(CRAWL_MAX_PAUSE_S / quantum)) + 1):
+        t = round(k * quantum, 3)
+        per_mm = 1.0 / v_avg - t / (60.0 * step)            # minutes per mm left for moving
+        if per_mm <= 0:
+            break
+        f = int(round(1.0 / per_mm))
+        if f < min_feed:
+            continue
+        if f > MAX_FEED:
+            break
+        v = step / (step / f + t / 60.0)
+        if abs(v - v_avg) / v_avg <= 0.01:
+            return f, t, v
+    raise ValueError(f"A {step:g} mm step can't average {v_avg:g} mm/min with moves at {min_feed} mm/min or more and "
+                     f"pauses in {quantum * 1000:g} ms steps (up to {CRAWL_MAX_PAUSE_S:g} s). Use a bigger step or a "
+                     "lower minimum move speed.")
+
+
+def crawl_pass(geom: Geometry, allowed: np.ndarray, lines, key: str = "C", title: str = "Crawl lines",
+               explain: str = "Laser on along each line only: tiny steps, each followed by a short pause",
+               travel_feed: int = 3000) -> PassPlan:
+    """Lines burned at an average speed below the controller's floor. Per line: laser-off travel to its start, M3,
+    then a tiny left-to-right step (G1 at feed f) and a pause (G4 t) repeated, then laser off. lines: dicts with x0,
+    x1, y (mm from job zero), power (%) or s, v_avg (mm/min), step (mm), optional min_feed. y snaps to its row's
+    centre and x0 to a dot edge; x1 becomes x0 + a whole number of steps."""
+    out = []
+    cells = np.zeros((geom.rows, geom.cols), np.int16)
+    for ln in lines:
+        s = int(ln["s"]) if "s" in ln else int(round(float(ln["power"]) * 10))
+        if not 0 < s <= 1000:
+            raise ValueError(f"Line power S{s} must be 1-1000.")
+        step, v_target = float(ln["step"]), float(ln["v_avg"])
+        f, t, v = crawl_timing(step, v_target, int(ln.get("min_feed", CRAWL_MIN_FEED)))
+        r = int(math.floor((geom.yt - float(ln["y"])) / geom.y_pitch))
+        c0 = int(round((float(ln["x0"]) - geom.x0) / geom.x_pitch))
+        x0 = round(geom.col_x(c0), 3)
+        n = int(round((float(ln["x1"]) - float(ln["x0"])) / step))
+        if n < 1:
+            raise ValueError("A crawl line must run left to right, at least one step long.")
+        x1 = round(x0 + n * step, 3)
+        c1 = int(math.ceil((x1 - geom.x0) / geom.x_pitch - 1e-6))
+        if not (0 <= r < geom.rows and 0 <= c0 and c1 <= geom.cols) or not allowed[r, c0:c1].all():
+            raise ValueError(f"Line at Y{ln['y']} from X{ln['x0']} to X{ln['x1']} leaves the usable area.")
+        if cells[r, c0:c1].any():
+            raise ValueError(f"Line at Y{ln['y']} overlaps another crawl line.")
+        cells[r, c0:c1] = s
+        out.append(dict(x0=x0, x1=x1, y=round(geom.row_y(r), 3), s=s, step=step, steps=n, feed=f, pause=t,
+                        v_avg=round(v, 4), v_target=v_target))
+    return PassPlan(key, title, explain, "crawl", cells, None, int(travel_feed), lines=out)
+
+
+def crawl_commands(lines, travel_feed: int) -> list:
+    """Per line: laser off, travel to its start (laser off), M3, then step + pause repeated, then laser off."""
+    cmds = [] if lines else ["M5 S0"]
+    for ln in lines:
+        y = fmt(ln["y"])
+        cmds += ["M5 S0", f"G1 X{fmt(ln['x0'])} Y{y} F{int(travel_feed)} S0", f"M3 S{int(ln['s'])}"]
+        for k in range(1, ln["steps"] + 1):
+            cmds += [f"G1 X{fmt(ln['x0'] + k * ln['step'])} Y{y} F{int(ln['feed'])} S{int(ln['s'])}",
+                     f"G4 P{float(ln['pause']):g}"]
+        cmds.append("M5 S0")
     return cmds
 
 
@@ -444,6 +618,9 @@ def estimate_seconds(cmds, accel: float = ACCEL, per_command: float = 0.003) -> 
     x = y = 0.0
     t = 0.0
     for c in cmds:
+        if c.startswith("G4 P"):
+            t += float(c[4:])
+            continue
         if c[0] != "G":
             if c.startswith("M4"):
                 t += 0.05
@@ -460,12 +637,21 @@ def estimate_seconds(cmds, accel: float = ACCEL, per_command: float = 0.003) -> 
 def compile_job(job: JobPlan, start=(0.0, 0.0)) -> JobPlan:
     """Generate the command lists for every pass (slower than plan_cells)."""
     m = job.material
+    if m.scan_direction not in ("alternating", "forward"):
+        raise ValueError("Scan direction must be alternating or forward.")
+    bidirectional = m.scan_direction == "alternating"
     pos = start
     for p in job.passes:
-        if p.kind == "features":
-            p.commands = feature_commands(p.cells, job.labels, job.geom, p.feed, m.hop_feed, m.feature_runup, pos)
+        if p.kind == "dwell":
+            p.commands = dwell_commands(p.spots or [], p.feed, p.cool_s)
+        elif p.kind == "crawl":
+            p.commands = crawl_commands(p.lines or [], p.feed)
+        elif p.kind == "features":
+            p.commands = feature_commands(p.cells, job.labels, job.geom, p.feed, m.hop_feed, m.feature_runup, pos,
+                                          bidirectional=bidirectional)
         else:
-            p.commands = raster_commands(p.cells, p.order, job.geom, p.feed, m.row_feed, m.runup, p.row_feeds)
+            p.commands = raster_commands(p.cells, p.order, job.geom, p.feed, m.row_feed, m.runup, p.row_feeds,
+                                         bidirectional=bidirectional)
         p.est_s = estimate_seconds(p.commands)
         for c in reversed(p.commands):
             if c.startswith("G1"):

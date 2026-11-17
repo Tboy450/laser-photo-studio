@@ -1,16 +1,17 @@
-# Laser Photo Studio 1.0
+# Laser Photo Studio 1.1
 
 Turn a picture into a finished engraving on the **Tronxy Ultrabot U20** in a few clicks: pick the picture, pick
-the material, size it, check it, run the 1% dot perimeter check, press Start. Built from
+the material, size it, set job zero, check placement, and press Start. Built from
 `LASER-AUTOMATION-BRIEF.md` and everything learned on the jar lids, pine planks and anodized cards.
 
 ## Install
 
 Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run again, and needs no admin rights.
 
-- **Laser Photo Studio** (desktop icon): the full app. Drop a picture or `.nc` file on it to open it.
-- **Laser Perimeter Check** (desktop icon): opens straight to the 1% dot perimeter check. Drop any `.nc` file on it
-  (from this app, LaserGRBL or older project jobs) to see where it will burn.
+- **Laser Photo Studio** (Windows Start): opens the full app.
+- **Laser Perimeter Check** (Windows Start): opens the placement checks. Open a `.nc` file
+  (from this app, LaserGRBL or older project jobs) to see where it will burn, and whether it fills shapes in or
+  only burns their **outlines** (what LaserGRBL's Vectorize makes).
 - **Pictures for `.nc` files in File Explorer.** Windows only previews picture files; for G-code it shows the icon
   of the program that opens it (LaserGRBL's "LG"). The install adds a small preview add-on, so Explorer draws what
   each `.nc` file will engrave (anodized jobs as silver on black, wood jobs in wood colours). Press F5 or reopen
@@ -20,29 +21,72 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
 
 ## The five steps
 
+For a controlled scan-direction comparison, **2 Material → Adjust settings (optional) → Scan direction**
+offers **Alternating rows** (the existing default) or **Left to right only** (returns with the laser off).
+This keeps the same cells, size, power and feed, but takes longer. It is a diagnostic option for comparing
+physical row alignment, not a resolution increase or guaranteed lettering fix. Older jobs retain their
+original direction. The **Thin lines (centerlines)** style is a skeleton engraved in raster rows, not a
+continuous vector path along each letter.
+
 1. **Picture.** Photos, drawings or logos; phone HEIC photos work. Turn or mirror it if needed.
 2. **Material & style.** Green = proven on your U20, yellow = a starting point from other 20 W lasers (test first).
    Each preset explains itself, shows the matching **LaserGRBL settings**, and shows the **energy** of any changes
-   compared with the preset. Proven presets show **photos**: the ladder and grid tests, their charts, and finished
+   compared with the preset, and every setting in the units you'll meet elsewhere (power as `60 % (S600)`, row
+   spacing as lines per inch, speed in in/min). Proven presets show **photos**: the ladder and grid tests, their charts, and finished
    pieces made with them (click to enlarge). Add your own test photos to any preset, and save your own presets.
-3. **Size & placement.** Piece size, origin (lower-left corner or centre), margins and no-burn zones (twine holes,
-   screws). Nudge the art in 0.5-5 mm steps.
-4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Then every command is replayed
+3. **Size & placement.** Files with a saved print size open with **Use exact image size** selected. With this
+   option on, **Width** and **Height** set the image size directly. You can edit both fields after choosing a material.
+   Material and resolution changes keep your entered dimensions, including fractional millimeters.
+   **Keep proportions** links the two fields. Turn it off to enter both independently. In template mode, set the piece
+   size (inches shown too), start point (lower-left corner, centre, or **any spot you
+   click on the picture**, like a stripe's corner or the windshield's edge), margins and
+   no-burn zones (twine holes, screws). **Move the picture** in 0.5-5 mm steps: the blue pad moves the art and its outlines; the
+   machine doesn't move. **Toy car (Hot Wheels)...** gives a top view for typical 1:64 body types (coupe,
+   fastback, sports car, pickup, van) and your measured Mustang: enter your car's length, width and window
+   positions, and the windshield and rear window become no-burn zones, with the start point on the
+   windshield's front edge, on the centerline.
+   For other cars, **Edit selected** changes a zone's measurements. Tick **Move / resize no-burn zones on the
+   preview**, drag inside a window to move it, or drag a corner square to resize it. Round zones have a radius
+   handle. This edits only the mask; it never jogs the head. Each edit rebuilds the burn map and clears the old
+   perimeter check.
+4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Every preview mode (Looks like,
+   What burns, In LaserGRBL, Picture) has a **colour key** underneath saying what each colour, dashed box and marker
+   means, a **Grid** (spacing follows the piece's size; numbers are mm from the start point) helps you read off
+   positions, and the app warns when a logo's or sticker's plain background would burn as a filled rectangle. Then every command is replayed
    offline: only allowed powers and speeds, nothing outside the piece, every dot burned exactly once, laser off at
    every start and end. Nothing reaches the laser until this passes. Save the job or open it in LaserGRBL.
-5. **Laser.** Connect, set the origin, **perimeter check**, then Start.
+5. **Laser.** Connect, put the head over the selected **Job zero**, and press **Set job zero here**. The
+   **Laser head** circle follows the controller's reported position. Toggle **Centers** to see the piece and
+   image centers. **Jog head to clicked point** moves the head with the beam off. **Mark observed dot** puts
+   a temporary marker where you click. **Apply alignment** confirms a zero shift while the head stays still.
+   Choose a check and review its preview before confirming. **Total travel perimeter** checks clearance,
+   **Image perimeter** shows the placed footprint, **Sticker outline** shows the outer mark edges, and
+   **Full burn trace** uses 2% on the marking strokes and zero power for travel. **Dry run** replays the same
+   path with the beam off. Check the **Ready to start?** list before Start.
+
+The **Colours** box (top right) switches the whole app live: the original light look, **Dragonfly dark** (the navy,
+cyan and amber of the NASA Dragonfly site), or a high-contrast pair for easier reading: yellow on black, black on
+white, black on yellow, white on blue, blue on black. Each theme is tested for contrast (WCAG: 7:1 for the pairs'
+text).
 
 The **Guide** button (top right) explains everything in plain words: too light or too dark, negatives and
-LaserGRBL's preview, print styles, LaserGRBL settings, origin and perimeter check, USB dropouts, safety and files.
+LaserGRBL's preview, print styles, LaserGRBL settings (with the Hot Wheels car's mistakes and a list of LaserGRBL's
+names next to this app's), start point and perimeter check (moving the picture vs moving the head), backgrounds & stickers (why a whole rectangle burns, fills vs outlines), USB dropouts, safety and files.
 Blue links in the steps open the right Guide page.
 
-## Perimeter check with the 1% dot
+## Literal engraving-outline check at 1%
 
-The head visits each corner of the burn area with the laser **off**, then flashes your positioning dot there:
-**S10 = 1%** bursts of 0.25 s, exactly like `Positioning Laser.exe`. Before each flash it checks the machine is idle
-with zero output and that the controller has S10 programmed while the laser is off; each flash goes out with its own
-`M5 S0` off command. It returns to the origin afterwards. Choose 1-6 flashes per corner, and optional dots along the
-edges. The **Dot on (1%)** button gives a steady dot (auto-off after 60 s) for lining up the origin.
+The **blue lines** follow the boundaries of the actual cells that will engrave, including holes, separate
+shapes and window cutouts. The check uses that same path: **M4/S10 = 1%**, laser off between shapes, then back
+to start 0,0. It never substitutes a padded rectangle, image box or convex hull. Detailed/dithered pictures
+can contain many tiny shapes and take longer to check. Controller settings, override and off state are
+verified before tracing. **Dot on (1%)** remains available separately for lining up the start point.
+
+The image's W/H include white space inside the file; the first dark mark need not be the image corner. The
+grey **Size box** guide is optional and is not traced. The lower-left / upper-right X/Y explain where the
+image sits relative to red **start 0,0**. New exports include grid/image geometry so reopening them in this
+app reconstructs their exact outlines. Older/external files without enough geometry ask for the source
+picture rather than silently framing a rectangle. LaserGRBL's own Frame button remains its own box check.
 
 ## Safety rules built in
 
@@ -50,13 +94,13 @@ edges. The **Dot on (1%)** button gives a steady dot (auto-off after 60 s) for l
 - Checks `$30=1000`, `$31=0`, `$32=1`, `$100=$101=100` before any laser output.
 - M4 dynamic power; every move is G1 (laser-off travel is `G1 ... S0`); `M5 S0` at every row end and job end.
 - One sender at a time: warns if LaserGRBL or Positioning Laser is open; only one job runs at a time.
-- Opens COM4 with DTR/RTS off. Refuses to start if the controller just rebooted, if the head isn't at the origin,
+- Opens COM4 with DTR/RTS off. Refuses to start if the controller just rebooted, if the head isn't at the start point,
   or if a job file was edited after checking. Stops if the head is reported outside the job's area.
 
 ## Running a job
 
 Jobs run as a separate background process: **closing the app doesn't stop the laser**. Reopen the app to watch:
-layer X of N, % done, minutes left, laser ON/off, and the head on the preview. After each layer the head parks and
+pass X of N, % done, minutes left, laser ON/off, and the head on the preview. After each pass the head parks and
 waits for your photo; photos arriving in your phone folder (`Downloads\Mobile Devices`) are copied into the job in
 order. Buttons: Pause / Resume, Stop after this row (keeps position), EMERGENCY STOP.
 
@@ -107,6 +151,12 @@ and never restarts by itself after a fault.
 | Black cast acrylic | Classic dots 50%, 4000, Negative on | community charts |
 | Coated steel lid, photo | Halftone 100%, 2500 (experimental) | lid findings |
 
+**Wide-range lid ladder** (step 2): every power x speed as solid patches packed into a 2 in lid (option A: 50-100 %
+by 10 x 50-6000 mm/min in 8 log steps, 4 mm patches; option B: by 5 %, 3 mm). One pass per speed, fastest first,
+so you can stop before the slow, hot rows. Saves a printable map (`5 LADDER MAP`), burns one orientation mark,
+warns about heat and run-ups past the lid edge, and records the lid material. Too many patches: it says how many
+lids and makes them one at a time.
+
 **Test grid** (step 2): larger labelled patches, power across and speed down, each with a solid top and a dot ramp.
 Run-ups grow automatically with speed (about 10 mm at 6000 mm/min). Save the best patch as your own preset.
 
@@ -122,21 +172,29 @@ Run-ups grow automatically with speed (about 10 mm at 6000 mm/min). Save the bes
 
 ## Files
 
-- **Jobs:** `Documents\Laser Photo Studio\Jobs\<date>_<name>\` (on this PC inside `OneDrive\Documents`):
-  `passes\01 Layer 1.nc ...` (one per layer), `<name> - all passes.nc` (for LaserGRBL), previews
+**November 9: saved placement and inspection controls.** Step 5 now has **Restore saved setup / position...**,
+plus **Park left 3½ in** and **Return to zero** beside Start. Completed prints, inspection jogs and app
+Disconnect preserve the original job reference locally. The runner releases COM4 after finishing; the
+inspection buttons can reconnect and restore that reference before moving. A reset during queued motion is
+recorded as uncertain, not treated as an exact last-sent stop. See [behavior and verification](docs/usb-position-recovery-2026-11-09.md).
+
+- **Jobs** are saved in `%LOCALAPPDATA%\Laser Photo Studio\Jobs\<date>_<name>\`.
+  `passes\01 Layer 1.nc ...` (one per pass), `<name> - all passes.nc` (for LaserGRBL), previews
   (`1 LOOKS LIKE`, `2 LASER INPUT`, `3 IN LASERGRBL`, `4 burn map`), `README.txt`, `job.json`, `state.json`,
   `log.txt`, `photos\`.
-- **Presets and settings:** `Documents\Laser Photo Studio\my-presets.json`, `settings.json`.
+- **Presets and settings** are saved as `my-presets.json` and `settings.json` in `%LOCALAPPDATA%\Laser Photo Studio\`.
 - **Sample photos:** built in under `assets\samples\` (made from the project's tests by `tools\make_samples.py`,
-  which lists every photo, its caption and which presets show it). Photos you add go to
-  `Documents\Laser Photo Studio\samples\<preset>\`.
+  which lists every photo, its caption and which presets show it; sources come from the project's `outputs` folder
+  and `Documents\01 Projects\Laser & CNC`). "What went wrong" photos are kept on purpose: the Hot Wheels car shows
+  up under the anodized and lid presets. Photos you add go to
+  `%LOCALAPPDATA%\Laser Photo Studio\samples\<preset>\`.
 
 ## Folder layout
 
 | Path | What |
 |---|---|
 | `Laser Photo Studio.pyw` | Starts the app |
-| `install.ps1`, `uninstall.ps1` | Desktop icons and `.nc` previews |
+| `install.ps1`, `uninstall.ps1` | Start menu shortcuts and `.nc` previews |
 | `lps\` | The app: planner, offline check, runner, recovery, Guide, simulated laser |
 | `thumbnails\` | The File Explorer preview add-on (`NcThumbnails.cs`, `build.ps1`) |
 | `assets\`, `tools\` | Icons and sample photos, and the scripts that make them |
@@ -154,3 +212,8 @@ preview -> 1% dot perimeter -> start, with photo pauses, plain progress and one-
 
 Ideas not in 1.0: send jobs from the controller's microSD card or Wi-Fi so USB isn't in the loop; crosshatch and
 second-axis rows; presets from the planned 40-80% / 3000-6000 mm/min speed grid; a vector line mode for lids.
+
+
+## Samples and continuing learning
+
+Open a sample photo and choose **Test record...** for Evidence, Surface and Settings tabs. Your photos have editable records; built-in examples show source-maintained records. Blank fields are unknown, and older photos keep their captions without invented settings. Saving a test record does not change the material preset or a job. The Guide topic **Test records & recent learning** explains current findings and unrun proposals. See `docs/learning-workflow.md` for the ongoing intake, privacy, validation and update process.

@@ -118,19 +118,52 @@ def main():
     ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True).save(OUT / "5-guide.png")
     hw.destroy()
     app.goto(4)
+    assert pump(app, 30, lambda: app.ready_items()[1][0]), "job not checked"
+    ready = [done for done, _, _ in app.ready_items()]
+    assert ready[:2] == [True, True] and not any(ready[2:]), ready     # picture + check done, nothing else yet
     app.connect()
     assert pump(app, 10, lambda: app.connected and app.last_status is not None), "demo connect failed"
     app.worker.submit("origin", machine.set_origin_here, 0.0, 0.0)
     assert pump(app, 5, lambda: app.origin_set), "origin not set"
-    pts = __import__("lps.planner", fromlist=["x"]).perimeter_points(app.job.burn_bbox())
-    app.perim_points = pts
-    app.perim_running = True
-    app.worker.submit("perimeter", machine.perimeter_check, pts, 1, 6000, cancel=app.worker.cancel,
-                      progress=lambda i, n, name, what: app.events.put(("perim", i, n, name, what)))
+    from tkinter import messagebox
+    messagebox.askokcancel = lambda *a, **k: True
+    app.run_perimeter("image")
     assert pump(app, 60, lambda: not app.perim_running), "perimeter timed out"
-    pulses = app.worker.ctrl.pulses
-    assert len(pulses) == 4 and all(p[2] == 10 for p in pulses), pulses
+    burns = app.worker.ctrl.burns
+    assert burns and all(p[4] == 10 for p in burns), burns
     shot(app, "4-laser")
+    assert pump(app, 5, lambda: all(done for done, _, _ in app.ready_items())), app.ready_items()
+    app.pages[4].canvas.yview_moveto(0.55)
+    pump(app, 0.5)
+    shot(app, "4b-ready")
+    app.nudge(1, 0)    # moving the picture means the perimeter check has to be run again
+    assert pump(app, 30, lambda: not app.ready_items()[4][0] and app.ready_items()[1][0]), app.ready_items()
+    app.nudge(None, None)
+    app.pages[4].canvas.yview_moveto(0.0)
+    # Lining up by clicking the preview (demo laser): 'the dot is here', 'move the head there', then jogging with
+    # 'Move the picture with the head' keeps the head's X/Y.
+    messagebox.askyesno = lambda *a, **k: True      # the confirmations would wait for a person
+
+    def at(x, y):
+        st = app.last_status
+        return bool(st and st.wpos and abs(st.wpos[0] - x) < 0.05 and abs(st.wpos[1] - y) < 0.05)
+    assert pump(app, 30, lambda: app.ready_items()[1][0]), "re-check after nudging"
+    app.click_var.set("here")
+    app.preview_clicked(5.0, 4.0, 5.0, 4.0)
+    assert at(0, 0) and app.current_observation()
+    app.apply_alignment()
+    assert pump(app, 10, lambda: at(5.0, 4.0)), app.last_status
+    app.click_var.set("goto")
+    app.preview_clicked(20.0, 30.0, 20.0, 30.0)
+    assert pump(app, 20, lambda: at(20.0, 30.0)), app.last_status
+    count = app.origin_count
+    app.follow_var.set(True)
+    app.jog(1.0, 0.0)
+    assert pump(app, 20, lambda: app.origin_count == count + 1), "follow jog"
+    assert at(20.0, 30.0), app.last_status
+    assert not app.ready_items()[4][0]                # the picture moved: perimeter check needed again
+    app.follow_var.set(False)
+    app.click_var.set("none")
     # Material card explanations: LaserGRBL settings and the energy readout after slowing down.
     app.select_material("anodized-dots")
     var, _ = app.adv_vars["feed"]
@@ -142,6 +175,86 @@ def main():
     pump(app, 1.0)
     app.pages[1].canvas.yview_moveto(0.40)
     shot(app, "1b-material-explained")
+    # Step 3: pick the start point by clicking the picture; the job is re-measured from that spot.
+    app.goto(2)
+    app.origin_var.set("spot")
+    app._piece_edited()
+    app.preview_clicked(0.0, 0.0, 30.0, 20.0)
+    assert pump(app, 30, lambda: app.job.piece.get("spot") == [30.0, 20.0]), app.job.piece
+    assert app.job.geom.piece_rect[:2] == (-30.0, -20.0), app.job.geom.piece_rect
+    assert not app.origin_set                       # the controller's start point is now out of date
+    shot(app, "2b-picked-start-point")
+    # Toy car: the window shows a scaled top view; another body type refills the numbers; 'Use this car' sets the piece.
+    from lps import presets
+    from lps.dialogs import CarDialog
+    d = CarDialog(root, presets.car_values("mustang"), wait=False)
+    d.geometry("+60+60")
+    pump(app, 0.8)
+    grab(d, "2c-toy-car")
+    d.body_box.current(d.body_keys.index("pickup"))
+    d._body_picked()
+    assert d.values()["length"] == 78.0 and d.values()["front"] == "right", d.values()
+    d.destroy()
+    app.use_car(presets.car_values("mustang"))
+    assert pump(app, 30, lambda: app.job.piece.get("name", "").startswith("Toy car")), "car job"
+    shot(app, "2d-toy-car-piece")
+    app.zone_edit_var.set(True)
+    app.select_keepout(0)
+    app.preview.refresh()
+    app.pages[2].canvas.yview_moveto(0.43)
+    pump(app, .5)
+    shot(app, "2d-editable-windshield")
+    app.pages[2].canvas.yview_moveto(0.0)
+    app.zone_edit_var.set(False)
+    # Exact size: the box is what you type, and the perimeter is that box.
+    app.pw_var.set("14")
+    app.exact_var.set(True)
+    app._exact_toggled((14.0, 19.0))
+    assert pump(app, 30, lambda: app.job.geom.art_w == 14.0 and app.job.geom.art_h == 19.0), app.job.geom
+    assert app.picture_box() == (0.0, 0.0, 14.0, 19.0), app.picture_box()
+    assert "14 x 19 mm" in app.box_lbl.cget("text"), app.box_lbl.cget("text")
+    shot(app, "2e-exact-size")
+    roof = PIC.parents[1] / 'mazda-rx7-2026-11-05/sized/01-roof-14x19-IMPORT.png'
+    if roof.exists():
+        app.open_picture(roof)
+        app.v_neg.set(False)
+        app.changed(0)
+        assert pump(app,30,lambda: not app.layout_pending and app.picture_box()==(0.,0.,14.,19.)), 'roof box'
+        pump(app,.4)
+        shot(app,'2f-actual-roof-14x19')
+    app.use_car(presets.car_values("mustang"))
+    assert pump(app, 30, lambda: app.job.piece.get("name", "").startswith("Toy car")), "back to the car"
+    # The grid follows the zoom: finer on the small car than on the plank; it can be switched off.
+    cv = app.preview.canvas
+    assert app.preview.grid_mm and app.preview.grid_mm <= 10 and cv.find_withtag("grid"), app.preview.grid_mm
+    assert any(t.startswith("grid:") for _, _, t in app.preview._key_items), app.preview._key_items
+    app.preview.grid_on.set(False)
+    app.preview._grid_toggled()
+    assert not cv.find_withtag("grid") and not jobs.load_settings()["grid"]
+    app.preview.grid_on.set(True)
+    app.preview._grid_toggled()
+    app.goto(3)     # the check runs from step 4
+    assert pump(app, 30, lambda: app.report is not None and app.compiled_gen == app.gen), "car check"
+    assert app.report["ok"] and len(app.job.piece["keepouts"]) == 2, app.report
+    # Every colour theme switches live on the running app, and the choice is remembered.
+    from lps.ui_common import COLORS, THEMES
+    app.goto(1)
+    app.pages[1].canvas.yview_moveto(0.0)
+    for name in THEMES:
+        app.set_theme(name)
+        pump(app, 0.6)
+        assert COLORS["ink"] == THEMES[name]["ink"] and app.preview.canvas.cget("background") == COLORS["canvas"]
+        assert jobs.load_settings()["theme"] == name
+        cv = app.preview.canvas
+        fills = {cv.itemcget(i, "fill") for i in cv.find_withtag("grid") if cv.type(i) == "line"}
+        assert COLORS["grid"] in fills and "#ffffff" not in fills - {COLORS["grid"], COLORS["grid_back"]}, (name, fills)
+        shot(app, f"7-theme-{name}")
+    app.goto(4)
+    app.set_theme("dragonfly")
+    app.pages[4].canvas.yview_moveto(0.0)
+    pump(app, 0.6)
+    shot(app, "7b-dragonfly-laser")
+    app.set_theme("light")
     # Start a short demo job (the plank job would take long even simulated): only check that it launches.
     print("OK", folder)
     root.destroy()

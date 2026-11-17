@@ -1,9 +1,8 @@
-"""Resume rules (LASER-AUTOMATION-BRIEF.md, "Hiccups to design out"):
-  * Never home and never trust old coordinates. After a reboot the head is re-declared at the recorded stop point
-    with G10 L20 P1, then checked by eye with the 1% dot.
-  * The stop point is the endpoint of the last command actually written to the port: the controller finishes what
-    it received, so the head stops there (matched photos to within 0.2 mm on the plank).
-  * Resume from the very next command, so finished areas are never burned twice.
+"""Build continuation plans, without claiming a serial acknowledgement proves motion.
+  * Never home. After a reboot, reconcile the physical position before declaring coordinates.
+  * A last-sent endpoint is a candidate only: a reset or partial write can discard queued motion.
+    position_memory keeps reported coordinates and confirmed idle checkpoints separately.
+  * Continuing after a command avoids repeats ONLY if completion of that command was established.
 """
 from __future__ import annotations
 
@@ -27,20 +26,26 @@ def endpoint_before(body: list, index: int, default=None):
     return default
 
 
-def armed_at(body: list, index: int) -> bool:
-    """Is dynamic laser mode (M4) active just before body[index]?"""
+def arming_at(body: list, index: int):
+    """The laser mode active just before body[index]: "M4 S0", a crawl line's "M3 S<n>", or None (off)."""
     for k in range(min(index, len(body)) - 1, -1, -1):
-        if body[k] == "M4 S0":
-            return True
+        if body[k] == "M4 S0" or body[k].startswith("M3 "):
+            return body[k]
         if body[k] == "M5 S0":
-            return False
-    return False
+            return None
+    return None
+
+
+def armed_at(body: list, index: int) -> bool:
+    return arming_at(body, index) is not None
 
 
 def lead_in(body: list, index: int, point, hop_feed: int = 3000) -> list:
+    """Laser off, move to the resume point, then re-arm as the body was (after the move, never during it)."""
     lead = ["M5 S0", f"G1 X{fmt(point[0])} Y{fmt(point[1])} F{int(hop_feed)} S0"]
-    if armed_at(body, index):
-        lead.append("M4 S0")
+    arm = arming_at(body, index)
+    if arm:
+        lead.append(arm)
     return lead
 
 
@@ -76,6 +81,40 @@ def _on_segment(p, a, b, tol):
         return False
     qx, qy = ax + t * dx, ay + t * dy
     return (p[0] - qx) ** 2 + (p[1] - qy) ** 2 <= tol * tol
+
+
+def dwell_resume(body: list, index: int, last_written: int):
+    """Burn-in-place passes: never burn a spot twice. If the spot whose M3 was last handed to the controller hadn't
+    reached its M5 by `index`, continue after that spot instead (it's left part-burned, never repeated).
+    Returns (index, spot_number_skipped_or_None)."""
+    k3 = next((k for k in range(min(last_written, len(body) - 1), -1, -1) if body[k].startswith("M3 ")), None)
+    if k3 is None:
+        return index, None
+    m5 = next((k for k in range(k3 + 1, len(body)) if body[k] == "M5 S0"), len(body) - 1)
+    if index <= m5:
+        return m5 + 1, sum(1 for k in range(k3 + 1) if body[k].startswith("M3 "))
+    return index, None
+
+
+def is_dwell(body: list) -> bool:
+    """Any M3 pass: burn-in-place or crawl."""
+    return any(c.startswith("M3 ") for c in body)
+
+
+def pass_kind(body: list) -> str:
+    if not is_dwell(body):
+        return "rows"
+    return "crawl" if any((m := MOVE.fullmatch(c)) and int(m[4]) > 0 for c in body) else "dwell"
+
+
+def crawl_resume(body: list, last_acked: int) -> int:
+    """Crawl lines: continue after the last step whose pause was acknowledged (a G4 is acknowledged when it ends,
+    so that step is done). At most the one step in progress is burned again."""
+    for k in range(min(last_acked, len(body) - 1), -1, -1):
+        c = body[k]
+        if c.startswith("G4 P") or c == "M5 S0" or c.startswith("M3 "):
+            return k + 1
+    return 0
 
 
 def resume_spec(body: list, pass_index: int, index: int, point, hop_feed: int = 3000, partial: str | None = None):

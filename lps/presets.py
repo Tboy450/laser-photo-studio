@@ -11,23 +11,12 @@ Power is in Grbl S units: S1000 = 100% because the controller is set to $30=1000
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-def _documents() -> Path:
-    """The real Documents folder (OneDrive moves it on this PC)."""
-    try:
-        import ctypes
-        from ctypes import wintypes
-        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
-        if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:
-            return Path(buf.value)
-    except Exception:
-        pass
-    return Path.home() / "Documents"
-
-
-DATA_DIR = _documents() / "Laser Photo Studio"
+LOCAL_APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+DATA_DIR = Path(os.environ.get("LASER_PHOTO_STUDIO_DATA_DIR") or LOCAL_APP_DATA / "Laser Photo Studio")
 
 # ---------------------------------------------------------------------------------------------------------------
 # Print styles: how a picture becomes laser marks.
@@ -81,9 +70,9 @@ STYLES = {
         best="Logos, text, line art, silhouettes."),
     "centerline": dict(
         name="Thin lines (centerlines)",
-        what="Dark strokes are burned as 1-cell-wide centerlines.",
-        why="Char spreads about 0.1 mm per side, so a centerline grows back to the stroke's true width instead "
-            "of smearing. Proven for lettering on the pine plank (max S300).",
+        what="Thins dark strokes to a 1-cell skeleton, then engraves it in horizontal raster rows.",
+        why="Proven for lettering on the pine plank (max S300). This is not a continuous vector trace; "
+            "the physical line width depends on focus, material and exposure.",
         best="Lettering, signatures, line drawings on wood."),
     "sketch": dict(
         name="Pencil sketch",
@@ -104,6 +93,8 @@ LOOKS = {  # preview colours: (bare material RGB, fully marked RGB)
     "tile": ((242, 242, 238), (28, 28, 28)),
     "glass": ((210, 222, 222), (40, 44, 44)),
     "acrylic": ((16, 16, 18), (150, 150, 152)),
+    "tin": ((214, 216, 220), (110, 100, 92)),          # reflective tin lid: bright silver, grey-brown marks
+    "blacktin": ((30, 30, 33), (196, 196, 202)),       # black aluminum tin: marks come out light
 }
 
 
@@ -143,6 +134,11 @@ class Material:
     test_speed: tuple = (3000, 6000)
     piece: str = ""                 # suggested workpiece
     based_on: str = ""              # my presets: the built-in preset they were saved from (for its photos)
+    scan_direction: str = "alternating"  # forward = every marked row left to right; return moves stay off
+
+    def __post_init__(self):
+        if self.scan_direction not in ("alternating", "forward"):
+            raise ValueError("Scan direction must be alternating or forward.")
 
     def copy(self, **changes) -> "Material":
         d = asdict(self)
@@ -322,6 +318,78 @@ PIECES = {
     "custom": dict(name="Custom size", shape="rect", w=100.0, h=100.0, origin="lower-left",
                    margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
 }
+
+# Toy cars (1:64 die-cast, Hot Wheels size), seen from above. Window positions are fractions of the car's length
+# measured from the FRONT, so they scale with the length you enter. They're starting points: measure your own car
+# (calipers or a ruler) and adjust them in the 'Toy car' window. Widths are the window's width across the car.
+CAR_BODIES = {
+    "mustang": dict(name="Your yellow Mustang (86.4 x 30.5 mm as measured)", length=86.36, width=30.48,
+                    windshield=(0.30, 0.42), rear=(0.60, 0.80), window_w=22.0, corner=5.0),
+    "coupe": dict(name="Coupe / muscle car", length=75.0, width=30.0,
+                  windshield=(0.33, 0.44), rear=(0.58, 0.68), window_w=22.0, corner=5.0),
+    "fastback": dict(name="Fastback (long sloping rear window)", length=76.0, width=30.0,
+                     windshield=(0.30, 0.42), rear=(0.58, 0.80), window_w=22.0, corner=5.0),
+    "sports": dict(name="Low sports car", length=74.0, width=31.0,
+                   windshield=(0.30, 0.46), rear=(0.58, 0.66), window_w=21.0, corner=6.0),
+    "pickup": dict(name="Pickup truck", length=78.0, width=30.0,
+                   windshield=(0.28, 0.38), rear=(0.50, 0.53), window_w=23.0, corner=4.0),
+    "van": dict(name="Van / SUV (no rear window on top)", length=72.0, width=30.0,
+                windshield=(0.16, 0.28), rear=None, window_w=24.0, corner=4.0),
+}
+CAR_STARTS = {"windshield": "Front edge of the windshield, on the centerline",
+              "roof": "Middle of the roof",
+              "nose": "Front tip of the car, on the centerline"}
+
+
+def car_values(body: str, length: float | None = None) -> dict:
+    """The body type's numbers in mm for a car of this length (its own length if not given)."""
+    b = CAR_BODIES[body]
+    L = float(length or b["length"])
+    ws, rear = b["windshield"], b["rear"]
+    return dict(body=body, length=L, width=b["width"], front="right", ws_from=round(ws[0] * L, 1),
+                ws_len=round((ws[1] - ws[0]) * L, 1), rear_from=round(rear[0] * L, 1) if rear else 0.0,
+                rear_len=round((rear[1] - rear[0]) * L, 1) if rear else 0.0, window_w=b["window_w"],
+                clearance=1.0, corner=b["corner"], start="windshield")
+
+
+def car_piece(v: dict) -> dict:
+    """A piece (top view of a toy car) with no-burn zones over the windshield and rear window and the start point
+    on a spot you can find on the real car. x runs along the car, y across it."""
+    L, W, c = float(v["length"]), float(v["width"]), float(v.get("clearance", 1.0))
+    right = v.get("front", "right") == "right"
+
+    def x_from_front(d):
+        return L - d if right else d
+
+    def window(d0, n):
+        xa, xb = sorted((x_from_front(d0 - c), x_from_front(d0 + n + c)))
+        xa, xb = max(0.0, xa), min(L, xb)
+        ww = min(W, float(v["window_w"]) + 2 * c)
+        return dict(kind="rect", x=round(xa, 2), y=round((W - ww) / 2, 2), w=round(xb - xa, 2), h=round(ww, 2))
+
+    keepouts = [window(float(v["ws_from"]), float(v["ws_len"]))]
+    if float(v.get("rear_len") or 0) > 0:
+        keepouts.append(window(float(v["rear_from"]), float(v["rear_len"])))
+    start = v.get("start", "windshield")
+    if start == "roof" and float(v.get("rear_len") or 0) > 0:
+        d = (float(v["ws_from"]) + float(v["ws_len"]) + float(v["rear_from"])) / 2
+    elif start == "roof":
+        d = float(v["ws_from"]) + float(v["ws_len"]) + 10.0
+    elif start == "nose":
+        d = 0.0
+    else:
+        d = float(v["ws_from"])
+    name = CAR_BODIES.get(v.get("body"), {}).get("name", "Toy car")
+    return dict(name=f"Toy car: {name}", shape="rect", w=round(L, 2), h=round(W, 2), origin="spot",
+                spot=[round(x_from_front(d), 2), round(W / 2, 2)], margins=(1.0, 1.0, 1.0, 1.0),
+                corner=float(v.get("corner", 4.0)), keepouts=keepouts, car=dict(v))
+
+
+# The toy car shows up in step 3's piece list (just before 'Custom size'); 'Toy car...' adjusts it.
+PIECES = {**{k: v for k, v in PIECES.items() if k != "custom"},
+          "car": dict(car_piece(car_values("mustang")), name="Toy car, top view (Hot Wheels size)"),
+          "custom": PIECES["custom"]}
+
 
 BADGES = {
     "PROVEN": "Proven on your U20",

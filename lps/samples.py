@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -34,6 +34,7 @@ class Sample:
     source: str = ""
     user: bool = False
     owner: str = ""
+    evidence: dict = field(default_factory=dict)
 
     @property
     def kind_label(self) -> str:
@@ -63,7 +64,7 @@ def _builtin(key: str) -> tuple:
         d = idx.get("samples", {}).get(sid)
         if d and (ASSETS / d["file"]).exists():
             out.append(Sample(ASSETS / d["file"], d["kind"], d["title"], d["caption"], d.get("date", ""),
-                              d.get("source", "")))
+                              d.get("source", ""), evidence=d.get("evidence", {})))
     return out, s.get("note", "")
 
 
@@ -82,7 +83,7 @@ def user_samples(key: str) -> list:
         f = p.parent / d.get("file", "")
         if d.get("file") and f.exists():
             out.append(Sample(f, d.get("kind", "test"), d.get("title", f.stem), d.get("caption", ""),
-                              d.get("date", ""), d.get("source", ""), True, key))
+                              d.get("date", ""), d.get("source", ""), True, key, d.get("evidence", {})))
     return out
 
 
@@ -122,6 +123,44 @@ def add_user_photo(key: str, src, title: str, kind: str = "test", caption: str =
                       date=dt.date.today().isoformat(), source=str(src)))
     p.write_text(json.dumps(items, indent=1), encoding="utf-8")
     return Sample(dest, kind, title, caption, items[-1]["date"], str(src), True, key)
+
+
+EVIDENCE_STATES = ("Not recorded", "Proposed", "Prepared - not run", "Operator report", "Physical test", "Repeated physical tests")
+EVIDENCE_GROUPS = {
+    "Evidence": (("state", "Evidence status"), ("basis", "Evidence / source record"), ("job", "Saved job / source file"),
+                 ("result", "Observed result"), ("limitations", "Unknowns / limits / cleanup")),
+    "Surface": (("machine", "Machine / lens / controller profile"), ("substrate", "Actual substrate / supplier"), ("surface", "Sanding / coating / preparation"),
+                ("focus", "Focus / spacer / work height")),
+    "Settings": (("power_pct", "Power (%) / controller scale"), ("commanded_feed", "Commanded feed (mm/min)"),
+                 ("motion_evidence", "Measured / inferred speed and method"), ("row_pitch", "Raster row pitch (mm), or N/A"),
+                 ("mode", "M3 / M4 and drawing style"), ("passes", "Pass count / order"), ("dwell", "Stationary dwell (seconds)")),
+}
+
+
+def evidence_state(sample):
+    value = sample.evidence.get("state", "Not recorded")
+    return value if value in EVIDENCE_STATES else "Not recorded"
+
+
+def update_user_evidence(sample: Sample, values: dict) -> None:
+    """Update the existing photo record, retaining caption, source and unrelated fields."""
+    if not sample.user:
+        raise ValueError("Built-in test records are maintained with the app's source evidence.")
+    if values.get("state", "Not recorded") not in EVIDENCE_STATES:
+        raise ValueError("Choose a listed evidence status.")
+    keys = {key for group in EVIDENCE_GROUPS.values() for key, _ in group}
+    if any(key not in keys or not isinstance(value, str) for key, value in values.items()):
+        raise ValueError("Test-record fields must be text from the listed fields.")
+    p = _user_list(sample.owner)
+    items = json.loads(p.read_text(encoding="utf-8"))
+    item = next((d for d in items if d.get("file") == sample.path.name), None)
+    if item is None:
+        raise ValueError("Photo record no longer exists. Reopen the photo list.")
+    updated = dict(item.get("evidence", {}), **values)
+    item["evidence"] = updated
+    from .jobs import write_json
+    write_json(p, items)
+    sample.evidence = updated
 
 
 def remove_user_photo(sample: Sample) -> None:

@@ -7,6 +7,7 @@ shrinking layers, thin-feature detection by connected components, and Zhang-Suen
 from __future__ import annotations
 
 import os
+import math
 import subprocess
 import tempfile
 from pathlib import Path
@@ -89,6 +90,21 @@ def tone_lut(brightness: float = 0, contrast: float = 0, gamma: float = 1.0, neg
     if negative:
         v = 255.0 - v
     return [int(round(x)) for x in np.clip(v, 0, 255)]
+
+
+def saved_size_mm(path) -> tuple | None:
+    """The real size stored in a picture file (from its DPI), or None. 72 and 96 are just screen defaults."""
+    try:
+        with Image.open(path) as im:
+            dpi, (w, h) = im.info.get("dpi"), im.size
+            orientation = im.getexif().get(274, 1)
+        # PNG stores integer pixels/metre, so an ordinary 96 DPI tag can decode as 96.012.
+        if not dpi or len(dpi) < 2 or not all(math.isfinite(v) and v > 96.1 for v in dpi[:2]):
+            return None
+        size = round(w / float(dpi[0]) * 25.4, 2), round(h / float(dpi[1]) * 25.4, 2)
+        return size[::-1] if orientation in (5, 6, 7, 8) else size
+    except Exception:
+        return None
 
 
 def to_grid(im: Image.Image, cols: int, rows: int, crop=None, *, autolevel=False, brightness=0, contrast=0,

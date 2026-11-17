@@ -1,8 +1,8 @@
 """Job folders: every job is saved before anything runs, with LaserGRBL-compatible G-code files.
 
-<Documents>/Laser Photo Studio/Jobs/<date>_<name>/
+%LOCALAPPDATA%/Laser Photo Studio/Jobs/<date>_<name>/
     job.json                  settings, passes (+ SHA-256 of each file), placement, check results
-    passes/01 Layer 1.nc ...  one file per pass/layer; the runner burns exactly the lines between the BODY markers
+    passes/01 Layer 1.nc ...  one file per pass; the runner burns exactly the lines between the BODY markers
     <name> - all passes.nc    everything in one file (for LaserGRBL, no photo pauses)
     1 LOOKS LIKE ... .png etc previews, README.txt
     state.json                live progress written by the runner (also the recovery record)
@@ -69,7 +69,13 @@ def save_settings(d: dict) -> None:
 
 
 def origin_text(piece: dict) -> str:
-    return "centre of the piece" if piece.get("origin") == "center" else "lower-left corner of the piece"
+    if piece.get("origin") == "center":
+        return "centre of the piece"
+    if piece.get("origin") == "spot":
+        ax, ay = piece.get("spot") or (0.0, 0.0)
+        return (f"spot you picked, {ax:g} mm from the piece's left edge and {ay:g} mm up from its bottom edge "
+                "(the Job zero crosshair)")
+    return "lower-left corner of the piece"
 
 
 def header(job: JobPlan, title: str) -> list:
@@ -78,8 +84,13 @@ def header(job: JobPlan, title: str) -> list:
     return [f"; Laser Photo Studio {__version__} - {job.name}",
             f"; {title}",
             f"; Material: {m.name} [{BADGES.get(m.badge, m.badge)}] | {style} | rows {m.pitch} mm | Look: {m.look}",
-            f"; Origin: work X0 Y0 = {origin_text(job.piece)}. Art X{g.x0:.2f}..{g.x1:.2f} "
+            f"; Start point (origin): work X0 Y0 = {origin_text(job.piece)}. Art X{g.x0:.2f}..{g.x1:.2f} "
             f"Y{g.y0:.2f}..{g.yt:.2f} mm. Check the perimeter before burning.",
+            f"; Picture box [mm]: X{g.x0:.3f} Y{g.y0:.3f} W{g.art_w:.3f} H{g.art_h:.3f}",
+            f"; Burn grid: C{g.cols} R{g.rows} DX{g.x_pitch:.9f} DY{g.y_pitch:.9f}",
+            "; Scan direction: " + ("alternating rows" if m.scan_direction == "alternating" else
+                                     "left to right only; returns with laser off"),
+            f"; Laser-off row return: {m.row_feed} mm/min; feature hops: {m.hop_feed} mm/min",
             "; M4 dynamic power, S1000 = 100% ($30=1000). Laser-off travel is G1 S0. Never home this machine."]
 
 
@@ -122,7 +133,9 @@ def lasergrbl_path(folder: Path) -> Path:
 def readme_text(job: JobPlan, negative: bool) -> str:
     m, g = job.material, job.geom
     style = STYLES.get(m.style, {}).get("name", m.style)
-    neg = ("Negative was ON: the LIGHT parts of the picture are burned. Right for materials that mark light "
+    neg = ("Test patches (no picture): each patch burns at its own power and speed; see the ladder map."
+           if job.gray is None else
+           "Negative was ON: the LIGHT parts of the picture are burned. Right for materials that mark light "
            "(black anodized aluminum, slate, black acrylic) when engraving a photo."
            if negative else
            "Negative was OFF: the DARK parts of the picture are burned (normal for wood and dark-marking materials, "
@@ -130,13 +143,15 @@ def readme_text(job: JobPlan, negative: bool) -> str:
     first = pass_filename(1, job.passes[0]) if job.passes else "01 ....nc"
     return f"""Laser Photo Studio {__version__} job: {job.name}
 Material: {m.name} [{BADGES.get(m.badge, m.badge)}]   Style: {style}
-Art: {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.2f}..{g.x1:.2f}, Y {g.y0:.2f}..{g.yt:.2f} mm from the origin
-Origin (work X0 Y0): {origin_text(job.piece)}
+Scan direction: {'Alternating rows' if m.scan_direction == 'alternating' else 'Left to right only (laser-off returns)'}
+Laser-off row return: {m.row_feed} mm/min; feature hops: {m.hop_feed} mm/min
+Art: {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.2f}..{g.x1:.2f}, Y {g.y0:.2f}..{g.yt:.2f} mm from the start point
+Start point (origin, work X0 Y0): {origin_text(job.piece)}
 {neg}
 
 FILES
-passes\\{first} ...    One file per layer, in order. Best run from Laser Photo Studio (step 5): photo pauses
-                         after each layer and safe recovery if the USB drops out.
+passes\\{first} ...    One file per pass, in order. Best run from Laser Photo Studio (step 5): photo pauses
+                         after each pass and safe recovery if the USB drops out.
 {lasergrbl_name(job)}
                          Everything in one file, for LaserGRBL (no photo pauses).
 1 LOOKS LIKE ....png     Roughly how the finished piece should look on the material. NOT a laser input.
@@ -147,14 +162,15 @@ passes\\{first} ...    One file per layer, in order. Best run from Laser Photo S
                          laser fires, brighter = more power (its default dark theme). LaserGRBL does NOT invert
                          anything when it opens a .nc, so wood jobs look like a negative there, while
                          light-marking materials (anodized, slate) look like the real result.
-4 burn map ....png       Each layer in its own colour.
+4 burn map ....png       Each pass in its own colour.
 
 LASERGRBL TIPS
 - Open the .nc with File > Open. Don't import the PNGs and don't press LaserGRBL's invert (negative) button:
   the conversion is already done.
-- Put the head on the origin above and check the frame/perimeter first.
+- Put the head on the start point above and check the frame/perimeter first.
 - If the USB drops out in LaserGRBL, don't use its Resume or Home - it can jump to old coordinates. Jobs run
-  from Laser Photo Studio record where they stopped and resume safely.
+  from Laser Photo Studio record reported positions and command progress for checked recovery. Sent/accepted
+  commands do not by themselves prove completed motion.
 """
 
 
@@ -169,7 +185,9 @@ def save_job(job: JobPlan, report: dict, picture=None, previews: dict | None = N
         f.write_text(pass_text(job, p, i, len(job.passes)), encoding="ascii")
         assert read_body(f) == p.commands
         passes.append(dict(key=p.key, title=p.title, explain=p.explain, file=f"passes/{f.name}", sha256=sha256(f),
-                           commands=len(p.commands), est_s=round(p.est_s, 1), cells=int((p.cells > 0).sum())))
+                           commands=len(p.commands), est_s=round(p.est_s, 1), cells=int((p.cells > 0).sum()),
+                           kind=p.kind, **(dict(spots=p.spots, cool_s=p.cool_s) if p.kind == "dwell" else
+                                           dict(lines=p.lines) if p.kind == "crawl" else {})))
     (folder / lasergrbl_name(job)).write_text(all_text(job), encoding="ascii")
     if picture is not None:
         picture.save(folder / "picture.png")
@@ -181,9 +199,11 @@ def save_job(job: JobPlan, report: dict, picture=None, previews: dict | None = N
            round(max(travel[2], 0.0) + 1.0, 2), round(max(travel[3], 0.0) + 1.0, 2)]
     doc = dict(app="Laser Photo Studio", version=__version__, created=dt.datetime.now().isoformat(timespec="seconds"),
                name=job.name, material=asdict(job.material), piece=job.piece,
-               geometry=dict(pitch=g.pitch, cols=g.cols, rows=g.rows, x0=g.x0, yt=g.yt, piece_rect=g.piece_rect,
+               geometry=dict(pitch=g.pitch, x_pitch=g.x_pitch, y_pitch=g.y_pitch,
+                             cols=g.cols, rows=g.rows, x0=g.x0, yt=g.yt, piece_rect=g.piece_rect,
                              usable_rect=g.usable_rect),
                burn_bbox=job.burn_bbox(), travel=travel, envelope=env, passes=passes,
+               picture_bbox=[g.x0, g.y0, g.x1, g.yt],
                verified=bool(report.get("ok")), est_s=round(job.est_s, 1),
                origin=origin_text(job.piece), lasergrbl_file=lasergrbl_name(job))
     doc.update(extra or {})
