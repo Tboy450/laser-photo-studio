@@ -18,7 +18,7 @@ from collections import deque
 NL = chr(10)
 from pathlib import Path
 
-from . import jobs, recovery, position_memory
+from . import jobs, recovery, position_memory, eta
 from .machine import (ControllerError, Grbl, LinkError, SerialWire, check_settings, require_off)
 
 
@@ -48,6 +48,9 @@ class Runner:
         self.last_motion_at = time.monotonic()
         self.last_wpos = None
         self.active_s = 0.0
+        self.paused_s = 0.0
+        self.accounted_at = None
+        self.eta_components = None
         self.active_mark = None
         self.parking = False
         self.next_save = 0.0
@@ -86,10 +89,16 @@ class Runner:
         if not force and now < self.next_save:
             return
         self.next_save = now + 0.25
-        if self.active_mark is not None:
+        if self.accounted_at is not None and (self.paused or self.state['phase'] == 'waiting_photo'):
+            self.paused_s += now - self.accounted_at
+        elif self.active_mark is not None:
             self.active_s += now - self.active_mark
+        if self.active_mark is not None:
             self.active_mark = now
+        self.accounted_at = now
         self.state["elapsed_s"] = round(self.active_s, 1)
+        self.state["paused_s"] = round(self.paused_s, 1)
+        self.state["wall_elapsed_s"] = round(max(0., now-self.t0_mono), 1) if self.t0_mono is not None else 0.
         if self.trace is not None:
             try:
                 self.trace.flush()
@@ -117,6 +126,7 @@ class Runner:
 
     def start_timer(self):
         self.t0_mono, self.t0_wall = time.monotonic(), time.time()
+        self.accounted_at = self.t0_mono
         prev = jobs.read_json(self.folder / "timing.json", {}) or {}
         self.timing = list(prev.get("passes", []))          # a resumed job keeps the earlier runs' timings
         self.state["timer"] = dict(job_t0=self.t0_wall, job_end=None, pass_t0=None, pass_end=None, pass_index=None)
@@ -200,12 +210,17 @@ class Runner:
         est = [max(1.0, float(p.get("est_s", 1.0))) for p in ps]
         total = sum(est)
         done = sum(est[i] for i in self.state["completed"] if i < len(est))
-        if self.state["phase"] in ("running", "paused") and self.pi < len(est) and self.pi not in self.state["completed"]:
+        if self.pi < len(est) and self.pi not in self.state["completed"]:
             frac = self.state["sent"] / max(1, self.state["pass_total"])
             done += est[self.pi] * min(1.0, frac)
         self.state["progress"] = round(min(1.0, done / total), 4) if total else 0.0
-        rate = self.active_s / done if done > 30 and self.active_s > 30 else 1.0
-        self.state["remaining_s"] = round(max(0.0, total - done) * max(0.5, min(3.0, rate)), 0)
+        budget = sum(self.eta_components.values()) if self.eta_components is not None else total
+        complete = self.state['phase'] == 'complete'
+        self.state['remaining_s'] = 0. if complete else round(eta.remaining(budget, self.active_s), 0)
+        self.state['eta'] = dict(basis='planned-time countdown; no command-count speed correction',
+                                 planned_s=round(budget, 1), components=self.eta_components,
+                                 active_s=round(self.active_s, 1), paused_s=round(self.paused_s, 1),
+                                 exceeded=bool(not complete and self.active_s >= budget))
 
     # ---------------------------------------------------------------- control file
     def check_control(self):
@@ -358,6 +373,15 @@ class Runner:
             if jobs.sha256(f) != p["sha256"]:
                 raise ControllerError(f"{p['file']} changed after it was checked. Re-save the job.")
             out.append(jobs.read_body(f))
+        self.eta_components = dict(engraving_s=0., laser_off_s=0., dwell_s=0., overhead_s=0.)
+        for i, body in enumerate(out):
+            if i < int(self.spec.get('start_pass', 0)) or i in self.state['completed']:
+                continue
+            start = int(self.spec.get('start_index', 0)) if i == int(self.spec.get('start_pass', 0)) else 0
+            for key, value in eta.components(body, start).items():
+                self.eta_components[key] += value
+        for key, value in eta.components(self.spec.get('lead') or []).items():
+            self.eta_components[key] += value
         return out
 
     def stream(self, items, body) -> str:

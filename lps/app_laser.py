@@ -1163,7 +1163,17 @@ class LaserMixin:
             bits.append(f"{st['pass_title']} ({st.get('pass_index', 0) + 1} of {st.get('pass_count', 1)})")
         bits.append(f"{100 * float(st.get('progress', 0)):.0f}% done")
         if st.get("remaining_s") is not None and ph in LIVE:
-            bits.append(f"about {fmt_dur(st['remaining_s'])} left")
+            if (st.get('eta') or {}).get('exceeded'):
+                bits.append('past planned time; completion still pending')
+            else:
+                bits.append(f"about {fmt_dur(st['remaining_s'])} planned time left")
+        if st.get('eta'):
+            bits.append(f"active {fmt_dur(st.get('elapsed_s', 0))}; paused {fmt_dur(st.get('paused_s', 0))}")
+            parts = st['eta'].get('components')
+            if parts:
+                bits.append('plan: ' + ', '.join(f"{label} {fmt_dur(parts[key])}" for key, label in
+                            (('engraving_s', 'engraving'), ('laser_off_s', 'laser off'),
+                             ('dwell_s', 'dwell'), ('overhead_s', 'overhead'))))
         if st.get("wpos"):
             bits.append(f"head X {st['wpos'][0]:.1f} Y {st['wpos'][1]:.1f}")
         self.run_lbl.configure(text="  |  ".join(bits) + "\n" + st.get("message", ""))
