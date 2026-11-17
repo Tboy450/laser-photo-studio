@@ -31,4 +31,3 @@ Standing owner instruction, November 15, 2026: keep applying verified project le
 - Larger evidence histories/multiple settings per photo and publication review tools if later usage warrants them. The present fields can document ranges and ordered passes as explicit text.
 
 Keep this file and the app Guide synchronized when verified outcomes change. Preserve historical evidence and mark superseded interpretations, rather than rewriting history as a new successful physical test.
-
