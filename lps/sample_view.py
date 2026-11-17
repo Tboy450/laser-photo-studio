@@ -125,7 +125,7 @@ class SampleStrip(ttk.Frame):
             messagebox.showerror("Couldn't add the photo", f"{Path(path).name}\n\n{e}")
             return
         self.show(self.mat, force=True)
-        self.app.say("Photo added to this setting.", "ok")
+        self.app.say("Photo added. Open it and choose Test record to save its actual setup and result.", "ok")
 
 
 class SampleViewer(tk.Toplevel):
@@ -165,6 +165,7 @@ class SampleViewer(tk.Toplevel):
         self.next_btn = ttk.Button(bar, text="Next >", command=lambda: self.step(1))
         self.next_btn.pack(side="left", padx=6)
         ttk.Button(bar, text="Close", command=self.destroy).pack(side="right")
+        ttk.Button(bar, text="Test record...", command=self.test_record).pack(side="left", padx=6)
         self.remove_btn = ttk.Button(bar, text="Remove my photo", command=self.remove)
         self.remove_btn.pack(side="right", padx=6)
         self.open_btn = ttk.Button(bar, text="Open full size", command=self.open_file)
@@ -192,7 +193,7 @@ class SampleViewer(tk.Toplevel):
         self.badge.configure(text=label, background=bg, foreground=fg)
         self.title_lbl.configure(text=s.title)
         self.pos_lbl.configure(text=f"{i + 1} of {len(self.items)}")
-        self.caption.configure(text=s.caption or "(no notes)")
+        self.caption.configure(text=(s.caption or "(no notes)") + "\nEvidence: " + samples.evidence_state(s))
         when = s.date
         self.meta.configure(text=(f"Your photo, added {when}" if s.user else
                                   f"{when} - from the project: {s.source}") if when else "")
@@ -227,6 +228,9 @@ class SampleViewer(tk.Toplevel):
         self.canvas.delete("all")
         self.canvas.create_image(W // 2, H // 2, image=self._photo)
 
+    def test_record(self):
+        EvidenceDialog(self, self.items[self.i], on_saved=lambda: self.show(self.i) if self.winfo_exists() else None)
+
     def open_file(self):
         os.startfile(str(self.items[self.i].path))
 
@@ -239,3 +243,54 @@ class SampleViewer(tk.Toplevel):
         self.strip.show(self.strip.mat, force=True)
         if self.winfo_exists():
             self.set_items(self.strip.items, min(self.i, len(self.strip.items) - 1))
+
+
+class EvidenceDialog(tk.Toplevel):
+    """Tabbed details inside the existing Samples workflow; no preset or job changes."""
+    def __init__(self, parent, sample, on_saved=None):
+        super().__init__(parent)
+        self.sample = sample
+        self.on_saved = on_saved
+        self.title("Test record - " + sample.title)
+        self.transient(parent)
+        self.vars = {}
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        wrap_label(body, "A photo is evidence for its stated setup. Blank fields mean unknown / not recorded. "
+                   "Keep private messages and formulas out of samples. This record does not change the preset.",
+                   width=670).pack(fill="x", pady=(0, 8))
+        book = ttk.Notebook(body)
+        book.pack(fill="both", expand=True)
+        for group, fields in samples.EVIDENCE_GROUPS.items():
+            page = ttk.Frame(book, padding=10)
+            book.add(page, text=group)
+            page.columnconfigure(1, weight=1)
+            for row, (key, label) in enumerate(fields):
+                ttk.Label(page, text=label).grid(row=row, column=0, sticky="nw", padx=(0, 10), pady=5)
+                value = samples.evidence_state(sample) if key == "state" else sample.evidence.get(key, "")
+                var = tk.StringVar(value=value)
+                self.vars[key] = var
+                if key == "state":
+                    widget = ttk.Combobox(page, textvariable=var, values=samples.EVIDENCE_STATES,
+                                          state="readonly" if sample.user else "disabled", width=50)
+                else:
+                    widget = ttk.Entry(page, textvariable=var, width=55)
+                    if not sample.user:
+                        widget.state(["readonly"])
+                widget.grid(row=row, column=1, sticky="ew", pady=5)
+        bar = ttk.Frame(body)
+        bar.pack(fill="x", pady=(10, 0))
+        ttk.Button(bar, text="Close", command=self.destroy).pack(side="right")
+        if sample.user:
+            ttk.Button(bar, text="Save test record", command=self.save).pack(side="right", padx=6)
+        self.bind("<Escape>", lambda e: self.destroy())
+
+    def save(self):
+        try:
+            samples.update_user_evidence(self.sample, {key: var.get().strip() for key, var in self.vars.items()})
+        except (OSError, ValueError) as e:
+            messagebox.showerror("Cannot save test record", str(e), parent=self)
+            return
+        self.destroy()
+        if self.on_saved:
+            self.on_saved()

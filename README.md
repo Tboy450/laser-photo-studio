@@ -212,3 +212,8 @@ preview -> 1% dot perimeter -> start, with photo pauses, plain progress and one-
 
 Ideas not in 1.0: send jobs from the controller's microSD card or Wi-Fi so USB isn't in the loop; crosshatch and
 second-axis rows; presets from the planned 40-80% / 3000-6000 mm/min speed grid; a vector line mode for lids.
+
+
+## Samples and continuing learning
+
+Open a sample photo and choose **Test record...** for Evidence, Surface and Settings tabs. Your photos have editable records; built-in examples show source-maintained records. Blank fields are unknown, and older photos keep their captions without invented settings. Saving a test record does not change the material preset or a job. The Guide topic **Test records & recent learning** explains current findings and unrun proposals. See `docs/learning-workflow.md` for the ongoing intake, privacy, validation and update process.

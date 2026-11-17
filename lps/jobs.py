@@ -90,6 +90,7 @@ def header(job: JobPlan, title: str) -> list:
             f"; Burn grid: C{g.cols} R{g.rows} DX{g.x_pitch:.9f} DY{g.y_pitch:.9f}",
             "; Scan direction: " + ("alternating rows" if m.scan_direction == "alternating" else
                                      "left to right only; returns with laser off"),
+            f"; Laser-off row return: {m.row_feed} mm/min; feature hops: {m.hop_feed} mm/min",
             "; M4 dynamic power, S1000 = 100% ($30=1000). Laser-off travel is G1 S0. Never home this machine."]
 
 
@@ -143,6 +144,7 @@ def readme_text(job: JobPlan, negative: bool) -> str:
     return f"""Laser Photo Studio {__version__} job: {job.name}
 Material: {m.name} [{BADGES.get(m.badge, m.badge)}]   Style: {style}
 Scan direction: {'Alternating rows' if m.scan_direction == 'alternating' else 'Left to right only (laser-off returns)'}
+Laser-off row return: {m.row_feed} mm/min; feature hops: {m.hop_feed} mm/min
 Art: {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.2f}..{g.x1:.2f}, Y {g.y0:.2f}..{g.yt:.2f} mm from the start point
 Start point (origin, work X0 Y0): {origin_text(job.piece)}
 {neg}

@@ -111,7 +111,7 @@ Next time: in step 3 press 'Toy car (Hot Wheels)...'. Pick the body type and fix
 # If the USB drops out
 Jobs run from this app save reported positions and command progress for recovery. A sent command is not proof of completed motion. In LaserGRBL, don't use Resume or Home after a reconnect: it can jump to old coordinates (that burned the bed on the card)."""
 
-PERIMETER = """# Place → Set zero → Check → Start
+PERIMETER = """# Place â†’ Set zero â†’ Check â†’ Start
 Choose the job zero in Step 3. Use the piece center, the lower-left corner, or a recognizable spot you pick. Put the positioning dot on that same spot on the real piece, then press 'Set job zero here' in Step 5. The head stays still while the controller assigns that spot X0 Y0.
 
 # Read the labeled markers
@@ -225,14 +225,47 @@ def styles_text() -> str:
     return "\n".join(out).strip()
 
 
+LEARNING = """# Samples are evidence for a stated setup
+Open a photo under About this setting, then Test record. User photos have editable Evidence, Surface and Settings tabs. Blank fields mean unknown, not a default borrowed from the selected preset. Old photos remain available without inventing missing metadata.
+Keep source/job/photo, actual substrate and preparation, focus, power, commanded feed, motion evidence, row pitch, M3/M4, passes/dwell and cleanup/result together. A photographed result, an operator report, a prepared experiment and a repeated physical test are different evidence states. None automatically promotes a material preset.
+
+# Recent reflective-lid learning
+- The November 13 speed-line sample used 100% with commanded feeds 50, 44, 33 and 22 through 12 mm/min. Saved telemetry/timing suggests a low-feed floor near 23.6 mm/min; it is not independent motion metrology or a verified firmware diagnosis. Displayed F alone does not prove physical travel speed.
+- Prior Red Hill raster jobs used about 0.10 mm row pitch (254 lines/in). That is spacing between raster scan rows, not necessarily the gap between visible test stripes. Smaller pitch changes raster overlap/exposure; it does not add energy to a single vector line or stationary dot.
+- November 12 combo pass 6 uses M3 with timed G4 dwells at 80/100%, 5/10/20/40 seconds. The reported weak pinpoint result cannot be explained by stopped M4 dynamic power: this saved pass used M3. No durable dark recipe was established.
+- Judge tones before AND after wiping. A dark-looking deposit that wipes away is not established as a permanent dark metal mark. Record sanding, coating, cleaning and whether wiping was done; do not infer them from appearance.
+
+# Historical penetration report
+The operator retrospectively linked tin penetration and 56 damaged book pages to the initial October 26 pulse/vector test sequence. Saved transcript commands establish a 1% two-second stationary M3 pulse, an 80% 10 mm M4 line at F3000, then an 80% 10 x 10 mm M4 outline at F240. These are historical evidence, not a suggested test. The exact perforating command, stock thickness and focus are unconfirmed. None of these has raster DPI. A book is unsuitable backing; deeper-penetration planning needs identified stock/thickness/focus and a noncombustible beam stop.
+
+# Pending experiments and boundaries
+A published illustration can show a prepared plan; publication does not establish a completed physical test. The seven-band DPI test is prepared, not physically run. The three vertical marks through the newly sanded patch (soot, rose-brass, slow centre-line) are a different proposed surface comparison, not a result and not the seven-band test. The later dot test remains a proposal after the DPI result. Crawl code passed offline tests but has no physical validation recorded here.
+Surface changes, focus, actual motion and drawing method can affect results; do not turn one successful lid into a universal production recipe."""
+
+
+DEVELOPER_CONTACT = "https://tboy450.github.io/#contact"
+
+ABOUT = """# Developed by HASK
+Laser Photo Studio was created to make laser software clearer and more controllable: explain confusing controls, provide the adjustments people need, and replace misleading terminology with plain language.
+
+# Compatibility
+This version supports the Grbl-based Tronxy Ultrabot U20 setup. That connection is compatibility context; the app's purpose is a clearer engraving workflow.
+
+# Contact HASK
+Open the public contact page:
+""" + DEVELOPER_CONTACT
+
+
 def topics(mat) -> list:
     return [("Start here", START),
             ("Too light or too dark?", DARKNESS),
             ("Negatives & LaserGRBL", NEGATIVE),
             ("Print styles", styles_text()),
+            ("Test records & recent learning", LEARNING),
             ("Using LaserGRBL", LASERGRBL.format(name=mat.name, recipe=lasergrbl_recipe(mat))),
             ("Start point & perimeter check", PERIMETER),
             ("Backgrounds & stickers", BACKGROUNDS),
             ("USB dropouts", DROPOUT),
             ("Safety", SAFETY),
-            ("Files & previews", FILES)]
+            ("Files & previews", FILES),
+            ("About & contact", ABOUT)]

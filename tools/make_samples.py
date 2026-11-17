@@ -197,6 +197,38 @@ SAMPLES = {
                 "margin above the 'too light' point."),
 }
 
+SAMPLES["red-hill-speed-floor"] = {'src': str(Path.home() / "Documents" / "Codex" / "pine salve - red hill" /
+        "tests" / "speed-floor-lines-2026-11-13" / "photos" / "speed-floor-20261113_050422.jpg"),
+ 'source_label': 'speed-floor-lines-2026-11-13/photos/speed-floor-20261113_050422.jpg',
+ 'kind': 'test',
+ 'date': '2026-11-13',
+ 'title': 'Reflective lid: commanded speed versus timing',
+ 'caption': '14 speed-test stripes on a used reflective lid. The recorded low-feed plateau is '
+            'inferred from controller telemetry/timing. Exact coating and wipe state are unknown; '
+            'see Test record.',
+ 'evidence': {'state': 'Physical test',
+              'basis': 'Saved job timing/status trace plus operator photo; timing interpretation '
+                       'is an inference.',
+              'job': '2026-11-13_043712_red-hill-speed-floor-lines; '
+                     'tests/speed-floor-lines-2026-11-13/RESULTS-2026-11-13.md',
+              'substrate': 'Reflective scrap lid, previously used for a ladder; exact '
+                           'alloy/coating/thickness unconfirmed.',
+              'surface': 'Wipe state and sanding for this photo not recorded.',
+              'focus': '',
+              'power_pct': '100%; S1000 scale',
+              'commanded_feed': '50, 44, 33; then 22 through 12',
+              'motion_evidence': 'Saved timing/position reports suggest ~23.6 mm/min floor for the '
+                                 'slow rows; not independent motion measurement. Fast references '
+                                 'approximately follow commanded feeds.',
+              'row_pitch': '0.10 mm (~254 lines/in); visible stripes are 1 mm apart',
+              'mode': 'M4; positive-X raster rows',
+              'passes': '14 passes, one stripe per pass; each stripe contains two scan rows',
+              'dwell': 'N/A: raster moves',
+              'result': 'Operator reported even gold-bronze lines that looked similar. Slow passes '
+                        'took about 116.34-116.36 seconds.',
+              'limitations': 'Physical test of one used lid, not a repeatable production recipe or '
+                             'firmware diagnosis. Wipe state unknown.'}}
+
 SETS = {
     "pine-layers": dict(
         items=["pine-ladder", "pine-grid", "dragon-chart", "dragon-test12", "np-source", "np-final", "np-l1",
@@ -231,6 +263,9 @@ SETS = {
              "settings). The Hot Wheels car is painted metal like the lids: see what went wrong there."),
 }
 
+
+SETS["lid-halftone"]["items"].append("red-hill-speed-floor")
+SETS["lid-halftone"]["note"] += " The reflective-lid speed test is different stock and is not evidence for this halftone recipe."
 
 def build_one(sid: str, spec: dict) -> str | None:
     src = Path(spec["src"])
@@ -276,7 +311,7 @@ def main():
         name = build_one(sid, spec)
         if name:
             samples[sid] = dict(file=name, kind=spec["kind"], title=spec["title"], caption=spec["caption"],
-                                date=spec["date"], source=str(spec["src"]).replace("\\", "/"))
+                                date=spec["date"], source=spec.get("source_label", Path(spec["src"]).name if Path(spec["src"]).is_absolute() else str(spec["src"]).replace("\\", "/")), evidence=spec.get("evidence", {}))
     sets = {key: dict(items=[i for i in s["items"] if i in samples], note=s.get("note", ""))
             for key, s in SETS.items()}
     unused = sorted(set(samples) - {i for s in sets.values() for i in s["items"]})

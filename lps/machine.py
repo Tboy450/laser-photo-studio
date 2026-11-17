@@ -55,7 +55,9 @@ class SerialWire:
         except Exception as e:
             msg = str(e)
             if "Access is denied" in msg or "PermissionError" in msg:
-                msg = f"{self.port} is busy - close LaserGRBL / Positioning Laser / other senders first."
+                msg = (f"Access to {self.port} was denied. Another program may hold the port, or this Studio "
+                       "window may have been opened with restricted permissions. Disconnect other senders; "
+                       "if none are connected, open Studio normally from Windows and try again.")
             elif "FileNotFoundError" in msg or "could not open port" in msg:
                 msg = f"{self.port} not found - is the laser plugged in and switched on?"
             raise LinkError(msg) from e

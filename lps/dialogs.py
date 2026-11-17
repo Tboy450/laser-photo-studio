@@ -457,6 +457,10 @@ class HelpWindow(tk.Toplevel):
         self.txt.tag_configure("p", spacing3=4)
         self.txt.tag_configure("li", lmargin1=14, lmargin2=32, spacing3=3)
         self.txt.tag_configure("title", font=("Segoe UI", 16, "bold"), spacing3=6)
+        self.txt.tag_configure("contact", foreground=COLORS["blue"], underline=True, spacing3=4)
+        self.txt.tag_bind("contact", "<Button-1>", self._open_contact)
+        self.txt.tag_bind("contact", "<Enter>", lambda e: self.txt.configure(cursor="hand2"))
+        self.txt.tag_bind("contact", "<Leave>", lambda e: self.txt.configure(cursor="arrow"))
         self._imgs = []
         self.show_topic(topic)
 
@@ -468,6 +472,7 @@ class HelpWindow(tk.Toplevel):
         self._render(idx)
 
     def _render(self, idx):
+        from .helptext import DEVELOPER_CONTACT
         title, text = self.topics[idx]
         t = self.txt
         t.configure(state="normal")
@@ -484,12 +489,19 @@ class HelpWindow(tk.Toplevel):
                 t.insert("end", s + "\n", "li")
             elif s.startswith("[image:") and s.endswith("]"):
                 self._image(s[7:-1])
+            elif s == DEVELOPER_CONTACT:
+                t.insert("end", s + "\n", "contact")
             elif s:
                 t.insert("end", s + "\n", "p")
             else:
                 t.insert("end", "\n")
         t.configure(state="disabled")
         t.yview_moveto(0)
+
+    def _open_contact(self, _=None):
+        import webbrowser
+        from .helptext import DEVELOPER_CONTACT
+        webbrowser.open(DEVELOPER_CONTACT)
 
     def _image(self, rel):
         path = jobs.APP_DIR / rel

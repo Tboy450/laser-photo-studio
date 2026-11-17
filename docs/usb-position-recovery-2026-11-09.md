@@ -16,11 +16,11 @@ The runner still closes its port after finishing so it does not monopolize COM4.
 
 ## Local storage
 
-Default actual Windows path for this user:
+Default Windows location:
 
 ```text
-C:\Users\Heemi\AppData\Local\Laser Photo Studio\Recovery\COM4.json
-C:\Users\Heemi\AppData\Local\Laser Photo Studio\Recovery\history\
+%LOCALAPPDATA%\Laser Photo Studio\Recovery\COM4.json
+%LOCALAPPDATA%\Laser Photo Studio\Recovery\history\
 ```
 
 The paths are under the same local data root as settings, not OneDrive. An explicit `LASER_PHOTO_STUDIO_DATA_DIR` override still applies. Demo mode uses a separate `demo-COM4.json`. Each newly established reference archives the previous record, including interrupted paths. Writes use a unique temporary file, flush/fsync and atomic replacement. Telemetry writes are throttled; the start of movement, completed idle checkpoints and disconnects are saved immediately.
@@ -40,11 +40,7 @@ Saved fields include source path and hash, exact setup, job folder, operation, l
 
 **77 tests passed, zero failures/errors/skips, in 74.122 seconds.** This includes the core planner, simulated runner, scan direction, placement UI, outline checks and 19 position-memory/inspection regressions. `git diff --check` also passed.
 
-Offline regression log (private local file):
-
-```text
-C:\Users\Heemi\Documents\Codex\pine salve - red hill\software-investigation-2026-11-09\usb-recovery-tests.txt
-```
+The historical regression log remains in the private project archive.
 
 Tests cover completed-print persistence with a nonzero work offset; app Disconnect after inspection; park/return through the normal demo buttons; repeated park clicks; unchanged image geometry and job zero; controller reset after parking; interrupted trace evidence; no blind movement after reset during motion; partial writes; unchanged legacy job context; exact setup/mask restoration; changed source rejection; competing runner lock and final-save failures. All physical serial opens are forbidden during verification. No real laser was connected, moved or fired for this change.
 

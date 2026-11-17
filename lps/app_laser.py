@@ -12,7 +12,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import gcodeinfo, imaging, jobs, machine, outlines, planner, verify, position_memory, presets
+from . import gcodeinfo, imaging, jobs, machine, outlines, planner, verify, position_memory, presets, ports
 from .dialogs import RecoveryDialog, StartDialog
 from .presets import DATA_DIR
 from .preview import fmt_dur
@@ -76,12 +76,21 @@ class LaserMixin:
         c.pack(fill="x", pady=4)
         row = ttk.Frame(c)
         row.pack(fill="x")
-        ttk.Combobox(row, textvariable=self.port_var, width=8,
-                     values=[p for p, _ in machine.list_ports()] or ["COM4"]).pack(side="left")
+        self.port_box = ttk.Combobox(row, textvariable=self.port_var, width=8,
+                                    postcommand=lambda: self.refresh_ports(remember=False))
+        self.port_box.pack(side="left")
+        ttk.Label(row, text="(these are for your different USB ports)", style="Small.TLabel").pack(
+            side="left", padx=(6, 0))
+        row = ttk.Frame(c)
+        row.pack(fill="x", pady=(6, 0))
         self.btn_conn = ttk.Button(row, text="Connect", command=self.connect)
         self.btn_conn.pack(side="left", padx=6)
         self.btn_disconnect = ttk.Button(row, text="Disconnect", command=self.disconnect)
         self.btn_disconnect.pack(side="left")
+        ttk.Button(row, text="Refresh ports", command=self.refresh_ports).pack(side="left", padx=6)
+        self.port_desc = wrap_label(c, "", style="Small.TLabel")
+        self.port_desc.pack(anchor="w", pady=(4, 0))
+        self.refresh_ports(remember=False)
         ttk.Checkbutton(c, text="Demo mode (simulated laser - nothing moves)", variable=self.demo).pack(anchor="w",
                                                                                                     pady=(6, 0))
         self.conn_lbl = wrap_label(c, "Not connected.", style="Muted.TLabel")
@@ -274,6 +283,20 @@ class LaserMixin:
             self.root.after(100, self._tick_timer)
 
     # ================================================================ connection
+    def refresh_ports(self, remember=True):
+        # Refresh discovery without changing the selected port, layout or controller state.
+        detected = machine.list_ports()
+        options = ports.choices(self.settings, detected, self.port_var.get())
+        self.port_box.configure(values=options)
+        self.port_desc.configure(text=ports.description(options, detected) or "No USB serial ports detected.")
+        if remember and options != self.settings.get("known_ports"):
+            settings = dict(self.settings, known_ports=options)
+            try:
+                jobs.save_settings(settings)
+                self.settings = settings
+            except OSError as exc:
+                self.say(f"Port list refreshed, but saved choices could not be written: {exc}", "warn")
+
     def connect(self):
         if self._closing or self.worker is not None:
             return
@@ -290,8 +313,9 @@ class LaserMixin:
                                              "Try to connect anyway?"):
                 return
         port = self.port_var.get() or "COM4"
-        if port != self.settings["port"]:
-            settings = dict(self.settings, port=port)
+        known = ports.choices(self.settings, machine.list_ports(), port)
+        if port != self.settings["port"] or known != self.settings.get("known_ports"):
+            settings = dict(self.settings, port=port, known_ports=known)
             try:
                 jobs.save_settings(settings)
             except OSError as e:

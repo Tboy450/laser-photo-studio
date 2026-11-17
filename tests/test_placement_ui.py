@@ -88,6 +88,38 @@ class PlacementUI(unittest.TestCase):
         self.pump()
         self.assertEqual(a.mat.scan_direction, "alternating")
 
+    def test_return_speed_preserves_burn_and_saves_material_value(self):
+        a = self.app
+        a.scan_box.current(1)
+        a._scan_pick()
+        self.pump()
+        planner.compile_job(a.job)
+        before = [c for p in a.job.passes for c in p.commands]
+        geom = a.job.geom
+        cells = a.job.passes[0].cells.copy()
+        settings = (a.mat.feed, a.mat.power, a.mat.pitch, a.mat.hop_feed)
+        old = a.mat.row_feed
+        for value in (4500, 5000, 6000):
+            a.return_var.set(str(value))
+            a._return_changed()
+            self.pump()
+            planner.compile_job(a.job)
+            after = [c for p in a.job.passes for c in p.commands]
+            expected = [c[:-len(f'F{old} S0')] + f'F{value} S0'
+                        if c.startswith('G1 ') and c.endswith(f'F{old} S0') else c for c in before]
+            self.assertEqual(after, expected)
+            self.assertEqual(a.job.geom, geom)
+            self.assertTrue((a.job.passes[0].cells == cells).all())
+            self.assertEqual((a.mat.feed, a.mat.power, a.mat.pitch, a.mat.hop_feed), settings)
+            from dataclasses import asdict
+            self.assertEqual(presets.Material.from_dict(asdict(a.mat)).row_feed, value)
+            self.assertIn(f'row return: {value} mm/min', '\n'.join(jobs.header(a.job, 'test')))
+        for invalid in ('0', '6001', 'nan', 'inf', 'fast', '4500.5'):
+            a.return_var.set(invalid)
+            a._return_changed()
+            self.assertEqual(a.mat.row_feed, 6000)
+            self.assertEqual(a.return_var.get(), '6000')
+
     def test_window_close_waits_for_setup_disconnect_without_a_modal(self):
         a = self.app
         with patch.object(a, "disconnect") as disconnect, \

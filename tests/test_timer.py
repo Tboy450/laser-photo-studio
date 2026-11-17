@@ -47,7 +47,9 @@ class TimerRuns(RunnerBase):
             start = p["first_motion_ms"] if p["first_motion_ms"] is not None else p["sent_ms"]   # sped-up fake
             self.assertLessEqual(p["sent_ms"], start)
             self.assertLess(start, p["idle_ms"])
-            self.assertAlmostEqual(p["real_s"], (p["idle_ms"] - start) / 1000, places=3)
+            # real_s is rounded to milliseconds; include its half-unit rounding
+            # boundary plus floating-point epsilon (places=3 can reject exactly .0005).
+            self.assertAlmostEqual(p["real_s"], (p["idle_ms"] - start) / 1000, delta=.000500001)
             self.assertTrue(p["start_basis"])
         with open(folder / "status-trace.csv", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))

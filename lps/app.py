@@ -295,6 +295,21 @@ class App(PlaceMixin, LaserMixin):
                                     values=("Alternating rows", "Left to right only"))
         self.scan_box.pack(anchor="w")
         self.scan_box.bind("<<ComboboxSelected>>", self._scan_pick)
+        return_row = ttk.Frame(adv)
+        return_row.pack(anchor="w", pady=(6, 0))
+        ttk.Label(return_row, text="Laser-off return speed (mm/min)").pack(side="left")
+        self.return_var = tk.StringVar()
+        self.return_box = ttk.Combobox(return_row, textvariable=self.return_var, width=8,
+                                       values=(600, 1500, 3000, 4500, 5000, 6000))
+        self.return_box.pack(side="left", padx=(8, 0))
+        self.return_box.bind("<<ComboboxSelected>>", self._return_changed)
+        self.return_box.bind("<Return>", self._return_changed)
+        self.return_box.bind("<FocusOut>", self._return_changed)
+        wrap_label(adv, "Moves to the next scan row with the laser off. Faster returns shorten print time "
+                   "and cooling time between rows. Engraving speed and power stay the same. "
+                   "Choose 1-6000; press Enter to apply. Saved with your preset and job. "
+                   "Thin-line feature hops use their separate travel speed.",
+                   style="Small.TLabel").pack(anchor="w", pady=(2, 4))
         wrap_label(adv, "Left to right only returns with the laser off. It takes longer and helps compare "
                    "direction-dependent alignment; it does not increase resolution.",
                    style="Small.TLabel").pack(anchor="w", pady=(2, 6))
@@ -399,6 +414,7 @@ class App(PlaceMixin, LaserMixin):
         self.rule_box.state(["!disabled"] if m.style == "layers" else ["disabled"])
         self.thin_var.set(m.thin_pass)
         self.scan_var.set("Alternating rows" if m.scan_direction == "alternating" else "Left to right only")
+        self.return_var.set(str(m.row_feed))
         self.del_btn.state(["!disabled"] if m.badge == "MINE" else ["disabled"])
 
     def _customised(self, **changes):
@@ -451,6 +467,20 @@ class App(PlaceMixin, LaserMixin):
         direction = "forward" if self.scan_box.current() == 1 else "alternating"
         if direction != self.mat.scan_direction:
             self._customised(scan_direction=direction)
+
+    def _return_changed(self, _=None):
+        if self._loading:
+            return
+        try:
+            value = float(self.return_var.get())
+            if not 1 <= value <= 6000 or not value.is_integer():
+                raise ValueError
+        except ValueError:
+            self.return_var.set(str(self.mat.row_feed))
+            self.say("Return speed must be a whole number from 1 to 6000 mm/min. Previous value restored.", "warn")
+            return
+        if int(value) != self.mat.row_feed:
+            self._customised(row_feed=int(value))
 
     def save_preset(self):
         d = FormDialog(self.root, "Save as my preset", [("name", "Name", self.mat.name.replace(" (adjusted)", ""),
