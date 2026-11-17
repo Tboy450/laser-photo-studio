@@ -30,4 +30,8 @@ Standing owner instruction, November 15, 2026: keep applying verified project le
 - Structured per-job machine-profile/focus linkage and optional trusted saved-job metadata import. Current sample fields are manually entered; no automatic claim extraction from images or messages.
 - Larger evidence histories/multiple settings per photo and publication review tools if later usage warrants them. The present fields can document ranges and ordered passes as explicit text.
 
+## Portrait and slate follow-through — November 17
+
+The [portrait/slate learning record](portrait-slate-learning.md) holds the correction history, current control semantics, physical-run evidence gaps and acceptance criteria for local lens inversion, controlled dither/detail comparisons, gap-free hybrid scanning and separate wood-relief research. It preserves the later 89 mm, 50%/3500 preparation and return-speed work. The public case has physical photographs; exact job/hash/runtime mapping remains open. These proposed features are not implemented by this record. Keep experiment detail there rather than duplicating it in each intake.
+
 Keep this file and the app Guide synchronized when verified outcomes change. Preserve historical evidence and mark superseded interpretations, rather than rewriting history as a new successful physical test.
