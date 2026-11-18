@@ -36,9 +36,9 @@ Recipe matching compares every material field except identity/descriptions/linea
 
 ## Physical-size controls
 
-Size labels describe the physical shape and dimensions. The two nominal 100 mm square templates retain their different 3 mm and 5 mm margins and say so in parentheses; they are not interchangeable printable areas. The slate template no longer assumes rounded corners. Its optional rounding control appears only for the slate option (including a measured slate job), and starts off for a square piece. Existing saved corner radii are preserved exactly. Hot Wheels customization appears only in the Hot Wheels context.
+Size labels describe physical shape and dimensions. The measured slate template is **Square 100.6 x 100.6 mm (slate)**, with 5.8 mm margins and 89 mm usable width. The separate generic 100 mm square retains its 3 mm margins for other materials; these are different dimensions. The slate template does not assume rounded corners. Its optional rounding control appears only for the slate option (including a measured slate job), and starts off for a square piece. Existing saved corner radii are preserved exactly. Hot Wheels customization appears only in the Hot Wheels context.
 
-A loaded 100.6 mm square with 5.8 mm margins is shown as **Measured square 100.6 x 100.6 mm**, rather than an unexplained Custom size or an incorrect 100 mm template match. Its corner radius is shown beside the inch measurements. Merely displaying a descriptive label changes no dimensions, margins, masks, origin, artwork width or command.
+A loaded 100.6 mm square with 5.8 mm margins matches the named slate template. Other measured geometry gets a descriptive measured-size label rather than an unexplained Custom size or an approximate template match. Its corner radius is shown beside the inch measurements. Merely displaying a descriptive label changes no dimensions, margins, masks, origin, artwork width or command.
 
 ## Image controls and preview conventions
 

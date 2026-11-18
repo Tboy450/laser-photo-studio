@@ -179,13 +179,15 @@ class PictureJobUI(unittest.TestCase):
     def test_size_labels_distinguish_measured_geometry_margins_and_rounding(self):
         self.assertEqual(presets.PIECES['coaster100']['corner'],0)
         self.assertEqual(presets.PIECES['square100']['corner'],0)
-        self.assertIn('5 mm margins',presets.piece_choice_label(presets.PIECES['coaster100']))
+        self.assertEqual(presets.PIECES['coaster100']['w'],100.6)
+        self.assertEqual(presets.PIECES['coaster100']['margins'],(5.8,)*4)
+        self.assertIn('(slate)',presets.piece_choice_label(presets.PIECES['coaster100']))
         self.assertIn('3 mm margins',presets.piece_choice_label(presets.PIECES['square100']))
         piece=dict(name='Saved slate',shape='rect',w=100.6,h=100.6,origin='lower-left',
                    margins=[5.8]*4,corner=0,keepouts=[])
         self.a.piece=copy.deepcopy(piece);self.a.piece_key='custom';self.a.art_w=89
         self.a.sync_place_fields()
-        self.assertEqual(self.a.piece_var.get(),'Measured square 100.6 x 100.6 mm')
+        self.assertEqual(self.a.piece_var.get(),'Square 100.6 x 100.6 mm (slate)')
         self.assertIn('corner radius 0 mm',self.a.piece_in_lbl.cget('text'))
         self.assertEqual(self.a.piece,piece)
         self.assertEqual(self.a.art_w,89)

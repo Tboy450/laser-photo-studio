@@ -311,11 +311,11 @@ PIECES = {
                            margins=(4.0, 2.0, 4.0, 2.0), corner=0.0, keepouts=[]),
     "lid76": dict(name="Jar lid 3 in (flat face 49 mm)", shape="circle", w=76.2, h=76.2, origin="center",
                   margins=(13.6, 13.6, 13.6, 13.6), corner=0.0, keepouts=[]),
-    "coaster100": dict(name="Square 100 x 100 mm (slate; 5 mm margins)", shape="rect", w=100.0, h=100.0,
-                       origin="lower-left", margins=(5.0, 5.0, 5.0, 5.0), corner=0.0, keepouts=[]),
+    "coaster100": dict(name="Square 100.6 x 100.6 mm (slate)", shape="rect", w=100.6, h=100.6,
+                       origin="lower-left", margins=(5.8, 5.8, 5.8, 5.8), corner=0.0, keepouts=[]),
     "tile108": dict(name="Tile 4.25 in (108 mm)", shape="rect", w=108.0, h=108.0, origin="lower-left",
                     margins=(5.0, 5.0, 5.0, 5.0), corner=0.0, keepouts=[]),
-    "square100": dict(name="Square 100 x 100 mm (3 mm margins)", shape="rect", w=100.0, h=100.0, origin="lower-left",
+    "square100": dict(name="Square 100 x 100 mm (generic; 3 mm margins)", shape="rect", w=100.0, h=100.0, origin="lower-left",
                       margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
     "custom": dict(name="Custom size", shape="rect", w=100.0, h=100.0, origin="lower-left",
                    margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
@@ -417,7 +417,7 @@ def matching_recipe(material: Material, materials: list) -> Material | None:
 def piece_choice_label(piece: dict) -> str:
     """Describe real geometry; a close nominal size must not claim an exact match."""
     def geometry(p):
-        return json.dumps({k: v for k, v in p.items() if k != 'name'}, sort_keys=True)
+        return json.loads(json.dumps({k: v for k, v in p.items() if k != 'name'}))
     for key, candidate in PIECES.items():
         if key != 'custom' and geometry(candidate) == geometry(piece):
             return candidate['name']
