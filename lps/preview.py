@@ -19,6 +19,12 @@ def hexrgb(c):
     return "#%02x%02x%02x" % tuple(int(v) for v in c)
 
 
+def resize_art(im, size):
+    """Average fine marks whenever either axis shrinks, including anisotropic grids."""
+    shrinking = size[0] < im.width or size[1] < im.height
+    return im.resize(size, Image.Resampling.LANCZOS if shrinking else Image.Resampling.NEAREST)
+
+
 GRID_STEPS = (0.5, 1, 2, 5, 10, 20, 50, 100)     # mm
 
 
@@ -211,11 +217,11 @@ class PreviewPanel(ttk.Frame):
                 if job.allowed is not None:
                     a = (job.allowed * 255).astype("uint8")
                     mask = Image.fromarray(a, "L").resize((wpx, hpx), Image.Resampling.NEAREST)
-                im = im.resize((wpx, hpx), Image.Resampling.LANCZOS if wpx < im.width else Image.Resampling.NEAREST)
+                im = resize_art(im, (wpx, hpx))
                 base = Image.new("RGB", (wpx, hpx), tuple(look[0]))
                 im = Image.composite(im, base, mask) if mask is not None else im
             else:
-                im = im.resize((wpx, hpx), Image.Resampling.LANCZOS if wpx < im.width else Image.Resampling.NEAREST)
+                im = resize_art(im, (wpx, hpx))
             self._photo = ImageTk.PhotoImage(im)
             c.create_image(tx(g.x0), ty(g.yt), image=self._photo, anchor="nw")
             if self.size_guide.get():
@@ -606,6 +612,8 @@ class PreviewPanel(ttk.Frame):
             items.append(("line", COLORS["art"], "image perimeter" if app.check_mode == "image" else "sticker outline"))
         elif app.check_mode == "travel":
             items.append(("dash", COLORS["travel"], "total travel perimeter, beam off"))
+        elif app.check_mode == "travel_lit":
+            items.append(("line", COLORS["art"], "total travel perimeter, 1% beam; approach/return off"))
         elif app.check_mode in ("burn", "dry"):
             marks = "marking strokes, 2% during trace" if app.check_mode == "burn" else "planned marking strokes, beam off"
             items.extend((("line", COLORS["art"], marks),

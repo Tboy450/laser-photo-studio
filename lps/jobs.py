@@ -91,6 +91,8 @@ def header(job: JobPlan, title: str) -> list:
             "; Scan direction: " + ("alternating rows" if m.scan_direction == "alternating" else
                                      "left to right only; returns with laser off"),
             f"; Laser-off row return: {m.row_feed} mm/min; feature hops: {m.hop_feed} mm/min",
+            "; Fast blank scan-line gaps: " + ("ON (experimental); S0 gaps >=1 mm use faster return feed"
+                                                if m.fast_blank_gaps else "OFF"),
             "; M4 dynamic power, S1000 = 100% ($30=1000). Laser-off travel is G1 S0. Never home this machine."]
 
 
@@ -145,6 +147,7 @@ def readme_text(job: JobPlan, negative: bool) -> str:
 Material: {m.name} [{BADGES.get(m.badge, m.badge)}]   Style: {style}
 Scan direction: {'Alternating rows' if m.scan_direction == 'alternating' else 'Left to right only (laser-off returns)'}
 Laser-off row return: {m.row_feed} mm/min; feature hops: {m.hop_feed} mm/min
+Fast blank scan-line gaps: {'ON (experimental): S0 gaps >=1 mm use the faster return speed' if m.fast_blank_gaps else 'OFF'}
 Art: {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.2f}..{g.x1:.2f}, Y {g.y0:.2f}..{g.yt:.2f} mm from the start point
 Start point (origin, work X0 Y0): {origin_text(job.piece)}
 {neg}
@@ -207,6 +210,9 @@ def save_job(job: JobPlan, report: dict, picture=None, previews: dict | None = N
                verified=bool(report.get("ok")), est_s=round(job.est_s, 1),
                origin=origin_text(job.piece), lasergrbl_file=lasergrbl_name(job))
     doc.update(extra or {})
+    if picture is not None:
+        doc['editable_picture'] = dict(file='picture.png', sha256=sha256(folder / 'picture.png'),
+                                      orientation='already applied; tone/dither not applied')
     write_json(folder / "job.json", doc)
     (folder / "README.txt").write_text(readme_text(job, bool((extra or {}).get("look", {}).get("negative"))),
                                       encoding="utf-8")

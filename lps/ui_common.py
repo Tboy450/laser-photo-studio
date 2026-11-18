@@ -1,6 +1,7 @@
 """Small Tk helpers: theme, scrollable pages, tooltips, labelled sliders."""
 from __future__ import annotations
 
+import math
 import tkinter as tk
 from tkinter import ttk
 
@@ -235,13 +236,22 @@ class Slider(ttk.Frame):
                  resolution=1.0):
         super().__init__(master)
         self.var, self.fmt, self.command, self.res = var, fmt, command, resolution
+        self._dragging = False
+        self._notify_after = None
+        self.minimum, self.maximum = min(frm, to), max(frm, to)
         top = ttk.Frame(self)
         top.pack(fill="x")
         ttk.Label(top, text=label).pack(side="left")
-        self.val = ttk.Label(top, style="Muted.TLabel")
+        self.edit_var = tk.StringVar()
+        self.val = ttk.Entry(top, textvariable=self.edit_var, width=7, justify='right')
+        self.val.bind('<Return>', self._commit_entry)
+        self.val.bind('<FocusOut>', self._commit_entry)
         self.val.pack(side="right")
         self.scale = ttk.Scale(self, from_=frm, to=to, variable=var, command=self._moved)
         self.scale.pack(fill="x")
+        self.scale.bind('<ButtonPress-1>', lambda e: self._start_drag(), add='+')
+        self.scale.bind('<ButtonRelease-1>', lambda e: self._end_drag(), add='+')
+        self.bind('<Destroy>', self._cancel_notify, add='+')
         var.trace_add("write", lambda *a: self._show())
         self._show()
         if tip:
@@ -252,13 +262,48 @@ class Slider(ttk.Frame):
             v = round(self.var.get() / self.res) * self.res
         except tk.TclError:
             return
-        self.val.configure(text=self.fmt.format(v))
+        self.edit_var.set(self.fmt.format(v))
 
     def _moved(self, *_):
         v = round(self.var.get() / self.res) * self.res
-        self.val.configure(text=self.fmt.format(v))
+        self.edit_var.set(self.fmt.format(v))
+        self._cancel_notify()
+        if not self._dragging:
+            self._notify_after = self.after(180, self._notify)
+
+    def _cancel_notify(self, *_):
+        if self._notify_after:
+            self.after_cancel(self._notify_after)
+            self._notify_after = None
+
+    def _start_drag(self):
+        self._dragging = True
+        self._cancel_notify()
+
+    def _end_drag(self):
+        self._dragging = False
+        self._cancel_notify()
+        self._notify()
+
+    def _notify(self):
+        self._notify_after = None
         if self.command:
-            self.command(v)
+            self.command(round(self.var.get() / self.res) * self.res)
+
+    def _commit_entry(self, *_):
+        try:
+            value = float(self.edit_var.get())
+            if not math.isfinite(value):
+                raise ValueError
+            value = round(min(self.maximum, max(self.minimum, value)) / self.res) * self.res
+        except ValueError:
+            self._show()
+            return
+        if value != round(self.var.get() / self.res) * self.res:
+            self._cancel_notify()
+            self.var.set(value)
+            self._notify()
+        self._show()
 
 
 def badge(parent, kind: str, text: str):

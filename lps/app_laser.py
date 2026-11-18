@@ -26,6 +26,7 @@ PHASE_TEXT = dict(starting="Starting", connecting="Connecting", running="Engravi
                   stopped="Stopped - position kept", dropout="USB dropped out", fault="Stopped by a problem")
 CHECK_LABELS = {
     "travel": "Total travel perimeter",
+    "travel_lit": "Total travel perimeter",
     "image": "Image perimeter",
     "sticker": "Sticker outline",
     "burn": "Full burn trace",
@@ -33,6 +34,9 @@ CHECK_LABELS = {
 }
 CHECK_HELP = {
     "travel": "Laser off. Frames the full travel envelope, including run-ups. It can cross no-burn zones.",
+    "travel_lit": "1% beam around the full travel envelope, including run-ups. This is the travel rectangle, "
+                  "not the image or round lid outline; it can extend past the piece and cross no-burn zones. "
+                  "Approach and return to job zero are laser off.",
     "image": "1% beam. Frames the placed image, including blank space. On a round piece it follows the usable face.",
     "sticker": "1% beam. Traces the outside edges of the artwork islands. Transfers between islands are laser off.",
     "burn": "2% beam on the planned marking strokes, beam off for travel. Use a test piece if the surface may mark. "
@@ -178,7 +182,7 @@ class LaserMixin:
             ToolTip(b, CHECK_HELP[mode])
             self.check_buttons[mode] = b
         self.btn_stop_check = ttk.Button(br, text="Stop check", command=self.stop_perimeter)
-        self.btn_stop_check.grid(row=2, column=1, sticky="w")
+        self.btn_stop_check.grid(row=3, column=0, columnspan=2, sticky="w")
         self.box_lbl = wrap_label(p, "", style="H2.TLabel")
         self.box_lbl.pack(anchor="w", pady=(6, 0))
         self.perim_lbl = wrap_label(p, "", style="Muted.TLabel")
@@ -465,6 +469,9 @@ class LaserMixin:
                 self.worker.submit("here", machine.set_origin_here, x, y, observed=st)
 
     def set_origin(self):
+        if self.layout_error and not self.gfile:
+            self.say(self.layout_error, 'warn')
+            return
         if self.layout_pending and not self.gfile:
             self.say("Wait for the placement preview before setting job zero.", "warn")
             return
@@ -546,7 +553,7 @@ class LaserMixin:
                     grid=copy.deepcopy(self.grid_spec), job_folder=str(self.saved[self.gen]) if self.gen in self.saved else None,
                     external_file=self.gfile.get("path") if self.gfile else None,
                     check_mode=self.check_mode, job_name=self.job.name if self.job else None,
-                    keep_proportions=self.proportions_var.get())
+                    keep_proportions=self.proportions_var.get(), source_provenance=copy.deepcopy(self.source_provenance))
 
     def remember_setup(self):
         if self.worker and self.connected and self.origin_set:
@@ -570,11 +577,14 @@ class LaserMixin:
         if picture and ctx.get("picture_sha256") and jobs.sha256(Path(picture)) != ctx["picture_sha256"]:
             raise ValueError("The saved source picture has changed. Restore the original file before recovering this setup.")
         raw = imaging.load_picture(picture) if picture else None  # fail before changing the UI
-        self.mat = presets.Material.from_dict(ctx["material"])
-        self.base_mat = next((m for m in self.materials if m.key == self.mat.key), self.mat)
-        self._show_material()
+        self._loading = True
+        try:
+            self._adopt_material_snapshot(presets.Material.from_dict(ctx['material']))
+        finally:
+            self._loading = False
         self.picture_path = Path(picture) if picture else None
         self.picture_raw = raw
+        self.source_provenance = copy.deepcopy(ctx.get('source_provenance'))
         self.rotate, self.mirror = ctx.get("rotate", 0), ctx.get("mirror", False)
         self.picture = imaging.orient(raw, self.rotate, self.mirror) if raw is not None else None
         self.grid_spec = ctx.get("grid")
@@ -587,8 +597,10 @@ class LaserMixin:
         for var, value in zip(self.v_cut, self.mat.tone_cuts):
             var.set(value)
         for key, var in (("brightness", self.v_bright), ("contrast", self.v_contrast), ("gamma", self.v_gamma),
-                         ("sharpen", self.v_sharpen), ("autolevel", self.v_auto), ("negative", self.v_neg)):
-            var.set(ctx["look"][key])
+                         ("sharpen", self.v_sharpen), ("autolevel", self.v_auto), ("negative", self.v_neg),
+                         ('black_point',self.v_black),('white_point',self.v_white)):
+            var.set(ctx['look'].get(key, getattr(self.mat, key)))
+        self.expose_legacy_auto()
         self.pic_info.configure(text=f"Restored: {Path(picture).name if picture else 'test grid'}")
         self.sync_place_fields()
         self.completed_checks.clear()
@@ -808,6 +820,7 @@ class LaserMixin:
         return bool(self.last_status and self.last_status.laser_on) or self.dot_on
 
     def refresh_laser_page(self, status_only=False):
+        self.sync_picture_edit_mode()
         if not hasattr(self, "pill"):
             return
         rs = self.run_state
@@ -844,7 +857,7 @@ class LaserMixin:
             self.refresh_ready()
             return
         job = self.job
-        pending = self.layout_pending and not self.gfile
+        pending = (self.layout_pending or self.layout_error) and not self.gfile
         for button in self.check_buttons.values():
             button.state(["disabled"] if pending or self.perim_running or live else ["!disabled"])
         self.btn_stop_check.state(["!disabled"] if self.perim_running else ["disabled"])
@@ -854,7 +867,9 @@ class LaserMixin:
         b = gcodeinfo.frame_bbox(self.gfile) if self.gfile else self.picture_box() if job is not None else None
         self.box_lbl.configure(text=f"Image size: {b[2] - b[0]:g} x {b[3] - b[1]:g} mm "
                                     f"({(b[2] - b[0]) / 25.4:.2f} x {(b[3] - b[1]) / 25.4:.2f} in)" if b else "")
-        if pending:
+        if self.layout_error and not self.gfile:
+            self.box_lbl.configure(text=self.layout_error)
+        elif pending:
             self.box_lbl.configure(text="Updating picture box...")
         elif b:
             self.box_lbl.configure(text=self.box_lbl.cget("text") +
@@ -985,7 +1000,7 @@ class LaserMixin:
                 self._sticker_source = source
                 self._sticker_paths = outlines.sticker_paths(source)
             return self._sticker_paths
-        if mode == "travel":
+        if mode in ("travel", "travel_lit"):
             if self.gfile:
                 bounds = self.gfile.get("travel_bbox")
             else:
@@ -1048,7 +1063,7 @@ class LaserMixin:
                            shutdown=self.worker.quit,
                            progress=self.worker.trace_progress,
                            status=lambda st: events.put(("status", st)),
-                           illuminate=mode in ("image", "sticker"), moves=moves, move_count=count,
+                           illuminate=mode in ("travel_lit", "image", "sticker"), moves=moves, move_count=count,
                            live_trace=mode == "burn")
 
     def stop_perimeter(self):
