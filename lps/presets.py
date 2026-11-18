@@ -137,10 +137,13 @@ class Material:
     piece: str = ""                 # suggested workpiece
     based_on: str = ""              # my presets: the built-in preset they were saved from (for its photos)
     scan_direction: str = "alternating"  # forward = every marked row left to right; return moves stay off
+    fast_blank_gaps: bool = False   # opt-in: internal S0 gaps >= 1 mm use the laser-off return speed
 
     def __post_init__(self):
         if self.scan_direction not in ("alternating", "forward"):
             raise ValueError("Scan direction must be alternating or forward.")
+        if type(self.fast_blank_gaps) is not bool:
+            raise ValueError("Fast blank gaps must be true or false.")
 
     def copy(self, **changes) -> "Material":
         d = asdict(self)

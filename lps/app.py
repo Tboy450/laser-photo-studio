@@ -429,6 +429,13 @@ class App(PlaceMixin, LaserMixin):
                    "Choose 1-6000; press Enter to apply. Saved with your preset and job. "
                    "Thin-line feature hops use their separate travel speed.",
                    style="Small.TLabel").pack(anchor="w", pady=(2, 4))
+        self.fast_gaps_var = tk.BooleanVar()
+        ttk.Checkbutton(adv, text="Faster blank gaps inside scan lines (experimental)",
+                        variable=self.fast_gaps_var, command=self._fast_gaps_changed).pack(anchor="w")
+        wrap_label(adv, "For scan-line passes only: laser-off gaps at least 1 mm long use the return speed "
+                   "above when it is faster. Marked strokes keep their engraving speed and power. "
+                   "Short gaps and run-ups stay unchanged. Off by default; test the material first.",
+                   style="Small.TLabel").pack(anchor="w", pady=(2, 4))
         wrap_label(adv, "Left to right only returns with the laser off. It takes longer and helps compare "
                    "direction-dependent alignment; it does not increase resolution.",
                    style="Small.TLabel").pack(anchor="w", pady=(2, 6))
@@ -543,6 +550,7 @@ class App(PlaceMixin, LaserMixin):
         self.thin_var.set(m.thin_pass)
         self.scan_var.set("Alternating rows" if m.scan_direction == "alternating" else "Left to right only")
         self.return_var.set(str(m.row_feed))
+        self.fast_gaps_var.set(m.fast_blank_gaps)
         self.del_btn.state(["!disabled"] if m.badge == "MINE" and self._job_material_snapshot is None else ["disabled"])
         self.sync_piece_options()
 
@@ -610,6 +618,10 @@ class App(PlaceMixin, LaserMixin):
             return
         if int(value) != self.mat.row_feed:
             self._customised(row_feed=int(value))
+
+    def _fast_gaps_changed(self):
+        if not self._loading and self.fast_gaps_var.get() != self.mat.fast_blank_gaps:
+            self._customised(fast_blank_gaps=self.fast_gaps_var.get())
 
     def save_preset(self):
         d = FormDialog(self.root, "Save as my preset", [("name", "Name", self.mat.name.replace(" (adjusted)", ""),

@@ -120,6 +120,24 @@ class PlacementUI(unittest.TestCase):
             self.assertEqual(a.mat.row_feed, 6000)
             self.assertEqual(a.return_var.get(), '6000')
 
+    def test_fast_blank_gap_control_changes_job_and_can_restore_original(self):
+        a=self.app
+        planner.compile_job(a.job)
+        original=[p.commands[:] for p in a.job.passes]
+        cells=[p.cells.copy() for p in a.job.passes]
+        geom=a.job.geom
+        self.assertFalse(a.fast_gaps_var.get())
+        a.fast_gaps_var.set(True);a._fast_gaps_changed();self.pump()
+        planner.compile_job(a.job)
+        self.assertTrue(a.mat.fast_blank_gaps)
+        self.assertTrue(a.job.material.fast_blank_gaps)
+        self.assertEqual(a.job.geom,geom)
+        for expected,p in zip(cells,a.job.passes):self.assertTrue((p.cells==expected).all())
+        self.assertIn('ON (experimental)', '\n'.join(jobs.header(a.job,'test')))
+        a.fast_gaps_var.set(False);a._fast_gaps_changed();self.pump()
+        planner.compile_job(a.job)
+        self.assertEqual([p.commands for p in a.job.passes],original)
+
     def test_clearances_follow_origin_nudge_and_saved_setup(self):
         from lps import verify
         a = self.app

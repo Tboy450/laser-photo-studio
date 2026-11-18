@@ -326,6 +326,9 @@ def verify_pass(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30.
                 elif not (0 <= r < H and 0 <= ca <= cb <= W):
                     bad(f"command {i}: powered move outside the artwork")
                 else:
+                    expected_feed = int(p.row_feeds[r]) if p.row_feeds is not None else int(p.feed)
+                    if f != expected_feed:
+                        bad(f"command {i}: powered speed F{f} differs from planned F{expected_feed}")
                     counts[r, ca:cb] += 1
                     power[r, ca:cb] = s
                 if min(x, nx) < ux0 - 0.00051 or max(x, nx) > ux1 + 0.00051 or ny < uy0 - 0.00051 or ny > uy1 + 0.00051:

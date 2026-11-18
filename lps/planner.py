@@ -414,7 +414,8 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
 
 # --------------------------------------------------------------------------------------------- commands
 def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_feed: int, runup: float,
-                    row_feeds=None, accel: float = ACCEL, *, bidirectional: bool = True) -> list:
+                    row_feeds=None, accel: float = ACCEL, *, bidirectional: bool = True,
+                    fast_blank_gaps: bool = False) -> list:
     cmds = []
     flip = False
     for r in order if order is not None else range(cells.shape[0]):
@@ -436,7 +437,12 @@ def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_fee
         y = fmt(geom.row_y(r))
         cmds += ["M5 S0", f"G1 X{fmt(start - d * ru)} Y{y} F{row_feed} S0", "M4 S0",
                  f"G1 X{fmt(start)} Y{y} F{f} S0"]
-        cmds += [f"G1 X{fmt(e)} Y{y} F{f} S{s}" for e, s in zip(ends, pw)]
+        previous = start
+        for e, s in zip(ends, pw):
+            gap_feed = (max(f, row_feed) if fast_blank_gaps and s == 0
+                        and abs(e - previous) >= 1.0 - 1e-9 else f)
+            cmds.append(f"G1 X{fmt(e)} Y{y} F{gap_feed} S{s}")
+            previous = e
         cmds += [f"G1 X{fmt(ends[-1] + d * ru)} Y{y} F{f} S0", "M5 S0"]
         flip = not flip if bidirectional else False
     return cmds
@@ -651,7 +657,7 @@ def compile_job(job: JobPlan, start=(0.0, 0.0)) -> JobPlan:
                                           bidirectional=bidirectional)
         else:
             p.commands = raster_commands(p.cells, p.order, job.geom, p.feed, m.row_feed, m.runup, p.row_feeds,
-                                         bidirectional=bidirectional)
+                                         bidirectional=bidirectional, fast_blank_gaps=m.fast_blank_gaps)
         p.est_s = estimate_seconds(p.commands)
         for c in reversed(p.commands):
             if c.startswith("G1"):
