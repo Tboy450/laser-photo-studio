@@ -9,8 +9,8 @@ Use **1 Picture → Open saved Studio picture job…**, select `job.json`, or la
 | Settings | Saved source and precedence | Editing and persistence |
 | --- | --- | --- |
 | Source pixels | `picture.png`, with orientation already applied and tone/dither not applied | The editable source remains available. Saving writes its checksum and orientation contract in `editable_picture`. Reopening does not apply the original rotation/mirror again. |
-| Material recipe | Entire `material` snapshot, rather than whichever built-in preset happens to be selected | Loaded values win over preset defaults. The material tree and advanced controls show the same snapshot. Explicitly choosing another material replaces the recipe and image defaults. |
-| Image adjustments | `look`: brightness, contrast, gamma, sharpen, autolevel, negative; missing legacy keys use their material values | Current Check controls override image defaults. Edits rebuild actual pixels and commands and invalidate earlier verification. Negative applies once. Save as my preset now captures these effective controls too. |
+| Material recipe | Entire `material` snapshot, rather than whichever built-in preset happens to be selected | Loaded recipe values win. A matching existing recipe is reused without editing or adding a preset. Otherwise a separate **Current job settings** row holds the snapshot; its project name is not registered as a material preset. Explicitly choosing a stored material replaces the recipe and image defaults. |
+| Image adjustments | `look`: brightness, contrast, gamma, sharpen, negative, black_point, white_point; legacy autolevel remains readable | Current Check controls override image defaults. Edits rebuild actual pixels and commands and invalidate earlier verification. Negative applies once. Save as my preset now captures these effective controls too. |
 | Piece geometry | `piece`: name, shape, width/height, origin and optional spot, margins, corner, keepouts | Exact saved geometry is retained. “Custom size” means measured saved geometry; it is not a fallback permission to ignore dimensions. An explicitly chosen piece survives later material selection. |
 | Artwork placement | `placement`: fit, art_w, dx, dy; `keep_proportions` retained separately | Whole-image width and offsets survive saving/reopening. Changes rebuild the layout. |
 | USB connection | Machine settings and current port selection, outside picture-job metadata | Loading a job preserves the selected port. No saved picture job silently switches COM4 to COM6. |
@@ -25,12 +25,26 @@ These are the actual fields from `lps/presets.py`; no extra preset format is int
 | Group | Fields | Meaning |
 | --- | --- | --- |
 | Identity and presentation | key, name, badge, summary, notes, based_on | Snapshot identity, category, explanations, and recipe lineage. A preview sample is not evidence that this picture was physically engraved. |
-| Image conversion | style, look, pitch, negative, sharpen, contrast, brightness, gamma, autolevel, halftone_cell | Conversion algorithm, material appearance, row spacing, and image controls. `look` names preview colors; style and image adjustments change mark commands. |
+| Image conversion | style, look, pitch, negative, sharpen, contrast, brightness, gamma, autolevel, black_point, white_point, halftone_cell | Conversion algorithm, material appearance, row spacing, and image controls. `look` names preview colors; style and image adjustments change mark commands. |
 | Exposure and passes | feed, power, power_min, tone_power, tone_cuts, layer_rule, interlace, widen_gaps, thin_pass, thin_cap, passes | Burn feed, S values, shading/layer rules, row ordering, and fine-feature controls. Style determines which fields apply. |
 | Laser-off travel | runup, feature_runup, row_feed, hop_feed, scan_direction | Row/feature acceleration space, row returns, hops, and forward versus alternating scanning. Return speed does not replace burn feed. |
 | Suggestions | test_power, test_speed, piece | Test-grid ranges and suggested piece preset. These do not override an explicitly chosen piece. |
 
-Save as my preset stores the effective material recipe and current six image adjustments. It does not store the photograph, measured piece, or artwork placement; **Save job** stores those. The layer tone cuts from Check are included in the effective recipe.
+Save as my preset stores the effective material recipe and current visible image adjustments. It does not store the photograph, measured piece, or artwork placement; **Save job** stores those. The layer tone cuts from Check are included in the effective recipe.
+
+Recipe matching compares every material field except identity/descriptions/lineage, suggested piece/test ranges, and the separately controlled picture adjustments. Matching keeps the stored preset unchanged and the job's effective image controls intact. The original imported material metadata remains in source provenance. This prevents a previous portrait's project title from becoming a new material entry on each import.
+
+## Physical-size controls
+
+Size labels describe the physical shape and dimensions. The two nominal 100 mm square templates retain their different 3 mm and 5 mm margins and say so in parentheses; they are not interchangeable printable areas. The slate template no longer assumes rounded corners. Its optional rounding control appears only for the slate option (including a measured slate job), and starts off for a square piece. Existing saved corner radii are preserved exactly. Hot Wheels customization appears only in the Hot Wheels context.
+
+A loaded 100.6 mm square with 5.8 mm margins is shown as **Measured square 100.6 x 100.6 mm**, rather than an unexplained Custom size or an incorrect 100 mm template match. Its corner radius is shown beside the inch measurements. Merely displaying a descriptive label changes no dimensions, margins, masks, origin, artwork width or command.
+
+## Image controls and preview conventions
+
+Auto levels is now an action that writes its 1% histogram endpoints into visible Black point and White point sliders, resets Brightness/Contrast/Gamma visibly to 0/0/1, and leaves Detail/Negative unchanged. A status message identifies Auto-applied versus subsequent Manual edits. There is no hidden Auto flag underneath the new controls. Legacy saved Auto jobs are converted to equivalent visible endpoints without resetting their historical manual values; regression tests require pixel-exact equivalence. The legacy autolevel field remains readable for compatibility. Slider labels update during dragging; an expensive rebuild is requested once on release, with a short debounce for keyboard changes. Negative changes which source tones fire, rather than merely switching preview modes.
+
+The operator reported that Negative appeared to swap **Looks like** and **What burns**, including potentially their keys. A proposed switch of What burns to a monochrome map was withdrawn because it did not establish the cause of that report. The existing preview format is retained. A controlled UI regression checks that the Looks like image has pale slate marks at powered cells and the What burns map colors precisely those cells, and that changing views never changes commands. This offline check does not resolve the reported behavior in the active window; the actual selected view, effective look, material and key still need to be captured together before diagnosing it. Do not report this incident as fixed by changing the display format.
 
 ## Source and command verification
 

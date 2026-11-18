@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import imaging, jobs, planner, presets, verify
 
-LOOK_KEYS = ('brightness', 'contrast', 'gamma', 'sharpen', 'autolevel', 'negative')
+LOOK_KEYS = ('brightness', 'contrast', 'gamma', 'sharpen', 'autolevel', 'negative', 'black_point', 'white_point')
 
 
 def contained(folder, name):
@@ -63,5 +63,6 @@ def read(folder):
                       dict(original_picture=doc.get('picture_file'), saved_picture_sha256=jobs.sha256(picture)),
                       defaults_used=defaults, reference=doc.get('based_on_job'),
                       saved_source_transform=doc.get('saved_source_transform'),
+                      original_material=copy.deepcopy(doc['material']),
                       keep_proportions=bool(doc.get('keep_proportions', False)))
     return raw, picture, job, report, look, placement, provenance

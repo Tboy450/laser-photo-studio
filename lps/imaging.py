@@ -107,14 +107,30 @@ def saved_size_mm(path) -> tuple | None:
         return None
 
 
+def auto_level_points(im: Image.Image, crop=None):
+    if crop is not None:
+        im = im.crop(tuple(int(round(c)) for c in crop))
+    hist = np.asarray(im.convert('L').histogram(), dtype=np.int64)
+    cut = int(hist.sum() // 100)
+    lo = int(np.searchsorted(hist.cumsum(), cut, side='right'))
+    hi = 255 - int(np.searchsorted(hist[::-1].cumsum(), cut, side='right'))
+    return (lo, hi) if hi > lo else (0, 255)
+
+
 def to_grid(im: Image.Image, cols: int, rows: int, crop=None, *, autolevel=False, brightness=0, contrast=0,
-            gamma=1.0, negative=False, sharpen=0) -> np.ndarray:
+            gamma=1.0, negative=False, sharpen=0, black_point=0, white_point=255) -> np.ndarray:
     """Resize the picture to the burn grid (one cell per row/column pitch) and apply the look settings.
     Returns float32 lightness 0 (black) .. 255 (white)."""
     if crop is not None:
         im = im.crop(tuple(int(round(c)) for c in crop))
     if autolevel:
         im = ImageOps.autocontrast(im, cutoff=1)
+    if not 0 <= black_point < white_point <= 255:
+        raise ValueError('Black point must be below White point (0..255).')
+    if (black_point, white_point) != (0, 255):
+        scale = 255.0 / (white_point - black_point)
+        offset = -black_point * scale
+        im = im.point([max(0, min(255, int(x * scale + offset))) for x in range(256)])
     im = im.point(tone_lut(brightness, contrast, gamma, False))
     im = im.resize((max(1, cols), max(1, rows)), Image.Resampling.LANCZOS)
     if sharpen > 0:

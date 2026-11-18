@@ -125,6 +125,8 @@ class Material:
     brightness: int = 0
     gamma: float = 1.0
     autolevel: bool = False
+    black_point: int = 0
+    white_point: int = 255
     runup: float = 4.0              # laser-off run-up/out at each row end, mm (raised automatically for speed)
     feature_runup: float = 1.0
     row_feed: int = 600             # laser-off move to the next row
@@ -309,11 +311,11 @@ PIECES = {
                            margins=(4.0, 2.0, 4.0, 2.0), corner=0.0, keepouts=[]),
     "lid76": dict(name="Jar lid 3 in (flat face 49 mm)", shape="circle", w=76.2, h=76.2, origin="center",
                   margins=(13.6, 13.6, 13.6, 13.6), corner=0.0, keepouts=[]),
-    "coaster100": dict(name="Slate coaster 100 mm, rounded", shape="rect", w=100.0, h=100.0,
-                       origin="lower-left", margins=(5.0, 5.0, 5.0, 5.0), corner=8.0, keepouts=[]),
+    "coaster100": dict(name="Square 100 x 100 mm (slate; 5 mm margins)", shape="rect", w=100.0, h=100.0,
+                       origin="lower-left", margins=(5.0, 5.0, 5.0, 5.0), corner=0.0, keepouts=[]),
     "tile108": dict(name="Tile 4.25 in (108 mm)", shape="rect", w=108.0, h=108.0, origin="lower-left",
                     margins=(5.0, 5.0, 5.0, 5.0), corner=0.0, keepouts=[]),
-    "square100": dict(name="Square 100 x 100 mm", shape="rect", w=100.0, h=100.0, origin="lower-left",
+    "square100": dict(name="Square 100 x 100 mm (3 mm margins)", shape="rect", w=100.0, h=100.0, origin="lower-left",
                       margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
     "custom": dict(name="Custom size", shape="rect", w=100.0, h=100.0, origin="lower-left",
                    margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
@@ -401,6 +403,27 @@ BADGES = {
 
 def user_presets_path() -> Path:
     return DATA_DIR / "my-presets.json"
+
+
+def matching_recipe(material: Material, materials: list) -> Material | None:
+    """Reuse a stored recipe without confusing picture adjustments with material settings."""
+    separate = {'key', 'name', 'badge', 'summary', 'notes', 'based_on', 'piece', 'test_power', 'test_speed',
+                'brightness', 'contrast', 'gamma', 'sharpen', 'autolevel', 'negative', 'black_point', 'white_point'}
+    recipe = {f.name: getattr(material, f.name) for f in fields(Material) if f.name not in separate}
+    matches = [m for m in materials if all(getattr(m, k) == v for k, v in recipe.items())]
+    return next((m for m in matches if m.key == material.key), matches[0] if matches else None)
+
+
+def piece_choice_label(piece: dict) -> str:
+    """Describe real geometry; a close nominal size must not claim an exact match."""
+    def geometry(p):
+        return json.dumps({k: v for k, v in p.items() if k != 'name'}, sort_keys=True)
+    for key, candidate in PIECES.items():
+        if key != 'custom' and geometry(candidate) == geometry(piece):
+            return candidate['name']
+    w, h = piece['w'], piece['h']
+    shape = 'circle' if piece.get('shape') == 'circle' else 'square' if w == h else 'rectangle'
+    return f'Measured {shape} {w:g} x {h:g} mm'
 
 
 def load_materials() -> list:

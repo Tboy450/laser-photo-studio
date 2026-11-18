@@ -671,7 +671,8 @@ def build_job(picture: Image.Image, mat: Material, placement: Placement, look: d
         picture, geom.cols, geom.rows, geom.crop,
         autolevel=look.get("autolevel", mat.autolevel), brightness=look.get("brightness", mat.brightness),
         contrast=look.get("contrast", mat.contrast), gamma=look.get("gamma", mat.gamma),
-        negative=look.get("negative", mat.negative), sharpen=look.get("sharpen", mat.sharpen))
+        negative=look.get("negative", mat.negative), sharpen=look.get("sharpen", mat.sharpen),
+        black_point=look.get('black_point', mat.black_point), white_point=look.get('white_point', mat.white_point))
     allowed = allowed_cells(geom, placement.piece)
     return plan_cells(gray, mat, geom, allowed, name, placement.piece)
 

@@ -593,8 +593,10 @@ class LaserMixin:
         for var, value in zip(self.v_cut, self.mat.tone_cuts):
             var.set(value)
         for key, var in (("brightness", self.v_bright), ("contrast", self.v_contrast), ("gamma", self.v_gamma),
-                         ("sharpen", self.v_sharpen), ("autolevel", self.v_auto), ("negative", self.v_neg)):
-            var.set(ctx["look"][key])
+                         ("sharpen", self.v_sharpen), ("autolevel", self.v_auto), ("negative", self.v_neg),
+                         ('black_point',self.v_black),('white_point',self.v_white)):
+            var.set(ctx['look'].get(key, getattr(self.mat, key)))
+        self.expose_legacy_auto()
         self.pic_info.configure(text=f"Restored: {Path(picture).name if picture else 'test grid'}")
         self.sync_place_fields()
         self.completed_checks.clear()

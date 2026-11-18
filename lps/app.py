@@ -41,6 +41,8 @@ class App(PlaceMixin, LaserMixin):
         apply_theme(root, self.settings.get("theme", "light"))
         paint(root, background="bg")
         self.materials = presets.load_materials()
+        self._job_material_snapshot = None
+        self._snapshot_preset_key = None
         self.mat = self.base_mat = self.materials[0]
         self.help_win = None
         self.picture = self.picture_raw = self.picture_path = None
@@ -228,13 +230,20 @@ class App(PlaceMixin, LaserMixin):
         self.show_saved_size()
 
     def _adopt_material_snapshot(self, material):
-        """A loaded snapshot owns its values; queued tree events must not replace them."""
-        self.base_mat = next((m for m in self.materials if m.key == material.key), material)
+        """Load job values without registering a project name as another preset."""
+        match = presets.matching_recipe(material, self.materials)
+        self._job_material_snapshot = material
+        self._snapshot_preset_key = match.key if match else None
         self.mat = material
-        self.materials = [m for m in self.materials if m.key != material.key] + [material]
+        if match:
+            self.base_mat = match
+            selection = 'm:' + match.key
+        else:
+            self.base_mat = material
+            selection = 'job:material'
         self._fill_tree()
-        self.tree.selection_set('m:' + material.key)
-        self.tree.see('m:' + material.key)
+        self.tree.selection_set(selection)
+        self.tree.see(selection)
         self._show_material()
 
     def _startup_report(self, path, attempts=40):
@@ -290,8 +299,10 @@ class App(PlaceMixin, LaserMixin):
             self.art_w, self.dx, self.dy = placement.get('art_w'), placement.get('dx', 0), placement.get('dy', 0)
             self.fit_var.set(placement['fit'])
             for k, var in (('brightness',self.v_bright),('contrast',self.v_contrast),('gamma',self.v_gamma),
-                           ('sharpen',self.v_sharpen),('autolevel',self.v_auto),('negative',self.v_neg)):
+                           ('sharpen',self.v_sharpen),('autolevel',self.v_auto),('negative',self.v_neg),
+                           ('black_point',self.v_black),('white_point',self.v_white)):
                 var.set(look[k])
+            self.expose_legacy_auto(job.geom.crop)
             for v, value in zip(self.v_cut, job.material.tone_cuts):
                 v.set(value)
             self.proportions_var.set(provenance['keep_proportions'])
@@ -321,6 +332,7 @@ class App(PlaceMixin, LaserMixin):
 
     def _apply_orientation(self):
         self.picture = imaging.orient(self.picture_raw, self.rotate, self.mirror)
+        self.expose_legacy_auto()
         w, h = self.picture.size
         self.pic_info.configure(text=f"{self.picture_path.name}  -  {w} x {h} pixels"
                                      f"{'  (turned)' if self.rotate else ''}{'  (mirrored)' if self.mirror else ''}")
@@ -443,6 +455,8 @@ class App(PlaceMixin, LaserMixin):
 
     def _fill_tree(self):
         self.tree.delete(*self.tree.get_children())
+        if self._job_material_snapshot is not None and self._snapshot_preset_key is None:
+            self.tree.insert('', 'end', iid='job:material', text='Current job settings (' + self.mat.look + ')')
         for kind, title in GROUPS:
             items = [m for m in self.materials if m.badge == kind]
             if not items:
@@ -453,13 +467,19 @@ class App(PlaceMixin, LaserMixin):
 
     def _tree_pick(self, _=None):
         sel = self.tree.selection()
-        if sel and sel[0].startswith("m:") and not self._loading and sel[0][2:] != self.mat.key:
+        if sel and sel[0].startswith("m:") and not self._loading and (
+                sel[0][2:] != (self._snapshot_preset_key or self.mat.key) or
+                (self._job_material_snapshot is not None and self._snapshot_preset_key is None)):
             self.select_material(sel[0][2:])
 
     def select_material(self, key):
         m = next((x for x in self.materials if x.key == key), None)
         if m is None:
             return
+        if self._job_material_snapshot is not None:
+            self._job_material_snapshot = None
+            self._snapshot_preset_key = None
+            self._fill_tree()
         self.mat = self.base_mat = m
         self._loading = True
         try:
@@ -478,7 +498,8 @@ class App(PlaceMixin, LaserMixin):
 
     def _show_material(self):
         m = self.mat
-        self.m_name.configure(text=m.name)
+        self.m_name.configure(text=(self.base_mat.name if self._snapshot_preset_key else
+            'Current job settings (' + m.look + ')') if self._job_material_snapshot is not None else m.name)
         bg, fg = badge_colors(m.badge)
         self.m_badge.configure(text=f" {BADGES[m.badge]} ", background=bg, foreground=fg)
         self.m_summary.configure(text=m.summary)
@@ -522,7 +543,8 @@ class App(PlaceMixin, LaserMixin):
         self.thin_var.set(m.thin_pass)
         self.scan_var.set("Alternating rows" if m.scan_direction == "alternating" else "Left to right only")
         self.return_var.set(str(m.row_feed))
-        self.del_btn.state(["!disabled"] if m.badge == "MINE" else ["disabled"])
+        self.del_btn.state(["!disabled"] if m.badge == "MINE" and self._job_material_snapshot is None else ["disabled"])
+        self.sync_piece_options()
 
     def _customised(self, **changes):
         m = self.mat

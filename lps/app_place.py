@@ -39,8 +39,12 @@ class PlaceMixin:
                                       values=[PIECES[k]["name"] for k in PIECE_KEYS])
         self.piece_box.pack(anchor="w")
         self.piece_box.bind("<<ComboboxSelected>>", lambda e: self.set_piece(PIECE_KEYS[self.piece_box.current()]))
-        b = ttk.Button(c, text="Toy car (Hot Wheels)...", command=self.toy_car)
-        b.pack(anchor="w", pady=(6, 0))
+        wrap_label(c, 'These are physical size templates, not material settings. Margins and corner radius '
+                      'are separate measurements; saved measured sizes are kept exactly.',
+                   style='Small.TLabel').pack(anchor='w', pady=(4, 0))
+        self.car_options = ttk.Frame(c)
+        b = ttk.Button(self.car_options, text="Customize Hot Wheels...", command=self.toy_car)
+        b.pack(anchor="w")
         ToolTip(b, "Pick a body type and measure your car: the windshield and rear window become no-burn zones and "
                    "the start point goes on a spot you can find, like the windshield's front edge.")
         row = ttk.Frame(c)
@@ -69,11 +73,17 @@ class PlaceMixin:
             rb = ttk.Radiobutton(row2, text=label, value=value, variable=self.shape_var, command=self._piece_edited)
             rb.pack(side="left", padx=(0, 8))
             self.exact_disabled.append(rb)
-        ttk.Label(row2, text="Corner radius").pack(side="left", padx=(8, 4))
-        sp = ttk.Spinbox(row2, from_=0, to=50, increment=0.5, width=5, textvariable=self.corner_var,
+        self.slate_rounding = ttk.Frame(c)
+        self.rounding_var = tk.BooleanVar(value=False)
+        self.rounding_btn = ttk.Checkbutton(self.slate_rounding, text='Rounded corners (optional)',
+            variable=self.rounding_var, command=self._slate_rounding_toggled)
+        self.rounding_btn.pack(side='left')
+        ttk.Label(self.slate_rounding, text="Radius, mm").pack(side="left", padx=(8, 4))
+        sp = ttk.Spinbox(self.slate_rounding, from_=0, to=50, increment=0.5, width=5, textvariable=self.corner_var,
                          command=self._piece_edited)
         sp.pack(side="left")
         sp.bind("<FocusOut>", lambda e: self._piece_edited())
+        self.corner_spin = sp
         self.exact_disabled.append(sp)
         o = ttk.LabelFrame(f, text="Start point: where you'll put the laser head", style="Card.TLabelframe")
         o.pack(fill="x", pady=4)
@@ -272,11 +282,13 @@ class PlaceMixin:
         old, self._loading = self._loading, True
         try:
             pc = self.piece
-            self.piece_var.set(PIECES.get(self.piece_key, PIECES["custom"])["name"])
+            self.piece_var.set(f"Exact image {pc['w']:g} x {pc['h']:g} mm" if self.fit_var.get() == 'exact'
+                               else presets.piece_choice_label(pc))
             self.pw_var.set(f"{pc['w']:g}")
             self.ph_var.set(f"{pc['h']:g}")
             self.shape_var.set(pc.get("shape", "rect"))
             self.corner_var.set(f"{pc.get('corner', 0):g}")
+            self.rounding_var.set(pc.get('corner', 0) > 0)
             self.origin_var.set(pc.get("origin", "lower-left"))
             spot = pc.get("spot") or (pc["w"] / 2, pc["h"] / 2)
             for v, val in zip(self.spot_vars, spot):
@@ -293,7 +305,8 @@ class PlaceMixin:
                     self.ko_list.insert("end", f"Rectangle: from {k['x']:g}, {k['y']:g} mm, {k['w']:g} x {k['h']:g} mm")
             if self.art_w:
                 self.artw_var.set(f"{self.art_w:g}")
-            self.piece_in_lbl.configure(text=f"= {pc['w'] / 25.4:.2f} x {pc['h'] / 25.4:.2f} inches")
+            self.piece_in_lbl.configure(text=f"= {pc['w'] / 25.4:.2f} x {pc['h'] / 25.4:.2f} inches"
+                                       f"; corner radius {pc.get('corner', 0):g} mm")
             self.offset_lbl.configure(text=("Centred." if not (self.dx or self.dy) else
                                             f"Moved {abs(self.dx):g} mm {'right' if self.dx >= 0 else 'left'}, "
                                             f"{abs(self.dy):g} mm {'up' if self.dy >= 0 else 'down'} from centre."))
@@ -302,8 +315,27 @@ class PlaceMixin:
             self.artw_spin.state(["!disabled"] if self.fit_var.get() == "whole" else ["disabled"])
             for widget in self.exact_disabled:
                 widget.state(["disabled"] if self.exact_var.get() else ["!disabled"])
+            self.sync_piece_options()
         finally:
             self._loading = old
+
+    def sync_piece_options(self):
+        if not hasattr(self, 'car_options'):
+            return
+        car = self.piece_key == 'car' or bool(self.piece.get('car'))
+        slate = self.piece_key == 'coaster100' or (
+            self.piece_key == 'custom' and self.mat.look == 'slate' and self.piece.get('shape') == 'rect')
+        for frame, visible in ((self.car_options, car), (self.slate_rounding, slate and not car)):
+            if visible and not frame.winfo_manager():
+                frame.pack(anchor='w', pady=(6, 0))
+            elif not visible and frame.winfo_manager():
+                frame.pack_forget()
+        self.rounding_btn.state(['disabled'] if self.exact_var.get() else ['!disabled'])
+        self.corner_spin.state(['!disabled'] if self.rounding_var.get() and not self.exact_var.get() else ['disabled'])
+
+    def _slate_rounding_toggled(self):
+        self.corner_var.set(str(float(self.corner_var.get() or 0) or 8) if self.rounding_var.get() else '0')
+        self._piece_edited()
 
     def _piece_edited(self, axis=None):
         if self._loading:
@@ -483,20 +515,27 @@ class PlaceMixin:
         self.v_bright, self.v_contrast = tk.DoubleVar(), tk.DoubleVar()
         self.v_gamma, self.v_sharpen = tk.DoubleVar(value=1.0), tk.DoubleVar()
         self.v_auto, self.v_neg = tk.BooleanVar(), tk.BooleanVar()
-        ch = lambda v: self.changed()
+        self.v_black, self.v_white = tk.DoubleVar(value=0), tk.DoubleVar(value=255)
+        self.look_mode = wrap_label(c, 'Manual controls. Release a slider to update the preview.', style='Small.TLabel')
+        self.look_mode.pack(anchor='w')
+        ch = self._manual_look_changed
+        Slider(c, 'Black point', self.v_black, 0, 254, command=ch).pack(fill='x', pady=2)
+        Slider(c, 'White point', self.v_white, 1, 255, command=ch).pack(fill='x', pady=2)
         Slider(c, "Brightness", self.v_bright, -100, 100, command=ch,
-               tip="Lighter picture = less burning.").pack(fill="x", pady=2)
+               tip="Brightens the source photo before inversion. Negative determines whether light or dark parts burn.").pack(fill="x", pady=2)
         Slider(c, "Contrast", self.v_contrast, -100, 100, command=ch).pack(fill="x", pady=2)
         Slider(c, "Mid-tones (gamma)", self.v_gamma, 0.3, 3.0, fmt="{:.2f}", resolution=0.05, command=ch,
                tip="Above 1 lightens the middle tones; below 1 darkens them.").pack(fill="x", pady=2)
         Slider(c, "Detail (sharpen)", self.v_sharpen, 0, 150, command=ch,
                tip="Crisper edges. The proven pine recipe uses 70.").pack(fill="x", pady=2)
-        ttk.Checkbutton(c, text="Auto levels (stretch dull photos)", variable=self.v_auto,
-                        command=self.changed).pack(anchor="w", pady=(4, 0))
+        ttk.Button(c, text='Auto levels - set visible controls', command=self.auto_levels).pack(anchor='w', pady=(4, 0))
+        wrap_label(c, 'Auto sets the Black/White point sliders and resets brightness/contrast/gamma to neutral. '
+                      'Later edits are Manual. There is no hidden Auto correction left running.',
+                   style='Small.TLabel').pack(anchor='w', pady=(2, 0))
         ttk.Checkbutton(c, text="Negative - burn the light parts", variable=self.v_neg,
                         command=self.changed).pack(anchor="w")
         wrap_label(c, "Use Negative when the laser makes LIGHT marks (black anodized aluminum, slate, black "
-                      "acrylic). On wood, keep it off: burning the art's light lines keeps detail. Black-on-white "
+                      "acrylic). On wood, keep it off: burn the art's dark parts. Black-on-white "
                       "artwork meant to be marked as drawn (like the card IMPORT files) also needs it off.\n"
                       "LaserGRBL never inverts a .nc file: its preview just draws burned areas light on dark, so "
                       "wood jobs look like negatives there. Compare 'In LaserGRBL' with 'Looks like' above the "
@@ -563,7 +602,7 @@ class PlaceMixin:
                 yield from descendants(child)
         for frame in self.look_frames:
             for widget in descendants(frame):
-                if widget.winfo_class() not in ('TScale', 'TCheckbutton', 'TButton'):
+                if widget.winfo_class() not in ('TScale', 'TCheckbutton', 'TButton', 'TEntry'):
                     continue
                 if locked:
                     if widget not in self._locked_picture_widgets:
@@ -579,15 +618,51 @@ class PlaceMixin:
         self.v_gamma.set(m.gamma)
         self.v_sharpen.set(m.sharpen)
         self.v_auto.set(m.autolevel)
+        self.v_black.set(m.black_point)
+        self.v_white.set(m.white_point)
         prepared=bool(self.picture_path and self.picture_path.stem.upper().endswith('IMPORT'))
         self.v_neg.set(False if prepared else m.negative)
         for v, c in zip(self.v_cut, m.tone_cuts):
             v.set(c)
+        self.expose_legacy_auto()
+
+    def _manual_look_changed(self, *_):
+        if self._loading:
+            return
+        self.look_mode.configure(text='Manual: preview uses the visible controls. Release a slider to update.')
+        self.changed()
+
+    def auto_levels(self):
+        if self.picture is None:
+            self.say('Open an editable picture before using Auto levels.', 'warn')
+            return
+        from .planner import layout
+        crop = layout(self.picture.size, self.build_params()[1], self.mat.pitch).crop
+        self._set_visible_levels(crop, reset_manual=True)
+        self.changed()
+
+    def _set_visible_levels(self, crop=None, reset_manual=False):
+        lo, hi = imaging.auto_level_points(self.picture, crop)
+        self.v_black.set(lo)
+        self.v_white.set(hi)
+        self.v_auto.set(False)
+        if reset_manual:
+            self.v_bright.set(0); self.v_contrast.set(0); self.v_gamma.set(1)
+        self.look_mode.configure(text=f'Auto applied: Black {lo}, White {hi}. All adjustments are visible; '
+                                      'editing a slider switches to Manual.')
+
+    def expose_legacy_auto(self, crop=None):
+        if self.v_auto.get() and self.picture is not None:
+            if crop is None:
+                from .planner import layout
+                crop = layout(self.picture.size, self.build_params()[1], self.mat.pitch).crop
+            self._set_visible_levels(crop)
 
     def build_params(self):
         look = dict(brightness=round(self.v_bright.get()), contrast=round(self.v_contrast.get()),
                     gamma=round(self.v_gamma.get(), 2), sharpen=round(self.v_sharpen.get()),
-                    autolevel=self.v_auto.get(), negative=self.v_neg.get())
+                    autolevel=self.v_auto.get(), negative=self.v_neg.get(),
+                    black_point=round(self.v_black.get()), white_point=round(self.v_white.get()))
         mat = self.mat
         if mat.style == "layers":
             c = sorted((int(v.get()) for v in self.v_cut), reverse=True)
