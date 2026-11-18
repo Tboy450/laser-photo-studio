@@ -4,6 +4,8 @@ Reviewed November 17, 2026. This is a learning record and future-feature specifi
 
 ## Corrections to preserve
 
+- A separate later slate portrait prompted operator feedback that the background should have been darker and more contrasted. Treat this as a future comparison priority, not a new global slate recipe or permission to change an active photo. Keep dark fur/clothing and facial detail visible. Do not merge this later portrait with the Artemis case or infer its executed settings from a prepared job.
+
 - The selected composition contains the owner **with** Artemis and the title; a dog-only variation is a different design. Preserve recognizable likeness, background and untouched source variants.
 - Fine texture was reported to improve the pine result despite slight blur, and later slate observations supported retaining texture. Do not simplify fur, beard or background by default. Removing an artificial mockup rim is different from deleting real portrait detail.
 - Check eye orientation against the actual source. The intended relationship discussed for this composition was a darker brown iris on the viewer's left and a lighter blue iris on the right. A color mockup cannot prove burn density or the final pale-mark polarity.
@@ -27,11 +29,17 @@ Reviewed November 17, 2026. This is a learning record and future-feature specifi
 
 Checked against `lps/imaging.py::to_grid` and `tone_lut`, with the controls assembled in `lps/app_place.py`:
 
-1. Crop, then optional automatic levels (`cutoff=1`).
+1. Crop, then apply visible Black/White points. Auto now writes its 1% histogram endpoints into these controls, visibly neutralizes brightness/contrast/gamma, and leaves Detail/Negative unchanged. Legacy automatic-level metadata is still readable and converts to equivalent visible values.
 2. Apply contrast around gray 128 with multiplier `(100 + contrast) / 100`, then brightness and gamma, clipping to 0–255.
 3. Resize to the engraving grid using Lanczos.
 4. If sharpening is greater than zero, apply Pillow UnsharpMask with radius 1.2 grid pixels, integer percent equal to the sharpening value, and threshold 2.
 5. Apply Negative, then the selected planner style converts the grid into powered cells.
+
+## Optional darker-slate comparison
+
+Check offers **Compare darker slate tones…** only for editable slate images. It compares current settings with two modest alternatives using the existing visible level-point controls. It never saves a new material preset or changes a picture until the operator selects Apply. Cancel leaves the job and controls unchanged. An active run or a changed settings generation prevents applying a stale comparison.
+
+These are continuous-tone approximations before dithering, explicitly labeled, not physical-result predictions or a fix for the separate live preview/key incident. The adjustment is global, not background segmentation: dark fur and clothing can lose detail too. With Negative on, raising Black point reduces light marks in darker source tones. With Negative off, lowering White point reduces light marks without silently changing polarity. Each option shows the point/value it would apply. Power, speed, recipe, geometry, other image controls and original pixels stay unchanged. The normal rebuild and command verification still apply after selection.
 
 **Detail (sharpen) = 0** skips extra UnsharpMask; it does not remove source detail. Proposed values 5 and 10 mean UnsharpMask percent 5 and 10, not a calibrated 5% or 10% physical detail improvement. From contrast 0, contrast 5 means a 1.05 multiplier around mid-gray before clipping; it is not 5% more laser power. These controls change the processed engraving image, not merely the decorative preview. Keep automatic levels, brightness, gamma, dither and polarity recorded when comparing them.
 

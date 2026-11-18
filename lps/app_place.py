@@ -518,6 +518,7 @@ class PlaceMixin:
         self.v_black, self.v_white = tk.DoubleVar(value=0), tk.DoubleVar(value=255)
         self.look_mode = wrap_label(c, 'Manual controls. Release a slider to update the preview.', style='Small.TLabel')
         self.look_mode.pack(anchor='w')
+        self.slate_compare_btn = ttk.Button(c, text='Compare darker slate tones...', command=self.compare_slate_tones)
         ch = self._manual_look_changed
         Slider(c, 'Black point', self.v_black, 0, 254, command=ch).pack(fill='x', pady=2)
         Slider(c, 'White point', self.v_white, 1, 255, command=ch).pack(fill='x', pady=2)
@@ -585,6 +586,11 @@ class PlaceMixin:
         if not hasattr(self, 'look_frames'):
             return
         locked = bool(self.gfile or self.picture is None)
+        slate = self.mat.look == 'slate' and not locked and not self.grid_spec
+        if slate and not self.slate_compare_btn.winfo_manager():
+            self.slate_compare_btn.pack(anchor='w', before=self.look_mode, pady=(0, 5))
+        elif not slate:
+            self.slate_compare_btn.pack_forget()
         if self.gfile:
             message = ('G-code check only: movement/power are already encoded. Picture, material and size controls '
                        'cannot edit these commands. Open saved Studio picture job or the original picture in step 1.')
@@ -631,6 +637,59 @@ class PlaceMixin:
             return
         self.look_mode.configure(text='Manual: preview uses the visible controls. Release a slider to update.')
         self.changed()
+
+    def apply_slate_comparison(self, generation, value, point='black_point'):
+        if point not in ('black_point','white_point'):
+            return False
+        if (generation != self.gen or self.mat.look != 'slate' or self.picture is None or self.gfile
+                or self.grid_spec or jobs.active_runner() or self.perim_running):
+            self.say('Settings changed or a job is active. Reopen the comparison when ready.', 'warn')
+            return False
+        (self.v_black if point == 'black_point' else self.v_white).set(value)
+        self._manual_look_changed()
+        return True
+
+    def compare_slate_tones(self):
+        if (self.mat.look != 'slate' or self.picture is None or self.gfile or self.grid_spec
+                or self.layout_pending or self.layout_error or jobs.active_runner() or self.perim_running):
+            self.say('Open an editable slate photo and finish active operations before comparing.', 'warn')
+            return
+        from . import slate_tones
+        from .planner import layout
+        from PIL import ImageTk
+        try:
+            material, placement, look = self.build_params()
+            crop = layout(self.picture.size, placement, material.pitch).crop
+            choices = slate_tones.options(look)
+            previews = [slate_tones.preview(self.picture, values, crop) for _, values in choices]
+        except (ValueError, tk.TclError) as exc:
+            self.say(str(exc), 'warn')
+            return
+        generation = self.gen
+        point = 'black_point' if look['negative'] else 'white_point'
+        point_label = 'Black point' if point == 'black_point' else 'White point'
+        win = tk.Toplevel(self.root)
+        win.title('Compare slate photo shadows')
+        win.transient(self.root)
+        win.resizable(False, False)
+        outer = ttk.Frame(win, padding=14); outer.pack(fill='both', expand=True)
+        wrap_label(outer, 'Tone comparison before dithering - not a physical-result prediction. Darker shadows affect '
+            'the whole photo, including dark fur and clothing. Background-only editing is not applied.', width=750).pack(fill='x')
+        tiles = ttk.Frame(outer); tiles.pack(pady=10)
+        selected = tk.IntVar(win, value=0)
+        win._tone_images = []
+        for i, ((title, values), im) in enumerate(zip(choices, previews)):
+            tile = ttk.Frame(tiles, padding=5); tile.grid(row=0, column=i, sticky='n')
+            photo = ImageTk.PhotoImage(im, master=win); win._tone_images.append(photo)
+            ttk.Label(tile, image=photo).pack()
+            ttk.Radiobutton(tile, text=f'{title}\n{point_label} {values.get(point, 0 if point == "black_point" else 255)}',
+                variable=selected, value=i).pack(anchor='w', pady=(5, 0))
+        buttons = ttk.Frame(outer); buttons.pack(fill='x')
+        def apply():
+            if selected.get() == 0 or self.apply_slate_comparison(generation, choices[selected.get()][1][point], point):
+                win.destroy()
+        ttk.Button(buttons, text='Keep current / Cancel', command=win.destroy).pack(side='left')
+        ttk.Button(buttons, text='Apply selected to visible ' + point_label, command=apply).pack(side='right')
 
     def auto_levels(self):
         if self.picture is None:
