@@ -26,6 +26,7 @@ PHASE_TEXT = dict(starting="Starting", connecting="Connecting", running="Engravi
                   stopped="Stopped - position kept", dropout="USB dropped out", fault="Stopped by a problem")
 CHECK_LABELS = {
     "travel": "Total travel perimeter",
+    "travel_lit": "Total travel perimeter",
     "image": "Image perimeter",
     "sticker": "Sticker outline",
     "burn": "Full burn trace",
@@ -33,6 +34,9 @@ CHECK_LABELS = {
 }
 CHECK_HELP = {
     "travel": "Laser off. Frames the full travel envelope, including run-ups. It can cross no-burn zones.",
+    "travel_lit": "1% beam around the full travel envelope, including run-ups. This is the travel rectangle, "
+                  "not the image or round lid outline; it can extend past the piece and cross no-burn zones. "
+                  "Approach and return to job zero are laser off.",
     "image": "1% beam. Frames the placed image, including blank space. On a round piece it follows the usable face.",
     "sticker": "1% beam. Traces the outside edges of the artwork islands. Transfers between islands are laser off.",
     "burn": "2% beam on the planned marking strokes, beam off for travel. Use a test piece if the surface may mark. "
@@ -178,7 +182,7 @@ class LaserMixin:
             ToolTip(b, CHECK_HELP[mode])
             self.check_buttons[mode] = b
         self.btn_stop_check = ttk.Button(br, text="Stop check", command=self.stop_perimeter)
-        self.btn_stop_check.grid(row=2, column=1, sticky="w")
+        self.btn_stop_check.grid(row=3, column=0, columnspan=2, sticky="w")
         self.box_lbl = wrap_label(p, "", style="H2.TLabel")
         self.box_lbl.pack(anchor="w", pady=(6, 0))
         self.perim_lbl = wrap_label(p, "", style="Muted.TLabel")
@@ -996,7 +1000,7 @@ class LaserMixin:
                 self._sticker_source = source
                 self._sticker_paths = outlines.sticker_paths(source)
             return self._sticker_paths
-        if mode == "travel":
+        if mode in ("travel", "travel_lit"):
             if self.gfile:
                 bounds = self.gfile.get("travel_bbox")
             else:
@@ -1059,7 +1063,7 @@ class LaserMixin:
                            shutdown=self.worker.quit,
                            progress=self.worker.trace_progress,
                            status=lambda st: events.put(("status", st)),
-                           illuminate=mode in ("image", "sticker"), moves=moves, move_count=count,
+                           illuminate=mode in ("travel_lit", "image", "sticker"), moves=moves, move_count=count,
                            live_trace=mode == "burn")
 
     def stop_perimeter(self):

@@ -33,6 +33,7 @@ Group the check buttons together. Show the path each button will check in the pr
 | Button | Path to check |
 | --- | --- |
 | Total travel perimeter | Frame the full programmed travel envelope, including laser-off run-ups and other travel that extends beyond the art. |
+| Total travel perimeter (1%) | Same full travel rectangle with a 1% visible beam along its edges. Approach and return to zero remain laser off. This is not the round lid or image outline; it may extend past the piece. |
 | Image perimeter | Frame the image's full placement box or its selected general shape, such as a circle. Include blank space inside that boundary. |
 | Sticker outline | Trace the outside silhouette of the visible artwork, following its shape and leaving interior holes and strokes out of this check. |
 | Full burn trace | Use 2% on the planned marking strokes in job order, with the beam off during travel. |

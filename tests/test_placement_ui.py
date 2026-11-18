@@ -138,6 +138,47 @@ class PlacementUI(unittest.TestCase):
         planner.compile_job(a.job)
         self.assertEqual([p.commands for p in a.job.passes],original)
 
+    def test_full_travel_has_separate_visible_and_off_checks(self):
+        a=self.app
+        planner.compile_job(a.job)
+        from lps import verify
+        a.report=verify.verify_job(a.job);a.compiled_gen=a.gen
+        paths=a.check_paths('travel_lit')
+        self.assertEqual(paths,a.check_paths('travel'))
+        self.assertNotEqual(paths,a.check_paths('image'))
+        self.assertEqual(a.check_buttons['travel_lit'].cget('text'),'Total travel perimeter (1%)')
+        self.assertEqual(a.check_buttons['travel'].cget('text'),'Total travel perimeter (off)')
+        self.assertNotEqual(a.btn_stop_check.grid_info()['row'],a.check_buttons['dry'].grid_info()['row'])
+        a.check_mode='travel_lit'
+        self.assertIn('1% beam',str(a.preview._overlay_items()))
+        # Inspect the worker request without commanding even a simulated controller.
+        from types import SimpleNamespace
+        worker=SimpleNamespace(cancel=None,quit=None,trace_progress=None,submit=lambda *args,**kwargs:sent.append((args,kwargs)))
+        sent=[]
+        a.worker=worker;a.origin_set=True
+        a.last_status=SimpleNamespace(state='Idle',wpos=(0.,0.,0.),laser_on=False)
+        try:
+            with patch.object(a,'need_connection',return_value=True),patch.object(a,'status_stale',return_value=False), \
+                 patch.object(a,'refresh_laser_page'),patch.object(a,'save_current_job'), \
+                 patch.object(a,'setup_context',return_value={}),patch('lps.app_laser.messagebox.askokcancel',return_value=True):
+                for mode,lit in [('travel_lit',True),('travel',False)]:
+                    a.perim_running=False
+                    a.run_perimeter(mode)
+                    args,kw=sent[-1]
+                    self.assertEqual(args[2],paths)
+                    self.assertEqual(kw['illuminate'],lit)
+                    self.assertIsNone(kw['moves'])
+                    self.assertFalse(kw['live_trace'])
+        finally:
+            a.worker=None;a.perim_running=False;a.last_status=None
+
+    def test_visible_travel_external_file_uses_full_envelope_and_origin(self):
+        a=self.app
+        a.gfile=dict(linear_xy=True,travel_bbox=(5.,6.,20.,25.),picture_bbox=(7.,8.,18.,23.))
+        want=[[(0,0),(20,0),(20,25),(0,25),(0,0)]]
+        self.assertEqual(a.check_paths('travel_lit'),want)
+        self.assertEqual(a.check_paths('travel'),want)
+
     def test_clearances_follow_origin_nudge_and_saved_setup(self):
         from lps import verify
         a = self.app

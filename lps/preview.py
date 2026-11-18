@@ -606,6 +606,8 @@ class PreviewPanel(ttk.Frame):
             items.append(("line", COLORS["art"], "image perimeter" if app.check_mode == "image" else "sticker outline"))
         elif app.check_mode == "travel":
             items.append(("dash", COLORS["travel"], "total travel perimeter, beam off"))
+        elif app.check_mode == "travel_lit":
+            items.append(("line", COLORS["art"], "total travel perimeter, 1% beam; approach/return off"))
         elif app.check_mode in ("burn", "dry"):
             marks = "marking strokes, 2% during trace" if app.check_mode == "burn" else "planned marking strokes, beam off"
             items.extend((("line", COLORS["art"], marks),
