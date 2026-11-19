@@ -26,7 +26,9 @@ class GapMoves(unittest.TestCase):
         self.assertEqual(planner.blank_gap_moves(0, 10, 140, 6000, guard=4, min_fast=2)[0][0], 4)
         self.assertEqual(planner.blank_gap_moves(0, 10, 140, 6000, guard=2, min_fast=7), [(10, 140)])
         m = presets.BUILTIN[0]
-        self.assertEqual((m.fast_blank_gaps, m.blank_guard_mm, m.blank_min_fast_mm), (False, 2.0, 2.0))
+        self.assertEqual((m.fast_blank_gaps, m.blank_feed, m.blank_guard_mm, m.blank_min_fast_mm), (False, 6000, 2.0, 2.0))
+        with self.assertRaises(ValueError):
+            m.copy(blank_feed=7000)
         with self.assertRaises(ValueError):
             m.copy(blank_guard_mm=-1)
 
@@ -50,13 +52,31 @@ class GapJobs(BlankGaps):
         good = list(cmds)
         no_zone = good[:k] + [good[k + 1].replace(' F140 ', ' F3000 ')] + good[k + 2:]   # fast right up to the mark
         self.assertFalse(verify.verify_pass(job, job.passes[0], no_zone)['ok'])
-        m = job.material.copy(row_feed=6000)
+        m = job.material.copy(blank_feed=6000)
         cmds4 = ['G1 X0.000 Y1.000 F140 S800', 'G1 X2.000 Y1.000 F140 S0', 'G1 X6.000 Y1.000 F6000 S0',
                  'G1 X8.000 Y1.000 F140 S0']
         self.assertIn("can't be reached and braked", verify._fast_gap_problem(m, cmds4, 2, 2.0, 6.0, 140, 6000))
         self.assertIsNone(verify._fast_gap_problem(m, cmds4, 2, 2.0, 6.0, 140, 2686))
         job.material = job.material.copy(fast_blank_gaps=False)  # fast moves without the setting: refused
         self.assertFalse(verify.verify_pass(job, job.passes[0], good)['ok'])
+
+
+class SeparateBlankSpeed(BlankGaps):
+    def test_blank_speed_is_its_own_setting_not_the_rewind(self):
+        _, a, _ = self.build(True, travel=3000)
+        job = a
+        m = job.material.copy(row_feed=3000, blank_feed=6000)
+        job.material = m
+        planner.compile_job(job)
+        cmds = job.passes[0].commands
+        mids = {int(c.split()[3][1:]) for c in cmds if c.startswith('G1') and c.endswith(' S0')
+                and int(c.split()[3][1:]) > 140}
+        self.assertGreater(max(mids), 3000)                         # gaps run past the rewind speed (braking-capped)...
+        rewinds = [c for i, c in enumerate(cmds) if i + 1 < len(cmds) and cmds[i + 1] == 'M4 S0']
+        self.assertTrue(all(' F3000 ' in c for c in rewinds))       # ...while row rewinds keep their own 3000
+        self.assertTrue(verify.verify_job(job)['ok'])
+        job.material = m.copy(blank_feed=4000)                    # a lower blank limit must refuse F6000 moves
+        self.assertFalse(verify.verify_pass(job, job.passes[0], cmds)['ok'])
 
 
 if __name__ == '__main__':

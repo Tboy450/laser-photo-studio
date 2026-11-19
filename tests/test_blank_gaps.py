@@ -13,7 +13,7 @@ class BlankGaps(unittest.TestCase):
         d.rectangle((10,10,25,150),fill=0);d.rectangle((210,10,225,150),fill=0)
         mat=presets.BUILTIN[0].copy(style='threshold',pitch=.1,feed=feed,power=800,
             interlace=1,passes=1,thin_pass=False,scan_direction=direction,row_feed=travel,
-            runup=1,fast_blank_gaps=fast)
+            runup=1,fast_blank_gaps=fast,blank_feed=travel)
         piece=dict(name='test',w=24.,h=16.,margin=0.,corner=0.,holes=[],origin='center')
         placement=planner.Placement(piece,art_w=24.)
         look=dict(brightness=0,contrast=0,gamma=1,sharpen=0,autolevel=False,negative=False,black_point=0,white_point=255)

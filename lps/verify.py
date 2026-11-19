@@ -265,8 +265,8 @@ def _fast_gap_problem(m, cmds, k, x_from, x_to, burn_f, f):
     from .planner import ACCEL
     if not m.fast_blank_gaps:
         return "is faster than engraving, but fast blank gaps are off"
-    if f > int(m.row_feed):
-        return f"at F{f} is faster than the return speed F{m.row_feed}"
+    if f > int(m.blank_feed):
+        return f"at F{f} is faster than the Blank travel speed F{m.blank_feed}"
     guard, length = float(m.blank_guard_mm), abs(x_to - x_from)
     if length < float(m.blank_min_fast_mm) - 0.0011:
         return f"fast part {length:.3f} mm is shorter than the {m.blank_min_fast_mm:g} mm minimum"

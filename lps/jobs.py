@@ -91,9 +91,10 @@ def header(job: JobPlan, title: str) -> list:
             "; Scan direction: " + ("alternating rows" if m.scan_direction == "alternating" else
                                      "left to right only; returns with laser off"),
             f"; Laser-off row return: {m.row_feed} mm/min; feature hops: {m.hop_feed} mm/min",
-            "; Fast blank scan-line gaps: " + (f"ON (experimental); {m.blank_guard_mm:g} mm slow zone each side at "
-                                                f"engraving speed, fast part >= {m.blank_min_fast_mm:g} mm, capped to "
-                                                f"what {int(m.row_feed)} mm/min can brake from at 500 mm/s2"
+            "; Fast blank scan-line gaps: " + (f"ON (experimental); Blank travel speed {int(m.blank_feed)} mm/min; "
+                                                f"{m.blank_guard_mm:g} mm slow zone each side at engraving speed; "
+                                                f"design guard: fast part >= {m.blank_min_fast_mm:g} mm, capped to what "
+                                                f"the head can brake from at 500 mm/s2 ($120/$121)"
                                                 if m.fast_blank_gaps else "OFF"),
             "; M4 dynamic power, S1000 = 100% ($30=1000). Laser-off travel is G1 S0. Never home this machine."]
 
@@ -149,7 +150,7 @@ def readme_text(job: JobPlan, negative: bool) -> str:
 Material: {m.name} [{BADGES.get(m.badge, m.badge)}]   Style: {style}
 Scan direction: {'Alternating rows' if m.scan_direction == 'alternating' else 'Left to right only (laser-off returns)'}
 Laser-off row return: {m.row_feed} mm/min; feature hops: {m.hop_feed} mm/min
-Fast blank scan-line gaps: {(f'ON (experimental): {m.blank_guard_mm:g} mm laser-off slow zone at engraving speed on each side of a gap; the middle speeds up only if it is at least {m.blank_min_fast_mm:g} mm, capped so the head can brake back before the next mark' if m.fast_blank_gaps else 'OFF')}
+Fast blank scan-line gaps: {(f'ON (experimental): Blank travel speed {int(m.blank_feed)} mm/min, separate from the {m.row_feed} mm/min rewind; {m.blank_guard_mm:g} mm laser-off slow zone at engraving speed on each side of a gap (your offset); design guard: the middle speeds up only if it is at least {m.blank_min_fast_mm:g} mm, capped so the head can brake back before the next mark at 500 mm/s2' if m.fast_blank_gaps else 'OFF')}
 Art: {g.art_w:.1f} x {g.art_h:.1f} mm at X {g.x0:.2f}..{g.x1:.2f}, Y {g.y0:.2f}..{g.yt:.2f} mm from the start point
 Start point (origin, work X0 Y0): {origin_text(job.piece)}
 {neg}

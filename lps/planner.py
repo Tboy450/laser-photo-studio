@@ -438,7 +438,8 @@ def blank_gap_moves(x0: float, x1: float, burn_feed: int, fast_feed: int, guard:
 
 def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_feed: int, runup: float,
                     row_feeds=None, accel: float = ACCEL, *, bidirectional: bool = True,
-                    fast_blank_gaps: bool = False, blank_guard: float = 2.0, blank_min_fast: float = 2.0) -> list:
+                    fast_blank_gaps: bool = False, blank_guard: float = 2.0, blank_min_fast: float = 2.0,
+                    blank_feed: int | None = None) -> list:
     cmds = []
     flip = False
     for r in order if order is not None else range(cells.shape[0]):
@@ -464,7 +465,8 @@ def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_fee
         for e, s in zip(ends, pw):
             if fast_blank_gaps and s == 0:
                 cmds += [f"G1 X{fmt(xe)} Y{y} F{fe} S0"
-                         for xe, fe in blank_gap_moves(previous, e, f, row_feed, blank_guard, blank_min_fast, accel)]
+                         for xe, fe in blank_gap_moves(previous, e, f, blank_feed or row_feed, blank_guard,
+                                                       blank_min_fast, accel)]
             else:
                 cmds.append(f"G1 X{fmt(e)} Y{y} F{f} S{s}")
             previous = e
@@ -683,7 +685,8 @@ def compile_job(job: JobPlan, start=(0.0, 0.0)) -> JobPlan:
         else:
             p.commands = raster_commands(p.cells, p.order, job.geom, p.feed, m.row_feed, m.runup, p.row_feeds,
                                          bidirectional=bidirectional, fast_blank_gaps=m.fast_blank_gaps,
-                                         blank_guard=float(m.blank_guard_mm), blank_min_fast=float(m.blank_min_fast_mm))
+                                         blank_guard=float(m.blank_guard_mm), blank_min_fast=float(m.blank_min_fast_mm),
+                                         blank_feed=int(m.blank_feed))
         p.est_s = estimate_seconds(p.commands)
         for c in reversed(p.commands):
             if c.startswith("G1"):

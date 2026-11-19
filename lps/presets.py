@@ -138,6 +138,7 @@ class Material:
     based_on: str = ""              # my presets: the built-in preset they were saved from (for its photos)
     scan_direction: str = "alternating"  # forward = every marked row left to right; return moves stay off
     fast_blank_gaps: bool = False   # opt-in: long internal S0 gaps travel faster (see blank_guard_mm)
+    blank_feed: int = 6000          # fast gaps: Blank travel speed, its own setting (not the rewind/return speed)
     blank_guard_mm: float = 2.0     # fast gaps: laser-off distance kept at engraving speed on EACH side of a gap
     blank_min_fast_mm: float = 2.0  # fast gaps: shortest fast middle worth it; shorter gaps stay at engraving speed
 
@@ -146,6 +147,8 @@ class Material:
             raise ValueError("Scan direction must be alternating or forward.")
         if type(self.fast_blank_gaps) is not bool:
             raise ValueError("Fast blank gaps must be true or false.")
+        if not 1 <= int(self.blank_feed) <= 6000:
+            raise ValueError("Blank travel speed must be 1-6000 mm/min (6000 is the controller's maximum, $110).")
         if not 0.0 <= float(self.blank_guard_mm) <= 20.0:
             raise ValueError("Fast blank gaps: the slow zone each side must be 0-20 mm.")
         if not 0.0 <= float(self.blank_min_fast_mm) <= 100.0:

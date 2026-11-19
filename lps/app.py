@@ -434,20 +434,24 @@ class App(PlaceMixin, LaserMixin):
                         variable=self.fast_gaps_var, command=self._fast_gaps_changed).pack(anchor="w")
         gaps = ttk.Frame(adv)
         gaps.pack(anchor="w")
-        self.gap_guard_var, self.gap_min_var = tk.StringVar(), tk.StringVar()
-        for col, (label, var, key) in enumerate((("Slow zone each side (mm)", self.gap_guard_var, "blank_guard_mm"),
-                                                 ("Shortest fast part (mm)", self.gap_min_var, "blank_min_fast_mm"))):
-            ttk.Label(gaps, text=label).grid(row=0, column=2 * col, sticky="w", padx=(0, 4))
-            sp = ttk.Spinbox(gaps, from_=0, to=20 if col == 0 else 100, increment=0.5, textvariable=var, width=5)
-            sp.grid(row=0, column=2 * col + 1, padx=(0, 12))
+        self.gap_feed_var, self.gap_guard_var, self.gap_min_var = tk.StringVar(), tk.StringVar(), tk.StringVar()
+        for col, (label, var, key, hi, inc) in enumerate((
+                ("Blank travel speed (mm/min)", self.gap_feed_var, "blank_feed", 6000, 500),
+                ("Slow-down / speed-up offset each side (mm)", self.gap_guard_var, "blank_guard_mm", 20, 0.5),
+                ("Design guard: shortest fast part (mm)", self.gap_min_var, "blank_min_fast_mm", 100, 0.5))):
+            ttk.Label(gaps, text=label).grid(row=col, column=0, sticky="w", padx=(0, 4))
+            sp = ttk.Spinbox(gaps, from_=0 if col else 1, to=hi, increment=inc, textvariable=var, width=6)
+            sp.grid(row=col, column=1, sticky="w", padx=(0, 12))
             for ev in ("<Return>", "<FocusOut>"):
                 sp.bind(ev, lambda e, k=key, v=var: self._gap_setting_changed(k, v))
-        wrap_label(adv, "Scan-line passes only. Inside a row, each laser-off gap keeps the slow zone at engraving "
-                   "speed on both sides, so the head slows down before the next mark and speeds up after the last "
-                   "one. Only the middle travels faster: at most the return speed, and no faster than the head can "
-                   "brake from in that length (500 mm/s2). If the middle is shorter than 'Shortest fast part', the "
-                   "whole gap stays at engraving speed. Marks keep their speed and power. Off by default; test on "
-                   "scrap first.", style="Small.TLabel").pack(anchor="w", pady=(2, 4))
+        wrap_label(adv, "Scan-line passes only. Blank travel speed is its own setting, separate from the rewind "
+                   "above. Inside a row, each laser-off gap keeps the offset at engraving speed on both sides, so "
+                   "the head slows down before the next mark and speeds up after the last one. Only the middle "
+                   "travels at the blank travel speed. Design guard (not a setting you asked for, a safety rule): "
+                   "the middle is capped at what the head can brake from in that length at the controller's "
+                   "500 mm/s2, and if it's shorter than the shortest fast part, the whole gap stays at engraving "
+                   "speed. Marks keep their speed and power. Off by default; test on scrap first.",
+                   style="Small.TLabel").pack(anchor="w", pady=(2, 4))
         wrap_label(adv, "Left to right only returns with the laser off. It takes longer and helps compare "
                    "direction-dependent alignment; it does not increase resolution.",
                    style="Small.TLabel").pack(anchor="w", pady=(2, 6))
@@ -563,6 +567,7 @@ class App(PlaceMixin, LaserMixin):
         self.scan_var.set("Alternating rows" if m.scan_direction == "alternating" else "Left to right only")
         self.return_var.set(str(m.row_feed))
         self.fast_gaps_var.set(m.fast_blank_gaps)
+        self.gap_feed_var.set(str(m.blank_feed))
         self.gap_guard_var.set(f"{m.blank_guard_mm:g}")
         self.gap_min_var.set(f"{m.blank_min_fast_mm:g}")
         self.del_btn.state(["!disabled"] if m.badge == "MINE" and self._job_material_snapshot is None else ["disabled"])
@@ -637,7 +642,7 @@ class App(PlaceMixin, LaserMixin):
         if self._loading:
             return
         try:
-            value = round(float(var.get()), 2)
+            value = int(round(float(var.get()))) if key == "blank_feed" else round(float(var.get()), 2)
             self.mat.copy(**{key: value})                     # range check
         except ValueError as e:
             self.say(f"Fast blank gaps: {e}" if "mm" in str(e) else "Fast blank gaps: enter a number in mm.", "warn")
