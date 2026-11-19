@@ -443,6 +443,8 @@ def piece_choice_label(piece: dict) -> str:
         if key != 'custom' and geometry(candidate) == geometry(piece):
             return candidate['name']
     w, h = piece['w'], piece['h']
+    if piece.get('outline'):
+        return f'Shaped piece {w:g} x {h:g} mm (own outline)'
     shape = 'circle' if piece.get('shape') == 'circle' else 'square' if w == h else 'rectangle'
     return f'Measured {shape} {w:g} x {h:g} mm'
 
@@ -460,6 +462,9 @@ def piece_explanation(piece: dict, fit: str = "whole", loaded_job: bool = False)
         piece.get("origin"), piece.get("origin", "?"))
     what = (f"Template '{PIECES[key]['name']}'" if key else "Measured size (matches no template exactly)")
     lines = [f"{what}: {piece['w']:g} x {piece['h']:g} mm {shape}, {usable}, job zero at {zero}."]
+    if piece.get("outline"):
+        lines.append(f"Shaped piece: marks stay inside its own {len(piece['outline'])}-point outline, and Image "
+                     "perimeter traces that outline.")
     if fit == "exact":
         lines.append("Exact image size is on: the box is the image itself, margins are ignored.")
     if loaded_job:

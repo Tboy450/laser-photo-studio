@@ -1010,6 +1010,9 @@ class LaserMixin:
                 return [outlines.box_path((min(0, x0), min(0, y0), max(0, x1), max(0, y1)))]
         if mode == "image":
             bounds = self.gfile.get("picture_bbox") if self.gfile else self.picture_box() if self.job else None
+            if bounds and not self.gfile and self.job.piece.get("outline"):
+                # a shaped piece (cross, shield...): trace its own outline, not the picture's box
+                return [planner.outline_path(self.job.piece, self.job.geom.piece_rect[:2])]
             if bounds:
                 if not self.gfile and self.job.piece.get("shape") == "circle":
                     g = self.job.geom

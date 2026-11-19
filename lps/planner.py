@@ -168,6 +168,8 @@ def allowed_cells(geom: Geometry, piece: dict) -> np.ndarray:
                          (np.sign(X - ccx) == np.sign(ccx - (ux0 + ux1) / 2)) & \
                          (np.sign(Y - ccy) == np.sign(ccy - (uy0 + uy1) / 2))
                 ok &= ~(corner & ((X - ccx) ** 2 + (Y - ccy) ** 2 > rc * rc))
+    if piece.get("outline"):
+        ok &= outline_mask(geom, piece)
     for k in piece.get("keepouts", []):
         kx, ky = px0 + float(k["x"]), py0 + float(k["y"])
         if k.get("kind") == "circle":
@@ -176,6 +178,26 @@ def allowed_cells(geom: Geometry, piece: dict) -> np.ndarray:
             w, h = float(k.get("w", 0)), float(k.get("h", 0))
             ok &= ~((X >= kx) & (X <= kx + w) & (Y >= ky) & (Y <= ky + h))
     return ok
+
+
+def outline_path(piece: dict, piece_rect_xy) -> list:
+    """A shaped piece's outline (piece mm from its lower-left corner) in work mm, closed."""
+    px0, py0 = piece_rect_xy
+    pts = [(round(px0 + float(x), 3), round(py0 + float(y), 3)) for x, y in piece["outline"]]
+    return pts + pts[:1] if pts and pts[0] != pts[-1] else pts
+
+
+def outline_mask(geom: Geometry, piece: dict) -> np.ndarray:
+    """Cells whose centre is inside the piece's outline polygon (a cross, a shield...)."""
+    from PIL import ImageDraw
+    px0, py0 = geom.piece_rect[0], geom.piece_rect[1]
+    poly = [((px0 + float(x) - geom.x0) / geom.x_pitch - 0.5, (geom.yt - (py0 + float(y))) / geom.y_pitch - 0.5)
+            for x, y in piece["outline"]]
+    im = Image.new("1", (geom.cols, geom.rows), 0)
+    d = ImageDraw.Draw(im)
+    d.polygon(poly, fill=1)
+    d.line(poly + poly[:1], fill=0, width=1)        # conservative: cells the edge touches are left unburned
+    return np.asarray(im, dtype=bool)
 
 
 # --------------------------------------------------------------------------------------------- dot styles

@@ -21,7 +21,7 @@ import json
 import math
 from dataclasses import dataclass, field
 
-from . import planner
+from . import imaging, planner
 
 PITCH = 50.8                    # mm, flush 2 in tins centre to centre (editable)
 CONTROLLER_TRAVEL = (420.0, 400.0)   # $130 / $131 read from this controller in the job logs (mm)
@@ -52,6 +52,7 @@ class Slot:
     dy: float = 0.0
     enabled: bool = True
     done: bool = False              # burned in this layout run; a done tin can't be nudged
+    rot: int = 0                    # this tin's own picture turn, quarter turns (separate from the scan direction)
 
 
 @dataclass
@@ -64,6 +65,7 @@ class Layout:
     zero: str = "slot1"
     group_dx: float = 0.0           # whole-layout shift, separate from every tin's own nudge
     group_dy: float = 0.0
+    flip_alternate_rows: bool = False   # turn every second row's pictures half way (carton rows facing each other)
     slots: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -92,6 +94,12 @@ class Layout:
         s = self.slots[i]
         bx, by = self.base(i)
         return round(bx + self.group_dx + s.dx, 3), round(by + self.group_dy + s.dy, 3)
+
+    def rotation(self, i: int) -> int:
+        """Quarter turns for tin i's picture: its own turn, plus a half turn on alternate rows if flipped.
+        This only turns the picture; rows are still burned the scan direction the material says."""
+        s = self.slots[i]
+        return (s.rot + (2 if self.flip_alternate_rows and s.row % 2 else 0)) % 4
 
     def enabled(self) -> list:
         return [i for i, s in enumerate(self.slots) if s.enabled]
@@ -155,6 +163,20 @@ def envelope(layout: Layout, art_d: float, runup: float, indices=None) -> tuple:
     return (round(min(xs) - h - runup, 3), round(min(ys) - h, 3), round(max(xs) + h + runup, 3), round(max(ys) + h, 3))
 
 
+def fit_text(r: dict, zero: str = "slot1") -> str:
+    """The fit report in plain words."""
+    f = r["free_from_zero"]
+    where = "tin 1's centre" if zero == "slot1" else "the layout's centre"
+    parts = [f"{f[k]:.0f} mm {name}" for k, name in (("right", "to the right"), ("left", "to the left"),
+                                                    ("up", "up"), ("down", "down")) if f[k] >= 1]
+    head = (f"The layout is about {r['width']:.0f} x {r['height']:.0f} mm including run-ups. "
+            + ("That's inside this controller's travel (" if r["fits_travel"] else "That's MORE than this controller's travel (")
+            + f"{r['travel'][0]:.0f} x {r['travel'][1]:.0f} mm, $130/$131). ")
+    need = f"With job zero at {where}, the head needs about " + ", ".join(parts) + " of free travel. " if parts else ""
+    return head + need + ("Confirm it with the laser-off Total travel perimeter before the first burn, and check "
+                          "the cords reach the far tins.")
+
+
 def fit_report(layout: Layout, art_d: float, runup: float, travel=CONTROLLER_TRAVEL) -> dict:
     """Does the layout fit the controller's travel? It can only say what free travel job zero needs on each side:
     the app never homes, so where zero sits on the machine is unknown until the laser-off travel frame is run."""
@@ -178,15 +200,27 @@ def shift_job(job: planner.JobPlan, dx: float, dy: float) -> planner.JobPlan:
     return job
 
 
-def slot_job(picture, material, layout: Layout, i: int, piece: dict, art_w: float, look: dict | None = None):
-    """Tin i's own checked job, centred on its slot in the shared job-zero frame."""
+def tin_piece(layout: Layout, i: int, piece: dict) -> dict:
+    """Tin i as an ordinary Studio piece: the lid, with job zero as a picked spot outside it, so the lid sits at
+    its slot and the layout's one job zero is kept. Editable like any other piece; nothing is injected."""
     if not layout.slots[i].enabled:
         raise ValueError(f"Tin {i + 1} is switched off in this layout.")
-    pc = dict(copy.deepcopy(piece), origin="center")
-    job = planner.build_job(picture, material, planner.Placement(pc, art_w=art_w, fit="whole"), look=look,
+    cx, cy = layout.centre(i)
+    pc = copy.deepcopy(piece)
+    w, h = float(pc["w"]), float(pc["h"])
+    zero = "tin 1's centre" if layout.zero == "slot1" else "the layout centre"
+    pc.update(origin="spot", spot=(round(w / 2 - cx, 3), round(h / 2 - cy, 3)),
+              name=f"Tin {i + 1} of '{layout.name}' (job zero = {zero})")
+    return pc
+
+
+def slot_job(picture, material, layout: Layout, i: int, piece: dict, art_w: float, look: dict | None = None):
+    """Tin i's own checked job, built exactly as Studio builds it after 'Set up this tin'."""
+    pc = tin_piece(layout, i, piece)
+    pic = imaging.orient(picture, layout.rotation(i), False)
+    job = planner.build_job(pic, material, planner.Placement(pc, art_w=art_w, fit="whole"), look=look,
                             name=f"{layout.name} - tin {i + 1}")
     cx, cy = layout.centre(i)
-    shift_job(job, cx, cy)
     planner.compile_job(job, start=(cx, cy))
     job.tin = dict(layout=layout.name, index=i, centre=(cx, cy), fingerprint=fingerprint(layout, i, material, art_w))
     return job
@@ -195,7 +229,8 @@ def slot_job(picture, material, layout: Layout, i: int, piece: dict, art_w: floa
 def fingerprint(layout: Layout, i: int, material, art_w: float) -> str:
     """Changes whenever anything that moves or changes tin i's burn changes, so a saved job can be refused as stale."""
     m = dataclasses.asdict(material) if dataclasses.is_dataclass(material) else dict(material)
-    d = dict(centre=layout.centre(i), pitch=(layout.pitch_x, layout.pitch_y), art_w=art_w, material=m)
+    d = dict(centre=layout.centre(i), rot=layout.rotation(i), pitch=(layout.pitch_x, layout.pitch_y), art_w=art_w,
+             material=m)
     return hashlib.sha256(json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 

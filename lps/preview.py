@@ -202,7 +202,10 @@ class PreviewPanel(ttk.Frame):
         if app.gfile:
             px0,py0,px1,py1=gcodeinfo.frame_bbox(app.gfile)
         fill = {"look": hexrgb(look[0]), "lgrbl": hexrgb(simulate.LASERGRBL_BG)}.get(self.view.get(), "#ffffff")
-        if piece.get("shape") == "circle":
+        if piece.get("outline") and not app.gfile:           # a shaped piece draws its own outline
+            pts = [v for x, y in planner.outline_path(piece, (px0, py0)) for v in (tx(x), ty(y))]
+            c.create_polygon(*pts, fill=fill, outline=COLORS["piece_edge"], width=2)
+        elif piece.get("shape") == "circle":
             c.create_oval(tx(px0), ty(py1), tx(px1), ty(py0), fill=fill, outline=COLORS["piece_edge"], width=2)
         else:
             c.create_rectangle(tx(px0), ty(py1), tx(px1), ty(py0), fill=fill, outline=COLORS["piece_edge"], width=2)
