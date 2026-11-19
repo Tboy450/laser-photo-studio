@@ -27,9 +27,9 @@ STRONGEST_SO_FAR = (100.0, 600.0)                # %, mm/min: strongest lid patc
 
 
 def lid_piece(diameter: float = 50.8, safe: float = 45.72) -> dict:
-    m = round((diameter - safe) / 2, 3)
-    return dict(name=f"Lid {diameter / 25.4:g} in circle (ladder)", shape="circle", w=diameter, h=diameter,
-                origin="center", margins=(m, m, m, m), corner=0.0, keepouts=[])
+    """Same geometry as step 3's round-lid template (presets.lid_piece); only the label says it's a ladder."""
+    from .presets import lid_piece as _lid
+    return _lid(diameter, safe, name=f"Lid {diameter / 25.4:g} in circle (ladder)")
 
 
 def log_speeds(lo: float, hi: float, n: int) -> list:

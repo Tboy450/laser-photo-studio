@@ -312,6 +312,14 @@ BUILTIN = [
         test_power=(20, 60), test_speed=(2000, 5000)),
 ]
 
+def lid_piece(diameter: float = 50.8, safe: float = 45.72, name: str | None = None) -> dict:
+    """The one round-lid geometry: outside diameter, usable face, centre origin. Step 3's 2 in tin template and
+    the lid ladders both use this, so the same lid is never defined twice."""
+    m = round((diameter - safe) / 2, 3)
+    return dict(name=name or f"Round lid {diameter / 25.4:g} in ({safe:g} mm face, centre zero)", shape="circle",
+                w=diameter, h=diameter, origin="center", margins=(m, m, m, m), corner=0.0, keepouts=[])
+
+
 PIECES = {
     "plank76": dict(name="Pine plank 7 x 6 in (twine holes at top)", shape="rect", w=177.8, h=152.4,
                     origin="lower-left", margins=(6.0, 6.0, 6.0, 16.0), corner=0.0,
@@ -323,6 +331,7 @@ PIECES = {
                            margins=(4.0, 2.0, 4.0, 2.0), corner=0.0, keepouts=[]),
     "lid76": dict(name="Jar lid 3 in (flat face 49 mm)", shape="circle", w=76.2, h=76.2, origin="center",
                   margins=(13.6, 13.6, 13.6, 13.6), corner=0.0, keepouts=[]),
+    "tin50": lid_piece(50.8, 45.72, "Reflective tin lid 2 in (45.72 mm face, centre zero)"),
     "coaster100": dict(name="Square 100.6 x 100.6 mm (slate)", shape="rect", w=100.6, h=100.6,
                        origin="lower-left", margins=(5.8, 5.8, 5.8, 5.8), corner=0.0, keepouts=[]),
     "tile108": dict(name="Tile 4.25 in (108 mm)", shape="rect", w=108.0, h=108.0, origin="lower-left",
@@ -436,6 +445,32 @@ def piece_choice_label(piece: dict) -> str:
     w, h = piece['w'], piece['h']
     shape = 'circle' if piece.get('shape') == 'circle' else 'square' if w == h else 'rectangle'
     return f'Measured {shape} {w:g} x {h:g} mm'
+
+
+def piece_explanation(piece: dict, fit: str = "whole", loaded_job: bool = False) -> str:
+    """What the size box means right now, and which setting wins. Shown under the template list."""
+    def geometry(p):
+        return json.loads(json.dumps({k: v for k, v in p.items() if k != 'name'}))
+    key = next((k for k, c in PIECES.items() if k != 'custom' and geometry(c) == geometry(piece)), None)
+    m = piece.get("margins", (0, 0, 0, 0))
+    shape = "circle" if piece.get("shape") == "circle" else "rectangle"
+    usable = (f"{piece['w'] - m[0] - m[2]:g} mm usable face" if shape == "circle"
+              else f"{piece['w'] - m[0] - m[2]:g} x {piece['h'] - m[1] - m[3]:g} mm usable area")
+    zero = {"center": "the centre", "lower-left": "the lower-left corner", "spot": "a picked spot"}.get(
+        piece.get("origin"), piece.get("origin", "?"))
+    what = (f"Template '{PIECES[key]['name']}'" if key else "Measured size (matches no template exactly)")
+    lines = [f"{what}: {piece['w']:g} x {piece['h']:g} mm {shape}, {usable}, job zero at {zero}."]
+    if fit == "exact":
+        lines.append("Exact image size is on: the box is the image itself, margins are ignored.")
+    if loaded_job:
+        lines.append("Precedence: this loaded job's saved size and margins win over any template; picking a "
+                     "template replaces them and rebuilds the job.")
+    elif key:
+        lines.append("Precedence: editing width, height, margins, corner or origin overrides the template and turns "
+                     "it into a measured size; nothing else changes it behind your back.")
+    else:
+        lines.append("Precedence: these exact numbers are used as shown. Pick a template to replace them.")
+    return " ".join(lines)
 
 
 def load_materials() -> list:

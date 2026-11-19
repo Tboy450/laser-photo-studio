@@ -261,6 +261,51 @@ Open the public contact page:
 """ + DEVELOPER_CONTACT
 
 
+ROUND_TINS = """# 2 in reflective tin lid (template)
+Step 3's 'Reflective tin lid 2 in (45.72 mm face, centre zero)' is a size template only:
+- Outside diameter 50.8 mm, 2.54 mm margin all round, so the usable face is a 45.72 mm circle.
+- Job zero is the physical centre of the lid.
+- The lid ladders use exactly the same geometry, so a ladder job and a tin job line up on the same lid.
+
+It is not an engraving recipe. Pick the material and style separately; the tin results are still being tested, so
+keep their evidence status honest.
+
+Precedence: a loaded saved job keeps its own size; editing width, height, margins or origin turns the template into
+a measured size; picking a template replaces the size and rebuilds the job. The note under the template list says
+which of these applies right now.
+
+# Centring a tin in a jig
+1. Seat the lid fully in its pocket, and check the jig itself is registered to the bed.
+2. Use the low-power dot to find the actual centre of the lid (or a jig reference checked against that centre).
+3. Jog there and press 'Set job zero here' in step 5. That sets the work coordinate; it does not move the head.
+4. Run the perimeter check. It checks the planned footprint around job zero; it cannot see a lid that sits off-centre
+   in its pocket."""
+
+
+MACHINE_CHANGE = """# When the laser hardware changes
+A PROVEN label belongs to the exact setup that was tested, not just the frame name or the advertised wattage.
+- A different diode module, lens, controller, firmware or axis calibration can change the result.
+- After a hardware change, treat old results as history: don't carry their PROVEN label forward automatically.
+- Recheck focus and placement, burn new test grids, and compare real samples before saving new proven presets.
+- Keep the old photos and settings, so the new setup can be compared with the old one."""
+
+
+WOOD_SURFACE = """# Reading the wood surface
+Wood is not a flat, even sheet:
+- Grain, knots and uneven colour change how the finished mark reads.
+- Ordered dots are easier to compare across grain, but they don't fix a ridge or a change in surface height.
+- A raised or warped area changes the lens-to-wood distance. Support the board and check focus across the image.
+- Use an offcut or test area when changing species, surface preparation or image style.
+
+# Stain and finish records
+There is no universal stain-before or stain-after setting. Record the finish product, whether it went on before or
+after the burn, and its dry/cure state. Compare matching offcuts before choosing a sequence.
+
+# Surface marks
+A diode burn marks the surface. It doesn't cut a routed groove or carve relief, so record appearance, residue and
+finish separately from depth."""
+
+
 def topics(mat) -> list:
     return [("Start here", START),
             ("Too light or too dark?", DARKNESS),
@@ -269,6 +314,9 @@ def topics(mat) -> list:
             ("Test records & recent learning", LEARNING),
             ("Using LaserGRBL", LASERGRBL.format(name=mat.name, recipe=lasergrbl_recipe(mat))),
             ("Start point & perimeter check", PERIMETER),
+            ("Round tins & jig centring", ROUND_TINS),
+            ("Wood grain & finishing", WOOD_SURFACE),
+            ("Machine changes & revalidation", MACHINE_CHANGE),
             ("Backgrounds & stickers", BACKGROUNDS),
             ("USB dropouts", DROPOUT),
             ("Safety", SAFETY),

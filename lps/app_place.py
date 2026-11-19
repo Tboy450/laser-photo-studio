@@ -42,6 +42,8 @@ class PlaceMixin:
         wrap_label(c, 'These are physical size templates, not material settings. Margins and corner radius '
                       'are separate measurements; saved measured sizes are kept exactly.',
                    style='Small.TLabel').pack(anchor='w', pady=(4, 0))
+        self.piece_note = wrap_label(c, '', style='Small.TLabel')       # what the size is now, and what wins
+        self.piece_note.pack(anchor='w', pady=(2, 0))
         self.car_options = ttk.Frame(c)
         b = ttk.Button(self.car_options, text="Customize Hot Wheels...", command=self.toy_car)
         b.pack(anchor="w")
@@ -284,6 +286,9 @@ class PlaceMixin:
             pc = self.piece
             self.piece_var.set(f"Exact image {pc['w']:g} x {pc['h']:g} mm" if self.fit_var.get() == 'exact'
                                else presets.piece_choice_label(pc))
+            if hasattr(self, 'piece_note'):
+                self.piece_note.configure(text=presets.piece_explanation(
+                    pc, self.fit_var.get(), loaded_job=bool(getattr(self, 'source_provenance', None))))
             self.pw_var.set(f"{pc['w']:g}")
             self.ph_var.set(f"{pc['h']:g}")
             self.shape_var.set(pc.get("shape", "rect"))
