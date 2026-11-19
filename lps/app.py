@@ -432,10 +432,22 @@ class App(PlaceMixin, LaserMixin):
         self.fast_gaps_var = tk.BooleanVar()
         ttk.Checkbutton(adv, text="Faster blank gaps inside scan lines (experimental)",
                         variable=self.fast_gaps_var, command=self._fast_gaps_changed).pack(anchor="w")
-        wrap_label(adv, "For scan-line passes only: laser-off gaps at least 1 mm long use the return speed "
-                   "above when it is faster. Marked strokes keep their engraving speed and power. "
-                   "Short gaps and run-ups stay unchanged. Off by default; test the material first.",
-                   style="Small.TLabel").pack(anchor="w", pady=(2, 4))
+        gaps = ttk.Frame(adv)
+        gaps.pack(anchor="w")
+        self.gap_guard_var, self.gap_min_var = tk.StringVar(), tk.StringVar()
+        for col, (label, var, key) in enumerate((("Slow zone each side (mm)", self.gap_guard_var, "blank_guard_mm"),
+                                                 ("Shortest fast part (mm)", self.gap_min_var, "blank_min_fast_mm"))):
+            ttk.Label(gaps, text=label).grid(row=0, column=2 * col, sticky="w", padx=(0, 4))
+            sp = ttk.Spinbox(gaps, from_=0, to=20 if col == 0 else 100, increment=0.5, textvariable=var, width=5)
+            sp.grid(row=0, column=2 * col + 1, padx=(0, 12))
+            for ev in ("<Return>", "<FocusOut>"):
+                sp.bind(ev, lambda e, k=key, v=var: self._gap_setting_changed(k, v))
+        wrap_label(adv, "Scan-line passes only. Inside a row, each laser-off gap keeps the slow zone at engraving "
+                   "speed on both sides, so the head slows down before the next mark and speeds up after the last "
+                   "one. Only the middle travels faster: at most the return speed, and no faster than the head can "
+                   "brake from in that length (500 mm/s2). If the middle is shorter than 'Shortest fast part', the "
+                   "whole gap stays at engraving speed. Marks keep their speed and power. Off by default; test on "
+                   "scrap first.", style="Small.TLabel").pack(anchor="w", pady=(2, 4))
         wrap_label(adv, "Left to right only returns with the laser off. It takes longer and helps compare "
                    "direction-dependent alignment; it does not increase resolution.",
                    style="Small.TLabel").pack(anchor="w", pady=(2, 6))
@@ -551,6 +563,8 @@ class App(PlaceMixin, LaserMixin):
         self.scan_var.set("Alternating rows" if m.scan_direction == "alternating" else "Left to right only")
         self.return_var.set(str(m.row_feed))
         self.fast_gaps_var.set(m.fast_blank_gaps)
+        self.gap_guard_var.set(f"{m.blank_guard_mm:g}")
+        self.gap_min_var.set(f"{m.blank_min_fast_mm:g}")
         self.del_btn.state(["!disabled"] if m.badge == "MINE" and self._job_material_snapshot is None else ["disabled"])
         self.sync_piece_options()
 
@@ -618,6 +632,19 @@ class App(PlaceMixin, LaserMixin):
             return
         if int(value) != self.mat.row_feed:
             self._customised(row_feed=int(value))
+
+    def _gap_setting_changed(self, key, var):
+        if self._loading:
+            return
+        try:
+            value = round(float(var.get()), 2)
+            self.mat.copy(**{key: value})                     # range check
+        except ValueError as e:
+            self.say(f"Fast blank gaps: {e}" if "mm" in str(e) else "Fast blank gaps: enter a number in mm.", "warn")
+            var.set(f"{getattr(self.mat, key):g}")
+            return
+        if value != getattr(self.mat, key):
+            self._customised(**{key: value})
 
     def _fast_gaps_changed(self):
         if not self._loading and self.fast_gaps_var.get() != self.mat.fast_blank_gaps:

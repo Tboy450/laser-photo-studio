@@ -137,13 +137,19 @@ class Material:
     piece: str = ""                 # suggested workpiece
     based_on: str = ""              # my presets: the built-in preset they were saved from (for its photos)
     scan_direction: str = "alternating"  # forward = every marked row left to right; return moves stay off
-    fast_blank_gaps: bool = False   # opt-in: internal S0 gaps >= 1 mm use the laser-off return speed
+    fast_blank_gaps: bool = False   # opt-in: long internal S0 gaps travel faster (see blank_guard_mm)
+    blank_guard_mm: float = 2.0     # fast gaps: laser-off distance kept at engraving speed on EACH side of a gap
+    blank_min_fast_mm: float = 2.0  # fast gaps: shortest fast middle worth it; shorter gaps stay at engraving speed
 
     def __post_init__(self):
         if self.scan_direction not in ("alternating", "forward"):
             raise ValueError("Scan direction must be alternating or forward.")
         if type(self.fast_blank_gaps) is not bool:
             raise ValueError("Fast blank gaps must be true or false.")
+        if not 0.0 <= float(self.blank_guard_mm) <= 20.0:
+            raise ValueError("Fast blank gaps: the slow zone each side must be 0-20 mm.")
+        if not 0.0 <= float(self.blank_min_fast_mm) <= 100.0:
+            raise ValueError("Fast blank gaps: the shortest fast part must be 0-100 mm.")
 
     def copy(self, **changes) -> "Material":
         d = asdict(self)

@@ -32,16 +32,12 @@ class BlankGaps(unittest.TestCase):
             _,a,_=self.build(direction=direction);_,b,_=self.build(True,direction)
             self.assertTrue(verify.verify_job(b)['ok'])
             np.testing.assert_array_equal(a.passes[0].cells,b.passes[0].cells)
-            changed=0
-            self.assertEqual(len(a.passes[0].commands),len(b.passes[0].commands))
-            for x,y in zip(a.passes[0].commands,b.passes[0].commands):
-                if x!=y:
-                    changed+=1
-                    self.assertTrue(x.endswith(' S0') and y.endswith(' S0'))
-                    self.assertEqual(x.replace(' F140 ',' F3000 '),y)
-                if x.endswith(' S800'):self.assertEqual(x,y)
-            self.assertGreater(changed,100)
-            self.assertLess(b.est_s,a.est_s*.4)
+            pa=[c for c in a.passes[0].commands if not c.endswith(' S0')]
+            pb=[c for c in b.passes[0].commands if not c.endswith(' S0')]
+            self.assertEqual(pa,pb)                      # every mark and mode command identical
+            fast=[c for c in b.passes[0].commands if c.endswith(' S0') and ' F3000 ' in c]
+            self.assertGreater(len(fast),100)            # long gaps got a fast middle
+            self.assertLess(b.est_s,a.est_s*.6)
 
     def test_short_gaps_and_runups_unchanged(self):
         cells=np.array([[800,0,0,800,0,800]],dtype=np.int16)

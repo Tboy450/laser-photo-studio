@@ -413,9 +413,32 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
 
 
 # --------------------------------------------------------------------------------------------- commands
+def blank_gap_moves(x0: float, x1: float, burn_feed: int, fast_feed: int, guard: float = 2.0,
+                    min_fast: float = 2.0, accel: float = ACCEL) -> list:
+    """Laser-off moves across one blank gap inside a scan row: [(x_end, feed), ...].
+    Keeps `guard` mm at the engraving feed on each side (the user's slow-down / speed-up zones), and only speeds up
+    the middle if it is at least `min_fast` long. The fast feed is capped so the head can reach it and slow back
+    down within the middle at `accel` (Grbl also brakes before a slower block), so no mark is entered too fast.
+    Gaps too short for any of this stay one move at the engraving feed."""
+    length = abs(x1 - x0)
+    d = 1.0 if x1 >= x0 else -1.0
+    mid = length - 2.0 * guard
+    if fast_feed <= burn_feed or mid <= 0 or mid < min_fast:
+        return [(x1, burn_feed)]
+    vb = burn_feed / 60.0
+    reach = math.sqrt(vb * vb + accel * mid)               # accelerate over half the middle, brake over the other half
+    f = int(min(fast_feed, math.floor(reach * 60.0)))
+    if f < burn_feed * 1.25:                               # not worth a speed change
+        return [(x1, burn_feed)]
+    out = [(x0 + d * guard, burn_feed)] if guard > 0 else []
+    out += [(x1 - d * guard, f)]
+    out += [(x1, burn_feed)] if guard > 0 else []
+    return out
+
+
 def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_feed: int, runup: float,
                     row_feeds=None, accel: float = ACCEL, *, bidirectional: bool = True,
-                    fast_blank_gaps: bool = False) -> list:
+                    fast_blank_gaps: bool = False, blank_guard: float = 2.0, blank_min_fast: float = 2.0) -> list:
     cmds = []
     flip = False
     for r in order if order is not None else range(cells.shape[0]):
@@ -439,9 +462,11 @@ def raster_commands(cells: np.ndarray, order, geom: Geometry, feed: int, row_fee
                  f"G1 X{fmt(start)} Y{y} F{f} S0"]
         previous = start
         for e, s in zip(ends, pw):
-            gap_feed = (max(f, row_feed) if fast_blank_gaps and s == 0
-                        and abs(e - previous) >= 1.0 - 1e-9 else f)
-            cmds.append(f"G1 X{fmt(e)} Y{y} F{gap_feed} S{s}")
+            if fast_blank_gaps and s == 0:
+                cmds += [f"G1 X{fmt(xe)} Y{y} F{fe} S0"
+                         for xe, fe in blank_gap_moves(previous, e, f, row_feed, blank_guard, blank_min_fast, accel)]
+            else:
+                cmds.append(f"G1 X{fmt(e)} Y{y} F{f} S{s}")
             previous = e
         cmds += [f"G1 X{fmt(ends[-1] + d * ru)} Y{y} F{f} S0", "M5 S0"]
         flip = not flip if bidirectional else False
@@ -657,7 +682,8 @@ def compile_job(job: JobPlan, start=(0.0, 0.0)) -> JobPlan:
                                           bidirectional=bidirectional)
         else:
             p.commands = raster_commands(p.cells, p.order, job.geom, p.feed, m.row_feed, m.runup, p.row_feeds,
-                                         bidirectional=bidirectional, fast_blank_gaps=m.fast_blank_gaps)
+                                         bidirectional=bidirectional, fast_blank_gaps=m.fast_blank_gaps,
+                                         blank_guard=float(m.blank_guard_mm), blank_min_fast=float(m.blank_min_fast_mm))
         p.est_s = estimate_seconds(p.commands)
         for c in reversed(p.commands):
             if c.startswith("G1"):

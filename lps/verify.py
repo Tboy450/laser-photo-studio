@@ -260,6 +260,33 @@ def verify_crawl(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30
                 lines=li, crawl_s=round(burn_s, 1))
 
 
+def _fast_gap_problem(m, cmds, k, x_from, x_to, burn_f, f):
+    """Checks one faster laser-off move inside a scan row (cmds[k]) against the guarded fast-gap rules."""
+    from .planner import ACCEL
+    if not m.fast_blank_gaps:
+        return "is faster than engraving, but fast blank gaps are off"
+    if f > int(m.row_feed):
+        return f"at F{f} is faster than the return speed F{m.row_feed}"
+    guard, length = float(m.blank_guard_mm), abs(x_to - x_from)
+    if length < float(m.blank_min_fast_mm) - 0.0011:
+        return f"fast part {length:.3f} mm is shorter than the {m.blank_min_fast_mm:g} mm minimum"
+    vb, v = burn_f / 60.0, f / 60.0
+    if v * v > vb * vb + ACCEL * length + 1e-6:
+        return f"F{f} can't be reached and braked within {length:.3f} mm at {ACCEL:g} mm/s2"
+    for j, side in ((k - 1, "before"), (k + 1, "after")):
+        mo = MOVE.fullmatch(cmds[j]) if 0 <= j < len(cmds) else None
+        if mo is None or int(mo[4]) != 0 or int(mo[3]) != burn_f:
+            return f"has no laser-off slow zone at the engraving speed {side} it"
+        if guard > 0:
+            ref = x_from if side == "before" else x_to
+            prev = MOVE.fullmatch(cmds[j - 1]) if side == "before" and j >= 1 else None
+            start = float(prev[1]) if prev else None
+            seg = abs(float(mo[1]) - x_to) if side == "after" else (abs(ref - start) if start is not None else 0.0)
+            if seg < guard - 0.0011:
+                return f"slow zone {side} it is {seg:.3f} mm, under the {guard:g} mm setting"
+    return None
+
+
 def verify_pass(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30.0) -> dict:
     if p.kind == "dwell":
         return verify_dwell(job, p, cmds, travel_margin)
@@ -303,7 +330,16 @@ def verify_pass(job: JobPlan, p: PassPlan, cmds=None, travel_margin: float = 30.
         nx, ny, f, s = float(mo[1]), float(mo[2]), int(mo[3]), int(mo[4])
         if s not in s_ok:
             bad(f"command {i}: power S{s} not allowed")
-        if f not in f_ok:
+        fast_gap = False
+        if armed and s == 0 and x is not None and abs(ny - y) <= 1e-6:
+            rr = int(round((g.yt - ny) / g.y_pitch - 0.5))
+            burn_f = int(p.row_feeds[rr]) if p.row_feeds is not None and 0 <= rr < H else int(p.feed)
+            if f > burn_f:
+                fast_gap = True
+                problem = _fast_gap_problem(job.material, cmds, i - 1, x, nx, burn_f, f)
+                if problem:
+                    bad(f"command {i}: fast blank gap {problem}")
+        if f not in f_ok and not fast_gap:
             bad(f"command {i}: speed F{f} not allowed")
         if not (px0 - travel_margin <= nx <= px1 + travel_margin and py0 - travel_margin <= ny <= py1 + travel_margin):
             bad(f"command {i}: move to {nx},{ny} is far outside the piece")
