@@ -16,7 +16,7 @@ SPOTS = [dict(x=-5.25, y=-14.8, seconds=5, power=80), dict(x=1.75, y=-14.8, seco
 
 def lid_job(spots=SPOTS, cool=0.0, raster=True):
     base = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
-    mat = ladder.lid_material(base, "Reflective tin lid").copy(scan_direction="forward", row_feed=3000)
+    mat = ladder.lid_material(base, "Reflective tin lid").copy(scan_direction="forward", row_feed=3000, pitch=0.1)
     piece = ladder.lid_piece()
     p = mat.pitch
     n = int(round(2 * (25.4 - piece["margins"][0]) / p))

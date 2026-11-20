@@ -107,7 +107,7 @@ class Material:
     look: str                       # key of LOOKS
     summary: str                    # one plain sentence
     notes: list = field(default_factory=list)
-    pitch: float = 0.1              # row spacing / dot size, mm
+    pitch: float = 0.15             # row spacing / dot size, mm. Tristan's standard is 0.15 (Nov 18-20); 0.10 = high density
     feed: int = 2250                # burn speed, mm/min
     power: int = 500                # S for dot/line styles; grayscale maximum
     power_min: int = 0              # grayscale minimum (lightest burned tone)
@@ -311,6 +311,12 @@ BUILTIN = [
         power=400, feed=3000, runup=4.0, interlace=1, piece="square100",
         test_power=(20, 60), test_speed=(2000, 5000)),
 ]
+
+# Standard row spacing is now 0.15 mm. The PROVEN recipes were proven at 0.10 mm: say so instead of hiding it.
+for _m in BUILTIN:
+    if _m.badge == "PROVEN":
+        _m.notes = list(_m.notes) + ["Proven at 0.10 mm rows. Studio's standard is now 0.15 mm; set Row spacing to "
+                                     "0.10 for the original proven density."]
 
 def lid_piece(diameter: float = 50.8, safe: float = 45.72, name: str | None = None) -> dict:
     """The one round-lid geometry: outside diameter, usable face, centre origin. Step 3's 2 in tin template and

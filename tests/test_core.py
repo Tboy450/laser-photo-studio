@@ -62,7 +62,7 @@ class Components(unittest.TestCase):
 class ProvenPlank(unittest.TestCase):
     def test_reproduces_north_pole_plan(self):
         pic = imaging.load_picture(PROJECT / "outputs/north-pole-mural/operator-design.webp")
-        mat = next(m for m in presets.BUILTIN if m.key == "pine-layers")
+        mat = next(m for m in presets.BUILTIN if m.key == "pine-layers").copy(pitch=0.1)   # the plan was proven at 0.10
         job = planner.build_job(pic, mat, Placement(dict(presets.PIECES["plank76"])))
         theirs = np.asarray(Image.open(PROJECT / "outputs/north-pole-mural/layout-B-levels.png"))
         mapped = np.select([theirs == 0, theirs == 2, theirs == 3, theirs == 4], [0, 1, 2, 3], 9)
@@ -129,7 +129,7 @@ class Placement_(unittest.TestCase):
 
     def test_exact_size_stretches_the_whole_picture_to_the_box(self):
         pc = dict(shape="rect", w=14.0, h=19.0, origin="lower-left", margins=(0, 0, 0, 0), corner=0.0, keepouts=[])
-        mat = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
+        mat = next(m for m in presets.BUILTIN if m.key == "anodized-dots").copy(pitch=0.1)
         job = planner.compile_job(planner.build_job(sample_picture(), mat, Placement(pc, fit="exact")))
         g = job.geom      # a 4:3 picture in a tall box: no refit, no crop
         self.assertEqual((g.cols, g.rows, g.x0, g.y0, g.crop), (140, 190, 0.0, 0.0, None))
@@ -422,7 +422,7 @@ class Samples(unittest.TestCase):
 
 class Explanations(unittest.TestCase):
     def test_lasergrbl_recipes_and_energy(self):
-        card = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
+        card = next(m for m in presets.BUILTIN if m.key == "anodized-dots").copy(pitch=0.1)   # proven density
         r = presets.lasergrbl_recipe(card)
         self.assertIn("1bit BW Dithering", r)
         self.assertIn("Floyd-Steinberg", r)

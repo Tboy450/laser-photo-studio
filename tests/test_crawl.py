@@ -16,7 +16,7 @@ LINES = [dict(x0=-10.0, x1=-8.0, y=-5.0, power=100, v_avg=12, step=0.05),
 
 def crawl_job(lines=LINES, raster=True):
     base = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
-    mat = ladder.lid_material(base, "Reflective tin lid").copy(scan_direction="forward", row_feed=3000)
+    mat = ladder.lid_material(base, "Reflective tin lid").copy(scan_direction="forward", row_feed=3000, pitch=0.1)
     piece = ladder.lid_piece()
     p = mat.pitch
     n = int(round(2 * (25.4 - piece["margins"][0]) / p))

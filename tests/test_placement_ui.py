@@ -28,6 +28,7 @@ class PlacementUI(unittest.TestCase):
         self.root.withdraw()
         self.app=App(self.root,SimpleNamespace(demo=True,picture=None,perimeter=None))
         self.app.select_material('anodized-dots')
+        self.app._customised(pitch=0.1)   # these geometry checks were written at the 0.10 proven density
         pic=Image.new('L',(1120,1520),255)
         ImageDraw.Draw(pic).rectangle((200,200,900,1300),fill=0)
         self.picture=self.folder/'roof.png'
@@ -328,7 +329,8 @@ class PlacementUI(unittest.TestCase):
         a.ph_var.set('19.05')
         a._piece_edited('h')
         self.pump()
-        self.assertEqual(a.picture_box(),(0,0,14.29,19.05))
+        for got, want in zip(a.picture_box(), (0, 0, 14.29, 19.05)):   # 0.15 mm standard rows: float sums
+            self.assertAlmostEqual(got, want, places=6)
         self.assertAlmostEqual(a.job.geom.art_w,14.29)
         self.assertAlmostEqual(a.job.geom.art_h,19.05)
 
@@ -354,6 +356,7 @@ class PlacementUI(unittest.TestCase):
         self.pump()
         self.assertFalse(a.v_neg.get())
         a.select_material('anodized-dots')
+        a._customised(pitch=0.1)
         self.pump()
         self.assertFalse(a.v_neg.get())
         self.assertEqual(a.picture_box(),(0,0,14,19))
