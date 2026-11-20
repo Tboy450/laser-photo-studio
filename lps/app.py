@@ -440,7 +440,7 @@ class App(PlaceMixin, LaserMixin):
                 ("Slow-down / speed-up offset each side (mm)", self.gap_guard_var, "blank_guard_mm", 20, 0.5),
                 ("Design guard: shortest fast part (mm)", self.gap_min_var, "blank_min_fast_mm", 100, 0.5))):
             ttk.Label(gaps, text=label).grid(row=col, column=0, sticky="w", padx=(0, 4))
-            sp = ttk.Spinbox(gaps, from_=0 if col else 1, to=hi, increment=inc, textvariable=var, width=6)
+            sp = ttk.Spinbox(gaps, from_=(1, 0.5, 0)[col], to=hi, increment=inc, textvariable=var, width=6)
             sp.grid(row=col, column=1, sticky="w", padx=(0, 12))
             for ev in ("<Return>", "<FocusOut>"):
                 sp.bind(ev, lambda e, k=key, v=var: self._gap_setting_changed(k, v))

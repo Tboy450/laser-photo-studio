@@ -149,8 +149,8 @@ class Material:
             raise ValueError("Fast blank gaps must be true or false.")
         if not 1 <= int(self.blank_feed) <= 6000:
             raise ValueError("Blank travel speed must be 1-6000 mm/min (6000 is the controller's maximum, $110).")
-        if not 0.0 <= float(self.blank_guard_mm) <= 20.0:
-            raise ValueError("Fast blank gaps: the slow zone each side must be 0-20 mm.")
+        if not 0.5 <= float(self.blank_guard_mm) <= 20.0:
+            raise ValueError("Fast blank gaps: the slow-down / speed-up offset each side must be 0.5-20 mm.")
         if not 0.0 <= float(self.blank_min_fast_mm) <= 100.0:
             raise ValueError("Fast blank gaps: the shortest fast part must be 0-100 mm.")
 

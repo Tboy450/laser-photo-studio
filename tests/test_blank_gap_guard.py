@@ -18,7 +18,7 @@ class GapMoves(unittest.TestCase):
         self.assertEqual((moves[0][1], moves[2][1]), (140, 140))     # 2 mm at engraving speed both sides
         vb, v = 140 / 60, moves[1][1] / 60
         self.assertLessEqual(v * v, vb * vb + planner.ACCEL * 4 + 1e-9)   # reachable and brakeable in 4 mm
-        self.assertEqual(moves[1][1], 2686)                           # PR 7's figure for a 2 mm zone (~2690)
+        self.assertEqual(moves[1][1], 2685)                           # PR 7's figure for a 2 mm zone (~2690)
         self.assertEqual(planner.blank_gap_moves(0, 30, 140, 6000)[1][1], 6000)
         self.assertEqual(planner.blank_gap_moves(30, 0, 140, 6000)[0][0], 28.0)   # right-to-left mirrors it
 
@@ -77,6 +77,52 @@ class SeparateBlankSpeed(BlankGaps):
         self.assertTrue(verify.verify_job(job)['ok'])
         job.material = m.copy(blank_feed=4000)                    # a lower blank limit must refuse F6000 moves
         self.assertFalse(verify.verify_pass(job, job.passes[0], cmds)['ok'])
+
+
+
+class PlannerPassesItsOwnCheck(unittest.TestCase):
+    """Tristan's 2026-11-20 report: Check job failed with 'fast blank gap F3157 can't be reached and braked within
+    2.598 mm'. Whatever the planner emits for a gap, its own verifier must accept; a short gap simply doesn't speed up."""
+
+    def check(self, x0, x1, burn, fast, guard=2.0, min_fast=2.0):
+        m = presets.BUILTIN[0].copy(fast_blank_gaps=True, blank_feed=fast, blank_guard_mm=guard, blank_min_fast_mm=min_fast)
+        moves = planner.blank_gap_moves(x0, x1, burn, fast, guard, min_fast)
+        cmds = [f"G1 X{planner.fmt(x0)} Y1.000 F{burn} S350"]
+        cmds += [f"G1 X{planner.fmt(x)} Y1.000 F{f} S0" for x, f in moves]
+        cmds.append(f"G1 X{planner.fmt(x1 + 0.15)} Y1.000 F{burn} S350")
+        xs = [float(c.split()[1][1:]) for c in cmds]
+        for k in range(1, len(cmds) - 1):
+            f = int(cmds[k].split()[3][1:])
+            if f > burn:
+                self.assertIsNone(verify._fast_gap_problem(m, cmds, k, xs[k - 1], xs[k], burn, f), (x0, x1, burn, cmds))
+        return moves
+
+    def test_reported_cases(self):
+        for mid in (2.148, 2.598, 2.298):
+            for burn in (2250, 2400, 140, 3000):
+                self.check(4.424, 4.424 + mid + 4.0, burn, 6000)
+
+    def test_fuzz_gap_lengths_feeds_and_positions(self):
+        rng = np.random.default_rng(20261120)
+        for _ in range(3000):
+            x0 = float(rng.uniform(-90, 90))
+            length = float(rng.uniform(0.1, 40))
+            burn = int(rng.choice([140, 1200, 2250, 3500, 4500]))
+            fast = int(rng.choice([3000, 4500, 6000]))
+            moves = self.check(x0, x0 + length, burn, fast, float(rng.choice([0.5, 1, 2, 3])), float(rng.choice([0, 2, 5])))
+            if length < 4.0 + 2.0 and len(moves) == 1:
+                self.assertEqual(moves, [(x0 + length, burn)])          # short gaps stay at the engraving feed
+
+    def test_dotted_job_with_fast_gaps_passes_check(self):
+        from PIL import Image
+        rng = np.random.default_rng(7)
+        im = Image.fromarray((rng.random((300, 260)) * 255).astype('uint8'))
+        for feed in (2250, 140):
+            mat = presets.BUILTIN[0].copy(style='floyd', pitch=0.15, feed=feed, scan_direction='forward', row_feed=6000,
+                                          fast_blank_gaps=True, blank_feed=6000, interlace=1, passes=1, thin_pass=False)
+            piece = dict(name='t', shape='rect', w=40.0, h=46.0, origin='center', margins=(0, 0, 0, 0), corner=0.0, keepouts=[])
+            job = planner.compile_job(planner.build_job(im, mat, planner.Placement(piece, fit='exact')))
+            self.assertTrue(verify.verify_job(job)['ok'], verify.verify_job(job)['passes'][0]['problems'][:3])
 
 
 if __name__ == '__main__':

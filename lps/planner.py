@@ -442,18 +442,20 @@ def blank_gap_moves(x0: float, x1: float, burn_feed: int, fast_feed: int, guard:
     the middle if it is at least `min_fast` long. The fast feed is capped so the head can reach it and slow back
     down within the middle at `accel` (Grbl also brakes before a slower block), so no mark is entered too fast.
     Gaps too short for any of this stay one move at the engraving feed."""
-    length = abs(x1 - x0)
     d = 1.0 if x1 >= x0 else -1.0
-    mid = length - 2.0 * guard
+    # Work from the coordinates exactly as the G-code will carry them (0.001 mm), so the verifier measures the same
+    # fast length the speed was planned for.
+    xa, xb = round(x0 + d * guard, 3), round(x1 - d * guard, 3)
+    mid = (xb - xa) * d
     if fast_feed <= burn_feed or mid <= 0 or mid < min_fast:
         return [(x1, burn_feed)]
     vb = burn_feed / 60.0
     reach = math.sqrt(vb * vb + accel * mid)               # accelerate over half the middle, brake over the other half
-    f = int(min(fast_feed, math.floor(reach * 60.0)))
+    f = int(min(fast_feed, math.floor(reach * 60.0) - 1))   # the highest whole feed it can really reach and brake from
     if f < burn_feed * 1.25:                               # not worth a speed change
         return [(x1, burn_feed)]
-    out = [(x0 + d * guard, burn_feed)] if guard > 0 else []
-    out += [(x1 - d * guard, f)]
+    out = [(xa, burn_feed)] if guard > 0 else []
+    out += [(xb, f)]
     out += [(x1, burn_feed)] if guard > 0 else []
     return out
 

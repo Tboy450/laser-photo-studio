@@ -271,7 +271,7 @@ def _fast_gap_problem(m, cmds, k, x_from, x_to, burn_f, f):
     if length < float(m.blank_min_fast_mm) - 0.0011:
         return f"fast part {length:.3f} mm is shorter than the {m.blank_min_fast_mm:g} mm minimum"
     vb, v = burn_f / 60.0, f / 60.0
-    if v * v > vb * vb + ACCEL * length + 1e-6:
+    if v * v > vb * vb + ACCEL * (length + 0.0011):        # coordinates carry 0.001 mm; allow that rounding
         return f"F{f} can't be reached and braked within {length:.3f} mm at {ACCEL:g} mm/s2"
     for j, side in ((k - 1, "before"), (k + 1, "after")):
         mo = MOVE.fullmatch(cmds[j]) if 0 <= j < len(cmds) else None
