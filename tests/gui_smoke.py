@@ -141,6 +141,12 @@ def main():
     app._adv_changed()
     assert "1.39x" in app.energy_lbl.cget("text"), app.energy_lbl.cget("text")
     assert "Power 50 %" in app.m_settings.cget("text"), app.m_settings.cget("text")
+    assert "S500" in app.m_technical.cget("text"), app.m_technical.cget("text")
+    app.preview.view.set("toolpath")
+    app.preview.refresh()
+    pump(app, 0.2)
+    assert app.preview.view.get() == "toolpath"
+    assert "planned" in app.preview.legend.cget("text").lower()
     app.goto(1)
     pump(app, 1.0)
     app.pages[1].canvas.yview_moveto(0.40)
