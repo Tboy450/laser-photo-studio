@@ -110,8 +110,9 @@ SAMPLES = {
     "card-eng": dict(
         src=r"C:\Users\Heemi\Downloads\Mobile Devices\20261101_050846.heic", kind="result", date="2026-11-01",
         crop=(0.09, 0.0, 0.81, 1.0), rotate=1, title="Engineering card, 4 x 2 in",
-        caption="Classic dots, 50% (S500), 2500 mm/min, 10 lines/mm, one pass - converted in LaserGRBL with exactly "
-                "these settings, 10 min 37 s. Bright silver on black."),
+        # Historical source generation used LaserGRBL; retain provenance in this catalog source.
+        caption="Classic dots, 50% (S500), 2500 mm/min, 10 lines/mm, one pass. "
+                "Recorded run: 10 min 37 s. Bright silver on black."),
     "card-heart": dict(
         src="anodized-cards-2026-11-01/recovery/20261101_033016.jpg", kind="result", date="2026-11-01",
         title="Heart card while engraving",

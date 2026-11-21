@@ -141,6 +141,7 @@ class SaveLoad(unittest.TestCase):
             folder = jobs.save_job(job, rep, folder=Path(td) / "job")
             doc = jobs.read_json(folder / "job.json")
             self.assertTrue(doc["verified"])
+            self.assertNotIn("LaserGRBL", (folder / "README.txt").read_text(encoding="utf-8"))
             for p, meta in zip(job.passes, doc["passes"]):
                 self.assertEqual(jobs.read_body(folder / meta["file"]), p.commands)
                 self.assertEqual(jobs.sha256(folder / meta["file"]), meta["sha256"])
@@ -194,22 +195,32 @@ class Samples(unittest.TestCase):
 
 
 class Explanations(unittest.TestCase):
-    def test_lasergrbl_recipes_and_energy(self):
+    def test_studio_native_guide_and_energy(self):
         card = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
-        r = presets.lasergrbl_recipe(card)
-        self.assertIn("1bit BW Dithering", r)
-        self.assertIn("Floyd-Steinberg", r)
-        self.assertIn("S-MAX 500 (= 50%)", r)
-        self.assertIn("Quality 10 lines/mm", r)
-        self.assertIn("invert", r)          # Negative is on for anodized photos
-        pine = next(m for m in presets.BUILTIN if m.key == "pine-layers")
-        self.assertIn("layer files", presets.lasergrbl_recipe(pine))
         slower = card.copy(feed=1800)
         self.assertAlmostEqual(presets.energy(slower) / presets.energy(card), 2500 / 1800)
         from lps import helptext
-        titles = [t for t, _ in helptext.topics(card)]
+        topics = helptext.topics(card)
+        titles = [t for t, _ in topics]
         self.assertIn("Too light or too dark?", titles)
-        self.assertTrue(all(body.strip() for _, body in helptext.topics(card)))
+        self.assertIn("Negative & previews", titles)
+        self.assertIn("G-code & machine settings", titles)
+        technical = presets.gcode_settings_summary(card)
+        self.assertIn("S500", technical)
+        self.assertIn("F2500", technical)
+        self.assertIn("10.00 lines/mm", technical)
+        self.assertIn("6.67 lines/mm", presets.gcode_settings_summary(card.copy(pitch=0.15)))
+        self.assertNotIn("Using LaserGRBL", titles)
+        self.assertTrue(all(body.strip() for _, body in topics))
+
+    def test_toolpath_view_retained_with_neutral_name(self):
+        from lps import simulate
+        job = small_job("anodized-dots", w=20, h=15)
+        image = simulate.toolpath_view(job)
+        self.assertEqual(image.size, (job.geom.cols, job.geom.rows))
+        self.assertEqual(image.mode, "RGB")
+        # The old internal API name remains an alias for third-party code.
+        self.assertEqual(image.tobytes(), simulate.lasergrbl_view(job).tobytes())
 
 
 if __name__ == "__main__":

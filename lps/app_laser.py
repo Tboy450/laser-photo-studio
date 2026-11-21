@@ -178,9 +178,9 @@ class LaserMixin:
         if not demo:
             others = jobs.running_processes()
             if others and not messagebox.askyesno(
-                    "One program at a time", f"{', '.join(others)} is open. Only one program can use the laser at a "
-                                             "time - close it (or turn the Positioning Laser OFF) first.\n\n"
-                                             "Try to connect anyway?"):
+                    "One program at a time", "Another known laser-control program is open. Only one program "
+                                             "can use the controller at a time. Close the other program "
+                                             "before connecting.\n\nTry to connect anyway?"):
                 return
         self.settings["port"] = self.port_var.get() or "COM4"
         jobs.save_settings(self.settings)
@@ -359,8 +359,8 @@ class LaserMixin:
                                         + ("  Origin set." if self.origin_set else ""))
         job = self.job
         if self.gfile:
-            self.engrave_lbl.configure(text="Checking a G-code file. To burn it, open it in LaserGRBL; this app "
-                                            "burns the jobs it made and checked itself.")
+            self.engrave_lbl.configure(text="Imported G-code can be checked with a laser-off perimeter trace. "
+                                            "To engrave here, open the source artwork and verify a new Studio job.")
             self.btn_start.state(["disabled"])
         elif job is None:
             self.engrave_lbl.configure(text="Open a picture first (step 1).")

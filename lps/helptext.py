@@ -2,7 +2,7 @@
 Markup: '# ' heading, '- ' bullet, '1. ' numbered step, '[image:<path in app folder>]', blank line = gap."""
 from __future__ import annotations
 
-from .presets import STYLES, lasergrbl_recipe
+from .presets import STYLES
 
 START = """# Five steps
 1. Picture - open a photo, drawing or logo (phone HEIC photos work). Turn it if it's sideways.
@@ -14,7 +14,7 @@ START = """# Five steps
 # The preview buttons
 - Looks like: roughly how the finished piece will look on the material.
 - What burns: each layer in its own colour.
-- In LaserGRBL: how LaserGRBL's preview will draw the file.
+- Toolpath: planned laser-powered marks on a dark background; any overlaid head marker is separate controller telemetry, not part of the rendered toolpath.
 - Picture: the adjusted picture before it becomes laser moves.
 
 # Good habits
@@ -49,34 +49,24 @@ Negative burns the LIGHT parts of the picture instead of the dark parts.
 - Keep it off for wood, leather and cardboard: the laser makes dark marks there.
 - Keep it off for black-on-white artwork that should be marked as drawn, like the card IMPORT.png files. They are already 'black = laser fires'.
 
-# Why LaserGRBL looks like a negative
-LaserGRBL never inverts a .nc file. Its preview draws every spot where the laser fires as a light line on a dark background (brighter = more power). So:
-- Anodized jobs look like the real result (silver on black).
-- Wood jobs look like a negative, even though they burn correctly.
-Compare 'In LaserGRBL' with 'Looks like' above the preview.
+# Check polarity before saving
+- 'Looks like' previews the expected finished material.
+- 'What burns' shows the marks sent to the laser.
+- 'Picture' shows the adjusted source before it becomes G-code.
+- Exported .nc files contain the final toolpath: changing a picture later does not modify an already exported file."""
 
-[image:docs/negatives-explained.png]
+GCODE = """# G-code and machine settings
+Laser Photo Studio produces verified G-code for its supported controller configuration.
+- Power S-values: the U20 uses $30=1000, so S500 means 50% of the configured maximum.
+- F values: movement speed in mm/min. F2500 means 2500 mm/min, not 2500 mm/s.
+- Row spacing: millimetres between raster lines; 0.15 mm is about 6.67 lines/mm.
+- M4: dynamic laser power for moving marks. M5 S0 commands the laser off.
+- Negative: image-processing choice applied before the file is built; exported .nc already contains it.
+- Layer count, cooling row groups and laser-off run-up distances affect duration and edge quality.
+- Check device power scale, axis calibration, acceleration, work offset and travel limits before using exported files on a different machine.
 
-# In LaserGRBL's picture import
-Its invert (negative) button does the same as Negative here. Press it only when Negative would be on."""
-
-LASERGRBL = """# Settings for '{name}'
-In LaserGRBL: File > Open the picture, then {recipe}
-
-# What LaserGRBL's settings mean
-- Quality (lines/mm) = 1 divided by the row spacing. 10 lines/mm = 0.1 mm rows.
-- S-MAX = the strongest power. S1000 = 100% on your U20 ($30=1000), so S500 = 50%.
-- S-MIN = the weakest power. Grayscale only; keep 0 for dots.
-- Laser mode M4 (dynamic): power follows the real speed, so row ends and corners don't over-burn.
-- The loop counter next to LaserGRBL's run button repeats the whole job: those are extra passes (see 'Too light or too dark?').
-
-# Running this app's files in LaserGRBL
-- File > Open the '... - all passes.nc' file, or one layer file at a time if you want photo pauses.
-- Don't import the PNG files and don't press invert: the conversion is already done.
-- Put the head on the origin the job expects (step 3) and check the frame first.
-
-# If the USB drops out
-Jobs run from this app record exactly where the head stopped and resume safely. In LaserGRBL, don't use Resume or Home after a reconnect: it can jump to old coordinates (that burned the bed on the card)."""
+# How to check
+Compare Looks like, What burns, and Toolpath before saving. The Toolpath image shows planned powered marks, not unpowered travel or the actual position of a connected laser. Use the app's job verifier and laser-off perimeter check; don't rely on a picture alone for motion safety."""
 
 PERIMETER = """# The origin
 The origin (X0 Y0) is the spot the job is measured from: the lower-left corner or the centre of the piece (step 3). Jog the head there with the dot on, then press 'Set origin here'. Nothing moves when you set it.
@@ -115,12 +105,13 @@ SAFETY = """- Stay with the machine the whole time. Wood, cardboard and leather 
 FILES = """# Where jobs go
 Documents\\Laser Photo Studio\\Jobs\\<date>_<name>\\ (on this PC that's inside OneDrive\\Documents).
 - '01 Layer 1.nc', '02 ...': one file per layer, in order.
-- '<name> - all passes.nc': everything in one file, for LaserGRBL.
-- '1 LOOKS LIKE': the expected result. '2 LASER INPUT': black = laser fires. '3 IN LASERGRBL': its preview. '4 burn map': a colour per layer.
+- '<name> - all passes.nc': everything in one G-code file, without photo pauses.
+- '1 LOOKS LIKE': the expected result. '2 LASER INPUT': black = laser fires.
+- '3 TOOLPATH': simulated powered marks, not head movement. '4 burn map': a colour per layer.
 - README.txt explains the folder; photos\\ collects your layer photos.
 
 # Pictures for .nc files in File Explorer
-Windows only shows pictures for picture files. For .nc files it shows the icon of the program that opens them (LaserGRBL's 'LG'). install.ps1 adds a small preview add-on so Explorer draws what each .nc file will engrave; press F5 or reopen the folder after installing. uninstall.ps1 removes it.
+Windows typically shows a generic icon for G-code. install.ps1 adds a read-only thumbnail preview for compatible .nc files; press F5 or reopen the folder after installing. uninstall.ps1 removes it.
 
 # Your presets and settings
 Saved presets: Documents\\Laser Photo Studio\\my-presets.json. Port and phone-photo folder: the Settings button.
@@ -139,9 +130,9 @@ def styles_text() -> str:
 def topics(mat) -> list:
     return [("Start here", START),
             ("Too light or too dark?", DARKNESS),
-            ("Negatives & LaserGRBL", NEGATIVE),
+            ("Negative & previews", NEGATIVE),
             ("Print styles", styles_text()),
-            ("Using LaserGRBL", LASERGRBL.format(name=mat.name, recipe=lasergrbl_recipe(mat))),
+            ("G-code & machine settings", GCODE),
             ("Origin & perimeter check", PERIMETER),
             ("USB dropouts", DROPOUT),
             ("Safety", SAFETY),

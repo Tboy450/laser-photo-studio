@@ -25,7 +25,7 @@ class PreviewPanel(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(fill="x")
         ttk.Label(bar, text="Preview:", style="H2.TLabel").pack(side="left")
-        for text, val in (("Looks like", "look"), ("What burns", "map"), ("In LaserGRBL", "lgrbl"),
+        for text, val in (("Looks like", "look"), ("What burns", "map"), ("Toolpath", "toolpath"),
                           ("Picture", "pic")):
             ttk.Radiobutton(bar, text=text, value=val, variable=self.view, command=self.refresh).pack(side="left",
                                                                                                       padx=4)
@@ -62,7 +62,7 @@ class PreviewPanel(ttk.Frame):
             return
         if self.view.get() == "look":
             vals = ["Finished piece"] + [f"After {p.title}" for p in job.passes]
-        elif self.view.get() in ("map", "lgrbl"):
+        elif self.view.get() in ("map", "toolpath"):
             vals = ["All passes"] + [f"Only {p.title}" for p in job.passes]
         else:
             vals = ["Adjusted picture"]
@@ -101,8 +101,8 @@ class PreviewPanel(ttk.Frame):
                 im = simulate.appearance(job, sel)
             elif self.view.get() == "map":
                 im = simulate.burn_map(job, sel)
-            elif self.view.get() == "lgrbl":
-                im = simulate.lasergrbl_view(job, sel)
+            elif self.view.get() == "toolpath":
+                im = simulate.toolpath_view(job, sel)
             else:
                 im = simulate.source_view(job)
             self._cache = {key: im}
@@ -148,7 +148,7 @@ class PreviewPanel(ttk.Frame):
         look = LOOKS.get(app.mat.look, LOOKS["pine"])
         piece = job.piece if job is not None else app.piece
         px0, py0, px1, py1 = planner.piece_rect(piece)
-        fill = {"look": hexrgb(look[0]), "lgrbl": hexrgb(simulate.LASERGRBL_BG)}.get(self.view.get(), "#ffffff")
+        fill = {"look": hexrgb(look[0]), "toolpath": hexrgb(simulate.TOOLPATH_BG)}.get(self.view.get(), "#ffffff")
         if piece.get("shape") == "circle":
             c.create_oval(tx(px0), ty(py1), tx(px1), ty(py0), fill=fill, outline="#6b5b4b", width=2)
         else:
@@ -234,10 +234,9 @@ class PreviewPanel(ttk.Frame):
         if self.view.get() == "map":
             self.legend.configure(text="Colours: orange = layer 1, red = layer 2, dark red = layer 3, blue = thin "
                                        "lines/labels, black = dots. Pink = no-burn area.")
-        elif self.view.get() == "lgrbl":
-            self.legend.configure(text="How LaserGRBL draws the .nc (its default dark theme): light = laser on, "
-                                       "brighter = more power. It doesn't invert anything - wood jobs just look "
-                                       "like negatives there. 'Looks like' shows the real result.")
+        elif self.view.get() == "toolpath":
+            self.legend.configure(text="Toolpath: bright marks show planned laser power, not travel motion. "
+                                       "Any head marker is separate controller telemetry, not part of this image.")
         else:
             self.legend.configure(text="Blue dashes = art box, grey dashes = usable area and laser-off run-ups, "
                                        "red = keep-out zones and the origin.")

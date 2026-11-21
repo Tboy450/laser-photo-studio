@@ -141,7 +141,7 @@ class App(PlaceMixin, LaserMixin):
         ttk.Button(row, text="Mirror", command=self.flip).pack(side="left")
         g = ttk.LabelFrame(f, text="Already have a G-code file?", style="Card.TLabelframe")
         g.pack(fill="x", pady=8)
-        wrap_label(g, "Check where an existing .nc job (from this app, LaserGRBL or earlier projects) will burn, "
+        wrap_label(g, "Check the burn area of an existing .nc job (from any compatible source), "
                       "with the 1% dot perimeter check.", style="Small.TLabel").pack(anchor="w")
         ttk.Button(g, text="Open G-code for a perimeter check...", command=lambda: self.perimeter_mode(None)).pack(
             anchor="w", pady=(6, 0))
@@ -214,13 +214,13 @@ class App(PlaceMixin, LaserMixin):
         self.m_notes.pack(anchor="w")
         self.m_settings = wrap_label(card, "", style="Muted.TLabel")
         self.m_settings.pack(anchor="w", pady=(4, 0))
-        self.m_lgrbl = wrap_label(card, "", style="Small.TLabel")
-        self.m_lgrbl.pack(anchor="w", pady=(4, 0))
+        self.m_technical = wrap_label(card, "", style="Small.TLabel")
+        self.m_technical.pack(anchor="w", pady=(4, 0))
         lr = ttk.Frame(card)
         lr.pack(anchor="w", pady=(4, 0))
         link(lr, "Too light or too dark?", lambda: self.open_help("Too light or too dark?")).pack(side="left")
-        link(lr, "LaserGRBL settings explained", lambda: self.open_help("Using LaserGRBL")).pack(side="left",
-                                                                                                padx=12)
+        link(lr, "G-code settings explained", lambda: self.open_help("G-code & machine settings")).pack(
+            side="left", padx=12)
         st = ttk.LabelFrame(f, text="Print style", style="Card.TLabelframe")
         st.pack(fill="x", pady=4)
         self.style_var = tk.StringVar()
@@ -324,9 +324,9 @@ class App(PlaceMixin, LaserMixin):
         self.m_settings.configure(text=f"Power {pw}  |  speed {m.feed} mm/min  |  rows {m.pitch} mm  |  "
                                        f"{len(m.layer_rule) if m.style == 'layers' else m.passes} "
                                        f"{'layers' if m.style == 'layers' else 'pass(es)'}")
+        self.m_technical.configure(text=presets.gcode_settings_summary(m))
         self.style_var.set(s["name"])
         self.style_help.configure(text=f"{s['what']} {s['why']}\nBest for: {s['best']}")
-        self.m_lgrbl.configure(text="In LaserGRBL: File > Open the picture, then " + presets.lasergrbl_recipe(m))
         base = self.base_mat
         if base.style != m.style:
             self.energy_lbl.configure(text="Different print style from the preset: compare them with a test grid.")

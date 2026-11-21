@@ -103,10 +103,13 @@ def main():
     app.goto(3)
     assert pump(app, 30, lambda: app.report is not None and app.compiled_gen == app.gen), "check timed out"
     assert app.report["ok"], app.report
+    assert app.btn_export.cget("text") == "Export G-code (.nc)..."
+    assert not hasattr(app, "btn_lgrbl")
+    assert hasattr(app, "export_gcode")
     shot(app, "3-check")
     folder = app.save_current_job(quiet=True)
     assert folder and jobs.lasergrbl_path(folder).exists()
-    app.open_help("Negatives & LaserGRBL")
+    app.open_help("Negative & previews")
     pump(app, 1.0)
     hw = app.help_win
     hw.geometry("1000x720+60+60")
@@ -131,13 +134,19 @@ def main():
     pulses = app.worker.ctrl.pulses
     assert len(pulses) == 4 and all(p[2] == 10 for p in pulses), pulses
     shot(app, "4-laser")
-    # Material card explanations: LaserGRBL settings and the energy readout after slowing down.
+    # Material card explanations: internal settings and the energy readout after slowing down.
     app.select_material("anodized-dots")
     var, _ = app.adv_vars["feed"]
     var.set("1800")
     app._adv_changed()
     assert "1.39x" in app.energy_lbl.cget("text"), app.energy_lbl.cget("text")
-    assert "S-MAX 500 (= 50%)" in app.m_lgrbl.cget("text"), app.m_lgrbl.cget("text")
+    assert "Power 50 %" in app.m_settings.cget("text"), app.m_settings.cget("text")
+    assert "S500" in app.m_technical.cget("text"), app.m_technical.cget("text")
+    app.preview.view.set("toolpath")
+    app.preview.refresh()
+    pump(app, 0.2)
+    assert app.preview.view.get() == "toolpath"
+    assert "planned" in app.preview.legend.cget("text").lower()
     app.goto(1)
     pump(app, 1.0)
     app.pages[1].canvas.yview_moveto(0.40)

@@ -1,4 +1,4 @@
-"""Steps 3 (size & placement) and 4 (look & check, save, LaserGRBL)."""
+"""Steps 3 (size & placement) and 4 (look & check, save, export G-code)."""
 from __future__ import annotations
 
 import copy
@@ -281,11 +281,11 @@ class PlaceMixin:
         wrap_label(c, "Use Negative when the laser makes LIGHT marks (black anodized aluminum, slate, black "
                       "acrylic). On wood, keep it off: burning the art's light lines keeps detail. Black-on-white "
                       "artwork meant to be marked as drawn (like the card IMPORT files) also needs it off.\n"
-                      "LaserGRBL never inverts a .nc file: its preview just draws burned areas light on dark, so "
-                      "wood jobs look like negatives there. Compare 'In LaserGRBL' with 'Looks like' above the "
-                      "preview.", style="Small.TLabel").pack(anchor="w", pady=(2, 0))
-        link(c, "Negatives & LaserGRBL's preview explained",
-             lambda: self.open_help("Negatives & LaserGRBL")).pack(anchor="w", pady=(4, 0))
+                      "The preview shows the expected material finish and the separate burn map, "
+                      "so you can check polarity before saving.", style="Small.TLabel").pack(
+                          anchor="w", pady=(2, 0))
+        link(c, "Negative & previews explained",
+             lambda: self.open_help("Negative & previews")).pack(anchor="w", pady=(4, 0))
         t = ttk.LabelFrame(f, text="Tone cut points (layered wood style)", style="Card.TLabelframe")
         t.pack(fill="x", pady=4)
         self.v_cut = [tk.DoubleVar(), tk.DoubleVar(), tk.DoubleVar()]
@@ -301,21 +301,20 @@ class PlaceMixin:
         ttk.Button(k, text="Check job", command=self.check_job).pack(anchor="w")
         self.check_text = wrap_label(k, "Open a picture first.")
         self.check_text.pack(anchor="w", pady=(6, 0))
-        s = ttk.LabelFrame(f, text="Save / LaserGRBL", style="Card.TLabelframe")
+        s = ttk.LabelFrame(f, text="Save / export", style="Card.TLabelframe")
         s.pack(fill="x", pady=4)
         row = ttk.Frame(s)
         row.pack(fill="x")
         self.btn_save = ttk.Button(row, text="Save job", command=self.save_current_job)
         self.btn_save.pack(side="left")
-        self.btn_export = ttk.Button(row, text="Save G-code for LaserGRBL...", command=self.export_lasergrbl)
+        self.btn_export = ttk.Button(row, text="Export G-code (.nc)...", command=self.export_gcode)
         self.btn_export.pack(side="left", padx=6)
-        self.btn_lgrbl = ttk.Button(s, text="Open in LaserGRBL", command=self.open_lasergrbl)
-        self.btn_lgrbl.pack(anchor="w", pady=(6, 0))
         self.saved_lbl = wrap_label(s, "", style="Small.TLabel")
         self.saved_lbl.pack(anchor="w", pady=(4, 0))
-        wrap_label(s, "Running in LaserGRBL? If the USB drops out there, don't use its Resume or Home: it can jump "
-                      "to old coordinates (that burned the bed on the card). Running from step 5 here records "
-                      "exactly where it stopped instead.", style="Small.TLabel").pack(anchor="w", pady=(6, 0))
+        wrap_label(s, "Engrave checked jobs in step 5 for progress, photo pauses and verified "
+                      "resume. Exported G-code is for compatible external workflows; always verify "
+                      "the origin and machine settings before using it elsewhere.",
+                   style="Small.TLabel").pack(anchor="w", pady=(6, 0))
         self._next(f, "Next: laser  >", 4)
 
     def _set_cuts(self, cuts):
@@ -350,7 +349,7 @@ class PlaceMixin:
         self.after_build_place()
         job, rep = self.job, self.report
         ok = bool(rep and rep["ok"] and self.compiled_gen == self.gen)
-        for b in (self.btn_save, self.btn_export, self.btn_lgrbl):
+        for b in (self.btn_save, self.btn_export):
             b.state(["!disabled"] if ok else ["disabled"])
         if job is None:
             self.check_text.configure(text="Open a picture first.")
@@ -399,7 +398,7 @@ class PlaceMixin:
                      picture_file=str(self.picture_path) if self.picture_path else None, grid=self.grid_spec)
         previews = {"1 LOOKS LIKE - finished piece": simulate.appearance(job),
                     "2 LASER INPUT - black means the laser fires": simulate.laser_input(job),
-                    "3 IN LASERGRBL - how its preview draws the nc": simulate.lasergrbl_view(job),
+                    "3 TOOLPATH - powered marks on dark": simulate.toolpath_view(job),
                     "4 burn map - colour per layer": simulate.burn_map(job)}
         folder = jobs.save_job(job, self.report, picture=None if self.grid_spec else self.picture, previews=previews,
                                extra=extra)
@@ -409,11 +408,11 @@ class PlaceMixin:
             self.say(f"Saved the job in {folder}", "ok")
         return folder
 
-    def export_lasergrbl(self):
+    def export_gcode(self):
         folder = self.save_current_job(quiet=True)
         if not folder:
             return
-        dest = filedialog.asksaveasfilename(title="Save G-code for LaserGRBL", defaultextension=".nc",
+        dest = filedialog.asksaveasfilename(title="Export G-code", defaultextension=".nc",
                                             initialfile=f"{self.job.name}.nc", filetypes=[("G-code", "*.nc")])
         if not dest:
             return
@@ -424,30 +423,8 @@ class PlaceMixin:
             layers.mkdir(exist_ok=True)
             for f in (folder / "passes").glob("*.nc"):
                 shutil.copyfile(f, layers / f.name)
-        messagebox.showinfo("Saved", f"Saved {dest.name}" + (f"\n\nOne file per layer (for photo pauses) is in:\n"
-                                                             f"{layers}" if len(self.job.passes) > 1 else "") +
-                            "\n\nIn LaserGRBL: File > Open, set the origin where this app expects it, and check "
-                            "the frame before running.")
+        messagebox.showinfo("G-code exported", f"Saved {dest.name}" +
+                            (f"\n\nIndividual passes are in:\n{layers}" if len(self.job.passes) > 1 else "") +
+                            "\n\nBefore using external G-code, confirm the intended origin, "
+                            "machine settings and framing on the target controller.", parent=self.root)
 
-    def open_lasergrbl(self):
-        folder = self.save_current_job(quiet=True)
-        if not folder:
-            return
-        exe = jobs.find_lasergrbl(self.settings.get("lasergrbl", ""))
-        if not exe:
-            messagebox.showerror("LaserGRBL not found", "Set the path to LaserGRBL.exe in Settings.")
-            return
-        if self.worker is not None:
-            if not messagebox.askyesno("One sender at a time",
-                                       "This app is connected to the laser. Disconnect so LaserGRBL can use it?"):
-                return
-            self.disconnect(wait=True)
-        path = jobs.lasergrbl_path(folder)
-        if "LaserGRBL.exe" in jobs.running_processes(("LaserGRBL.exe",)):
-            self.root.clipboard_clear()
-            self.root.clipboard_append(str(path))
-            messagebox.showinfo("LaserGRBL is already open",
-                                f"Use File > Open in LaserGRBL and paste this path (already copied):\n\n{path}")
-            return
-        jobs.open_in_lasergrbl(path, exe)
-        self.say("Opened in LaserGRBL.", "ok")
