@@ -1,7 +1,6 @@
 // Laser Photo Studio 1.0 - picture previews for laser G-code files (.nc .gcode .gc .ngc) in File Explorer.
-// Windows only draws thumbnails for picture files; for G-code it shows the icon of the program that opens it
-// (LaserGRBL's "LG"). This add-on reads the file (never changes it), replays the laser moves and draws what will
-// be engraved, in the material's colours when the file says which material it is for.
+// Windows normally shows a generic icon for G-code. This add-on reads the file without modifying it,
+// replays the laser moves and draws the expected engraving in the file's recorded material colours.
 using System;
 using System.Collections.Generic;
 using System.Drawing;
