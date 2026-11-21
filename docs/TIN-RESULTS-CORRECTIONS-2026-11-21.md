@@ -26,3 +26,9 @@
 5. Record unit labels and provenance; note ambiguous or unretrieved tests as *unknown*, not *failed* or *successful*.
 
 Related private cross-session master handoff: https://github.com/Tboy450/session-handoff-hub/pull/12
+
+## Finish and speed interpretation — additional operator correction (2026-11-21)
+
+- **100% power at 140 mm/min** remains the operator's lighter copper baseline. The operator described **rose/brass through dark copper** as the relevant copper-color range and clarified that the copper becomes **too dark at speeds below 140 mm/min**. Avoid suggesting a slower-than-140 feed as a way to obtain acceptable copper unless the operator explicitly re-tests it. Do not convert a descriptive color boundary into an exact quantitative color measurement.
+- A **dark/soot-like appearance immediately after lasering is not a reason to reject a SILVER candidate**. The operator specifically wants to recover settings where the soot **wipes off** and leaves **frosted etched stainless / exposed-metal appearance**. Grade these candidates by the **after-wipe finish** and record both before/after cleaning. This does **not** establish which power/feed has that outcome on the current lid stock.
+- Distinguish (a) copper too dark **after finishing** because a feed was too slow, from (b) temporary dark soot **before wiping** that cleans away to the desired metal finish. No physical new test was performed in this chat.
