@@ -14,7 +14,7 @@ START = """# Five steps
 # The preview buttons
 - Looks like: roughly how the finished piece will look on the material.
 - What burns: each layer in its own colour.
-- Toolpath: planned laser-powered marks on a dark background, brighter for higher commanded power; not a live motion trace.
+- Toolpath: planned laser-powered marks on a dark background; any overlaid head marker is separate controller telemetry, not part of the rendered toolpath.
 - Picture: the adjusted picture before it becomes laser moves.
 
 # Good habits
