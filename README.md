@@ -10,9 +10,9 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
 
 - **Laser Photo Studio** (desktop icon): the full app. Drop a picture or `.nc` file on it to open it.
 - **Laser Perimeter Check** (desktop icon): opens straight to the 1% dot perimeter check. Drop any `.nc` file on it
-  (from this app, LaserGRBL or older project jobs) to see where it will burn.
-- **Pictures for `.nc` files in File Explorer.** Windows only previews picture files; for G-code it shows the icon
-  of the program that opens it (LaserGRBL's "LG"). The install adds a small preview add-on, so Explorer draws what
+  (from this app or another compatible source) to see where it will burn.
+- **Pictures for `.nc` files in File Explorer.** Windows normally shows a generic G-code icon. The install
+  adds a small read-only thumbnail add-on, so Explorer draws what
   each `.nc` file will engrave (anodized jobs as silver on black, wood jobs in wood colours). Press F5 or reopen
   the folder afterwards. Laser-off frame files keep the normal icon.
 
@@ -22,18 +22,18 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
 
 1. **Picture.** Photos, drawings or logos; phone HEIC photos work. Turn or mirror it if needed.
 2. **Material & style.** Green = proven on your U20, yellow = a starting point from other 20 W lasers (test first).
-   Each preset explains itself, shows the matching **LaserGRBL settings**, and shows the **energy** of any changes
+   Each preset explains its intended engraving effect and shows the **relative energy** of changes
    compared with the preset. Proven presets show **photos**: the ladder and grid tests, their charts, and finished
    pieces made with them (click to enlarge). Add your own test photos to any preset, and save your own presets.
 3. **Size & placement.** Piece size, origin (lower-left corner or centre), margins and no-burn zones (twine holes,
    screws). Nudge the art in 0.5-5 mm steps.
 4. **Look & check.** Brightness, contrast, sharpen, Negative, tone cut points. Then every command is replayed
    offline: only allowed powers and speeds, nothing outside the piece, every dot burned exactly once, laser off at
-   every start and end. Nothing reaches the laser until this passes. Save the job or open it in LaserGRBL.
+   every start and end. Nothing reaches the laser until this passes. Save the checked job or export G-code.
 5. **Laser.** Connect, set the origin, **perimeter check**, then Start.
 
-The **Guide** button (top right) explains everything in plain words: too light or too dark, negatives and
-LaserGRBL's preview, print styles, LaserGRBL settings, origin and perimeter check, USB dropouts, safety and files.
+The **Guide** button (top right) explains everything in plain words: power, print styles, preview polarity,
+origin and perimeter checks, USB dropouts, safety and saved jobs.
 Blue links in the steps open the right Guide page.
 
 ## Perimeter check with the 1% dot
@@ -49,7 +49,7 @@ edges. The **Dot on (1%)** button gives a steady dot (auto-off after 60 s) for l
 - **Never homes.** `$H`, `G28`/`G30` and `$` setting changes are refused at the lowest level and never sent.
 - Checks `$30=1000`, `$31=0`, `$32=1`, `$100=$101=100` before any laser output.
 - M4 dynamic power; every move is G1 (laser-off travel is `G1 ... S0`); `M5 S0` at every row end and job end.
-- One sender at a time: warns if LaserGRBL or Positioning Laser is open; only one job runs at a time.
+- One sender at a time: warns if another known laser-control program is open; only one job runs at a time.
 - Opens COM4 with DTR/RTS off. Refuses to start if the controller just rebooted, if the head isn't at the origin,
   or if a job file was edited after checking. Stops if the head is reported outside the job's area.
 
@@ -116,15 +116,14 @@ Run-ups grow automatically with speed (about 10 mm at 6000 mm/min). Save the bes
   they blur dots. Energy per mm is roughly power ÷ speed.
 - **Negative** burns the light parts of a picture. Use it for photos on materials that mark light (anodized,
   slate, black acrylic); keep it off for wood and for black-on-white artwork such as the card `IMPORT.png` files.
-- **LaserGRBL never inverts a `.nc` file.** Its preview draws laser-on areas light on dark, so wood jobs *look*
-  negative there. See the **In LaserGRBL** preview and `docs/negatives-explained.png`.
-- **In LaserGRBL, after a USB dropout**, don't use Resume or Home: it can jump to old coordinates.
+- **Preview polarity:** "Looks like" approximates the result on the material; "What burns" shows the intended marks. Exported G-code already encodes Negative.
+- **After a USB dropout:** use the Studio recovery checklist and verify the stop point before resuming. Never use Home on a machine without homing switches.
 
 ## Files
 
 - **Jobs:** `Documents\Laser Photo Studio\Jobs\<date>_<name>\` (on this PC inside `OneDrive\Documents`):
-  `passes\01 Layer 1.nc ...` (one per layer), `<name> - all passes.nc` (for LaserGRBL), previews
-  (`1 LOOKS LIKE`, `2 LASER INPUT`, `3 IN LASERGRBL`, `4 burn map`), `README.txt`, `job.json`, `state.json`,
+  `passes\01 Layer 1.nc ...` (one per layer), `<name> - all passes.nc` (portable G-code), previews
+  (`1 LOOKS LIKE`, `2 LASER INPUT`, `3 burn map`), `README.txt`, `job.json`, `state.json`,
   `log.txt`, `photos\`.
 - **Presets and settings:** `Documents\Laser Photo Studio\my-presets.json`, `settings.json`.
 - **Sample photos:** built in under `assets\samples\` (made from the project's tests by `tools\make_samples.py`,
