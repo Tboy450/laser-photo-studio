@@ -1,4 +1,4 @@
-"""Read any G-code project file (ours, LaserGRBL's, older project jobs) to find where it burns, for perimeter checks."""
+"""Read compatible G-code to locate its burn area for laser-off perimeter checks."""
 from __future__ import annotations
 
 import re
