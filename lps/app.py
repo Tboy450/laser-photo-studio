@@ -214,9 +214,13 @@ class App(PlaceMixin, LaserMixin):
         self.m_notes.pack(anchor="w")
         self.m_settings = wrap_label(card, "", style="Muted.TLabel")
         self.m_settings.pack(anchor="w", pady=(4, 0))
+        self.m_technical = wrap_label(card, "", style="Small.TLabel")
+        self.m_technical.pack(anchor="w", pady=(4, 0))
         lr = ttk.Frame(card)
         lr.pack(anchor="w", pady=(4, 0))
         link(lr, "Too light or too dark?", lambda: self.open_help("Too light or too dark?")).pack(side="left")
+        link(lr, "G-code settings explained", lambda: self.open_help("G-code & machine settings")).pack(
+            side="left", padx=12)
         st = ttk.LabelFrame(f, text="Print style", style="Card.TLabelframe")
         st.pack(fill="x", pady=4)
         self.style_var = tk.StringVar()
@@ -320,6 +324,7 @@ class App(PlaceMixin, LaserMixin):
         self.m_settings.configure(text=f"Power {pw}  |  speed {m.feed} mm/min  |  rows {m.pitch} mm  |  "
                                        f"{len(m.layer_rule) if m.style == 'layers' else m.passes} "
                                        f"{'layers' if m.style == 'layers' else 'pass(es)'}")
+        self.m_technical.configure(text=presets.gcode_settings_summary(m))
         self.style_var.set(s["name"])
         self.style_help.configure(text=f"{s['what']} {s['why']}\nBest for: {s['best']}")
         base = self.base_mat
