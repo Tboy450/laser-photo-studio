@@ -63,8 +63,11 @@ def source_view(job: JobPlan) -> Image.Image:
     return Image.fromarray(np.clip(g, 0, 255).astype(np.uint8), "L").convert("RGB")
 
 
-LASERGRBL_BG = (23, 30, 38)        # LaserGRBL default "CAD Dark" theme: PreviewBackColor
-LASERGRBL_LINE = (220, 220, 220)   # PreviewLaserPower; brightness follows S relative to the file's strongest S
+TOOLPATH_BG = (23, 30, 38)
+TOOLPATH_MARK = (220, 220, 220)  # Intensity follows planned S power across selected passes
+# Backward-compatible aliases for older extensions and saved workflows.
+LASERGRBL_BG = TOOLPATH_BG
+LASERGRBL_LINE = TOOLPATH_MARK
 
 
 def _power_sum(job: JobPlan, passes=None):
@@ -79,17 +82,21 @@ def _power_sum(job: JobPlan, passes=None):
     return np.clip(acc, 0, 1)
 
 
-def lasergrbl_view(job: JobPlan, passes=None) -> Image.Image:
-    """How LaserGRBL's preview draws the .nc: light lines where the laser fires on a dark background.
-    It does not invert anything - wood jobs simply look like negatives there."""
+def toolpath_view(job: JobPlan, passes=None) -> Image.Image:
+    """Preview planned powered marks on dark material, not travel moves or live head telemetry."""
     a = _power_sum(job, passes)
-    bg, fg = np.array(LASERGRBL_BG, float), np.array(LASERGRBL_LINE, float)
+    bg, fg = np.array(TOOLPATH_BG, float), np.array(TOOLPATH_MARK, float)
     rgb = bg[None, None, :] + (fg - bg)[None, None, :] * a[:, :, None]
     return Image.fromarray(rgb.astype(np.uint8), "RGB")
 
 
+def lasergrbl_view(job: JobPlan, passes=None) -> Image.Image:
+    """Legacy API: preserve older callers while the UI uses Studio's toolpath preview."""
+    return toolpath_view(job, passes)
+
+
 def laser_input(job: JobPlan) -> Image.Image:
-    """Black = the laser fires (darker = more power), white = untouched. Same convention as LaserGRBL's picture
-    import and the project's *-IMPORT.png files. 1 pixel = 1 dot."""
+    """Black = planned laser-on cells, white = untouched. Same pixel convention as Studio's
+    import masks; 1 pixel equals one planned mark cell."""
     a = _power_sum(job)
     return Image.fromarray((255 - a * 255).astype(np.uint8), "L")
