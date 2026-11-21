@@ -384,3 +384,22 @@ def energy(m: Material) -> float:
     return power / max(1, m.feed) * max(1, m.passes)
 
 
+
+
+def gcode_settings_summary(m: Material) -> str:
+    """Neutral machine-readable recipe summary; does not assert compatibility with other controllers."""
+    if m.style == "layers":
+        powers = "layer tone power " + "/".join(f"S{int(v)}" for v in m.tone_power)
+        passes = "layered tone passes (plus thin detail where generated)"
+    elif m.style == "grayscale":
+        powers = f"power S{m.power_min}–S{m.power}"
+        passes = f"{max(1, int(m.passes))} pass(es)"
+    else:
+        powers = f"power S{m.power}"
+        passes = f"{max(1, int(m.passes))} pass(es)"
+    pitch = max(float(m.pitch), 1e-6)
+    return (f"{powers} ($30=1000 scale on the U20)  |  "
+            f"feed F{int(m.feed)} mm/min  |  "
+            f"row pitch {pitch:g} mm ({1.0 / pitch:.2f} lines/mm)  |  M4 dynamic power\n"
+            f"{passes}  |  {max(1, int(m.interlace))} cooling row group(s)  |  "
+            f"Negative {'ON' if m.negative else 'OFF'} in image processing")
