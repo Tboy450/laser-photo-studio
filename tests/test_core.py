@@ -194,22 +194,17 @@ class Samples(unittest.TestCase):
 
 
 class Explanations(unittest.TestCase):
-    def test_lasergrbl_recipes_and_energy(self):
+    def test_studio_native_guide_and_energy(self):
         card = next(m for m in presets.BUILTIN if m.key == "anodized-dots")
-        r = presets.lasergrbl_recipe(card)
-        self.assertIn("1bit BW Dithering", r)
-        self.assertIn("Floyd-Steinberg", r)
-        self.assertIn("S-MAX 500 (= 50%)", r)
-        self.assertIn("Quality 10 lines/mm", r)
-        self.assertIn("invert", r)          # Negative is on for anodized photos
-        pine = next(m for m in presets.BUILTIN if m.key == "pine-layers")
-        self.assertIn("layer files", presets.lasergrbl_recipe(pine))
         slower = card.copy(feed=1800)
         self.assertAlmostEqual(presets.energy(slower) / presets.energy(card), 2500 / 1800)
         from lps import helptext
-        titles = [t for t, _ in helptext.topics(card)]
+        topics = helptext.topics(card)
+        titles = [t for t, _ in topics]
         self.assertIn("Too light or too dark?", titles)
-        self.assertTrue(all(body.strip() for _, body in helptext.topics(card)))
+        self.assertIn("Negative & previews", titles)
+        self.assertNotIn("Using LaserGRBL", titles)
+        self.assertTrue(all(body.strip() for _, body in topics))
 
 
 if __name__ == "__main__":
