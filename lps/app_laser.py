@@ -178,9 +178,9 @@ class LaserMixin:
         if not demo:
             others = jobs.running_processes()
             if others and not messagebox.askyesno(
-                    "One program at a time", f"{', '.join(others)} is open. Only one program can use the laser at a "
-                                             "time - close it (or turn the Positioning Laser OFF) first.\n\n"
-                                             "Try to connect anyway?"):
+                    "One program at a time", "Another known laser-control program is open. Only one program "
+                                             "can use the controller at a time. Close the other program "
+                                             "before connecting.\n\nTry to connect anyway?"):
                 return
         self.settings["port"] = self.port_var.get() or "COM4"
         jobs.save_settings(self.settings)
