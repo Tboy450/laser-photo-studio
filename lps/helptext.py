@@ -14,6 +14,7 @@ START = """# Five steps
 # The preview buttons
 - Looks like: roughly how the finished piece will look on the material.
 - What burns: each layer in its own colour.
+- Toolpath: planned laser-powered marks on a dark background, brighter for higher commanded power; not a live motion trace.
 - Picture: the adjusted picture before it becomes laser moves.
 
 # Good habits
@@ -54,6 +55,19 @@ Negative burns the LIGHT parts of the picture instead of the dark parts.
 - 'Picture' shows the adjusted source before it becomes G-code.
 - Exported .nc files contain the final toolpath: changing a picture later does not modify an already exported file."""
 
+GCODE = """# G-code and machine settings
+Laser Photo Studio produces verified G-code for its supported controller configuration.
+- Power S-values: the U20 uses $30=1000, so S500 means 50% of the configured maximum.
+- F values: movement speed in mm/min. F2500 means 2500 mm/min, not 2500 mm/s.
+- Row spacing: millimetres between raster lines; 0.15 mm is about 6.67 lines/mm.
+- M4: dynamic laser power for moving marks. M5 S0 commands the laser off.
+- Negative: image-processing choice applied before the file is built; exported .nc already contains it.
+- Layer count, cooling row groups and laser-off run-up distances affect duration and edge quality.
+- Check device power scale, axis calibration, acceleration, work offset and travel limits before using exported files on a different machine.
+
+# How to check
+Compare Looks like, What burns, and Toolpath before saving. The Toolpath image shows planned powered marks, not unpowered travel or the actual position of a connected laser. Use the app's job verifier and laser-off perimeter check; don't rely on a picture alone for motion safety."""
+
 PERIMETER = """# The origin
 The origin (X0 Y0) is the spot the job is measured from: the lower-left corner or the centre of the piece (step 3). Jog the head there with the dot on, then press 'Set origin here'. Nothing moves when you set it.
 
@@ -92,7 +106,8 @@ FILES = """# Where jobs go
 Documents\\Laser Photo Studio\\Jobs\\<date>_<name>\\ (on this PC that's inside OneDrive\\Documents).
 - '01 Layer 1.nc', '02 ...': one file per layer, in order.
 - '<name> - all passes.nc': everything in one G-code file, without photo pauses.
-- '1 LOOKS LIKE': the expected result. '2 LASER INPUT': black = laser fires. '3 burn map': a colour per layer.
+- '1 LOOKS LIKE': the expected result. '2 LASER INPUT': black = laser fires.
+- '3 TOOLPATH': simulated powered marks, not head movement. '4 burn map': a colour per layer.
 - README.txt explains the folder; photos\\ collects your layer photos.
 
 # Pictures for .nc files in File Explorer
@@ -117,6 +132,7 @@ def topics(mat) -> list:
             ("Too light or too dark?", DARKNESS),
             ("Negative & previews", NEGATIVE),
             ("Print styles", styles_text()),
+            ("G-code & machine settings", GCODE),
             ("Origin & perimeter check", PERIMETER),
             ("USB dropouts", DROPOUT),
             ("Safety", SAFETY),
