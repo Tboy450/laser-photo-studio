@@ -1,4 +1,4 @@
-"""Job folders: every job is saved before anything runs, with LaserGRBL-compatible G-code files.
+"""Job folders: every job is saved before anything runs, with portable G-code files.
 
 <Documents>/Laser Photo Studio/Jobs/<date>_<name>/
     job.json                  settings, passes (+ SHA-256 of each file), placement, check results
@@ -56,8 +56,7 @@ def read_json(path: Path, default=None):
 
 
 def load_settings() -> dict:
-    d = dict(port="COM4", baud=115200, phone_folder=str(Path.home() / "Downloads" / "Mobile Devices"),
-             lasergrbl=r"C:\Program Files (x86)\LaserGRBL\LaserGRBL.exe", pulses=3, perimeter_feed=1500,
+    d = dict(port="COM4", baud=115200, phone_folder=str(Path.home() / "Downloads" / "Mobile Devices"), pulses=3, perimeter_feed=1500,
              perimeter_spacing=0.0, pause_between_layers=True)
     d.update(read_json(SETTINGS_FILE, {}) or {})
     return d
@@ -114,7 +113,7 @@ def lasergrbl_name(job: JobPlan) -> str:
 
 
 def lasergrbl_path(folder: Path) -> Path:
-    """The single-file version of a saved job, for LaserGRBL."""
+    """Single-file G-code export. Retains legacy saved-job metadata for compatibility."""
     doc = read_json(Path(folder) / "job.json", {}) or {}
     return Path(folder) / doc.get("lasergrbl_file", "all-passes.nc")
 
@@ -135,26 +134,19 @@ Origin (work X0 Y0): {origin_text(job.piece)}
 {neg}
 
 FILES
-passes\\{first} ...    One file per layer, in order. Best run from Laser Photo Studio (step 5): photo pauses
-                         after each layer and safe recovery if the USB drops out.
+passes\\{first} ...    One file per layer, in order. Run from Laser Photo Studio (step 5)
+                         for photo pauses and verified USB-recovery workflow.
 {lasergrbl_name(job)}
-                         Everything in one file, for LaserGRBL (no photo pauses).
-1 LOOKS LIKE ....png     Roughly how the finished piece should look on the material. NOT a laser input.
-2 LASER INPUT ....png    Black = where the laser fires (darker = more power), white = untouched. 1 pixel = 1 dot
-                         ({m.pitch} mm). Same convention LaserGRBL uses when it imports a picture, and the same
-                         as the project's *-IMPORT.png files. The .nc files already contain it.
-3 IN LASERGRBL ....png   How LaserGRBL's preview will draw the .nc: light lines on a dark background where the
-                         laser fires, brighter = more power (its default dark theme). LaserGRBL does NOT invert
-                         anything when it opens a .nc, so wood jobs look like a negative there, while
-                         light-marking materials (anodized, slate) look like the real result.
-4 burn map ....png       Each layer in its own colour.
+                         All passes in one .nc file, without photo pauses.
+1 LOOKS LIKE ....png     Roughly how the finished piece should look. NOT a laser input.
+2 LASER INPUT ....png    Black = where the laser fires, white = untouched; pixel resolution {m.pitch} mm.
+3 burn map ....png       Each layer in its own colour.
 
-LASERGRBL TIPS
-- Open the .nc with File > Open. Don't import the PNGs and don't press LaserGRBL's invert (negative) button:
-  the conversion is already done.
-- Put the head on the origin above and check the frame/perimeter first.
-- If the USB drops out in LaserGRBL, don't use its Resume or Home - it can jump to old coordinates. Jobs run
-  from Laser Photo Studio record where they stopped and resume safely.
+G-CODE SAFETY
+- Keep the original saved Studio job and settings for reliable restart and traceability.
+- Exported G-code is only for controllers with matching commands and coordinate conventions.
+- Recheck machine settings, origin and frame before using any exported G-code elsewhere.
+- Do not run two laser senders against one controller at the same time.
 """
 
 
@@ -270,15 +262,3 @@ def latest_jobs(limit: int = 30) -> list:
     return sorted(items, key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
 
 
-# ---------------------------------------------------------------------------------------- LaserGRBL
-def find_lasergrbl(configured: str = "") -> str | None:
-    for c in (configured, r"C:\Program Files (x86)\LaserGRBL\LaserGRBL.exe", r"C:\Program Files\LaserGRBL\LaserGRBL.exe",
-              str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "LaserGRBL" / "LaserGRBL.exe")):
-        if c and Path(c).exists():
-            return c
-    return None
-
-
-def open_in_lasergrbl(path: Path, exe: str) -> None:
-    """LaserGRBL opens a single file passed on its command line (MainForm.ManageCommandLineArgs)."""
-    subprocess.Popen([exe, str(path)], cwd=str(Path(exe).parent), close_fds=True)
