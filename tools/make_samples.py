@@ -125,8 +125,11 @@ SAMPLES = {
     "lid-test-marks": dict(
         src="saiyan-can/fullbody-aura-v7/operator-photo-2026-10-27-test-marks.jpg", kind="test", date="2026-10-27",
         title="Line tests on the lid",
-        caption="At 300 mm/min: 40% a tad light, 57-60% fine and visible, 80% browning. The brown oval is a slow "
-                "95% test that blistered the inside coating. 57% became the line setting."),
+        caption="Historical line test: at 300 mm/min, 40% looked light, 57-60% visible and 80% brown. "
+                "An earlier caption wrongly called a brown oval a 95% laser-blistering test. Operator correction "
+                "(2026-11-21): the only blistered lid was twice painted with gloss and had never been put "
+                "in the laser. The specific oval's origin and any 95%/300 outcome remain unverified. "
+                "Do not attribute blistering to laser power from this photo."),
     "lid-raster-swatches": dict(
         src="saiyan-can/raster-test-5/photos/left-end-labelled.jpg", kind="test", date="2026-10-28",
         title="Photo-dot swatches on a lid",
