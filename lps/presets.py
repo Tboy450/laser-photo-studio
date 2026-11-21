@@ -194,8 +194,8 @@ BUILTIN = [
         key="anodized-dots", name="Black anodized aluminum - photo dots", badge="PROVEN", style="floyd",
         look="anodized",
         summary="Silver dots on black: 50% power, 2500 mm/min, 0.1 mm rows, one pass.",
-        notes=["Good result on the heart card (Floyd-Steinberg dots, 1.8 mm run-up). The engineering card ran the same "
-               "settings in LaserGRBL: 10 min 37 s, 0 errors.",
+        notes=["Good result on the heart card (Floyd-Steinberg dots, 1.8 mm run-up). The engineering card's "
+               "recorded trial took 10 min 37 s, with 0 errors.",
                "The laser makes LIGHT marks, so photos are engraved as a negative to look right. Turn Negative "
                "off for black-on-white artwork that should be marked exactly as drawn.",
                "Marks too dim or grey? This is only 50% power: raise power first (60-75%), or slow down "
