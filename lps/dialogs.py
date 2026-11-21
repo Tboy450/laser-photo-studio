@@ -253,7 +253,6 @@ class SettingsDialog(FormDialog):
             ("port", "Laser USB port", settings["port"], ports + (["COM4"] if "COM4" not in ports else [])),
             ("baud", "Baud rate", settings["baud"], "int"),
             ("phone_folder", "Folder where phone photos arrive", settings["phone_folder"], "str"),
-            ("lasergrbl", "LaserGRBL.exe", settings["lasergrbl"], "str"),
             ("pulses", "Dot flashes per corner (perimeter check)", settings["pulses"], "int"),
             ("perimeter_feed", "Perimeter travel speed (mm/min)", settings["perimeter_feed"], "int"),
             ("perimeter_spacing", "Extra edge dots every N mm (0 = corners only)", settings["perimeter_spacing"],
