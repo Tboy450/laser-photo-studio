@@ -140,7 +140,8 @@ passes\\{first} ...    One file per layer, in order. Run from Laser Photo Studio
                          All passes in one .nc file, without photo pauses.
 1 LOOKS LIKE ....png     Roughly how the finished piece should look. NOT a laser input.
 2 LASER INPUT ....png    Black = where the laser fires, white = untouched; pixel resolution {m.pitch} mm.
-3 burn map ....png       Each layer in its own colour.
+3 TOOLPATH ....png       Planned powered marks on dark, not live head movement or laser-off travel.
+4 burn map ....png       Each layer in its own colour.
 
 G-CODE SAFETY
 - Keep the original saved Studio job and settings for reliable restart and traceability.
