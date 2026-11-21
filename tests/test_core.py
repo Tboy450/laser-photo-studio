@@ -204,8 +204,23 @@ class Explanations(unittest.TestCase):
         titles = [t for t, _ in topics]
         self.assertIn("Too light or too dark?", titles)
         self.assertIn("Negative & previews", titles)
+        self.assertIn("G-code & machine settings", titles)
+        technical = presets.gcode_settings_summary(card)
+        self.assertIn("S500", technical)
+        self.assertIn("F2500", technical)
+        self.assertIn("10.00 lines/mm", technical)
+        self.assertIn("6.67 lines/mm", presets.gcode_settings_summary(card.copy(pitch=0.15)))
         self.assertNotIn("Using LaserGRBL", titles)
         self.assertTrue(all(body.strip() for _, body in topics))
+
+    def test_toolpath_view_retained_with_neutral_name(self):
+        from lps import simulate
+        job = small_job("anodized-dots", w=20, h=15)
+        image = simulate.toolpath_view(job)
+        self.assertEqual(image.size, (job.geom.cols, job.geom.rows))
+        self.assertEqual(image.mode, "RGB")
+        # The old internal API name remains an alias for third-party code.
+        self.assertEqual(image.tobytes(), simulate.lasergrbl_view(job).tobytes())
 
 
 if __name__ == "__main__":
