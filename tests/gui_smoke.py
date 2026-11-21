@@ -103,6 +103,9 @@ def main():
     app.goto(3)
     assert pump(app, 30, lambda: app.report is not None and app.compiled_gen == app.gen), "check timed out"
     assert app.report["ok"], app.report
+    assert app.btn_export.cget("text") == "Export G-code (.nc)..."
+    assert not hasattr(app, "btn_lgrbl")
+    assert hasattr(app, "export_gcode")
     shot(app, "3-check")
     folder = app.save_current_job(quiet=True)
     assert folder and jobs.lasergrbl_path(folder).exists()
