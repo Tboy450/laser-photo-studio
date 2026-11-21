@@ -235,8 +235,8 @@ class PreviewPanel(ttk.Frame):
             self.legend.configure(text="Colours: orange = layer 1, red = layer 2, dark red = layer 3, blue = thin "
                                        "lines/labels, black = dots. Pink = no-burn area.")
         elif self.view.get() == "toolpath":
-            self.legend.configure(text="Toolpath: bright marks show planned laser power for the selected passes. "
-                                       "This is not live head position or a travel-motion trace.")
+            self.legend.configure(text="Toolpath: bright marks show planned laser power, not travel motion. "
+                                       "Any head marker is separate controller telemetry, not part of this image.")
         else:
             self.legend.configure(text="Blue dashes = art box, grey dashes = usable area and laser-off run-ups, "
                                        "red = keep-out zones and the origin.")
