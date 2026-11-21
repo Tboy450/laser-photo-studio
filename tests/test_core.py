@@ -141,6 +141,7 @@ class SaveLoad(unittest.TestCase):
             folder = jobs.save_job(job, rep, folder=Path(td) / "job")
             doc = jobs.read_json(folder / "job.json")
             self.assertTrue(doc["verified"])
+            self.assertNotIn("LaserGRBL", (folder / "README.txt").read_text(encoding="utf-8"))
             for p, meta in zip(job.passes, doc["passes"]):
                 self.assertEqual(jobs.read_body(folder / meta["file"]), p.commands)
                 self.assertEqual(jobs.sha256(folder / meta["file"]), meta["sha256"])
