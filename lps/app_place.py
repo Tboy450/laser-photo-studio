@@ -398,7 +398,8 @@ class PlaceMixin:
                      picture_file=str(self.picture_path) if self.picture_path else None, grid=self.grid_spec)
         previews = {"1 LOOKS LIKE - finished piece": simulate.appearance(job),
                     "2 LASER INPUT - black means the laser fires": simulate.laser_input(job),
-                    "3 burn map - colour per layer": simulate.burn_map(job)}
+                    "3 TOOLPATH - powered marks on dark": simulate.toolpath_view(job),
+                    "4 burn map - colour per layer": simulate.burn_map(job)}
         folder = jobs.save_job(job, self.report, picture=None if self.grid_spec else self.picture, previews=previews,
                                extra=extra)
         self.saved[self.gen] = folder
