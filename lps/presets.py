@@ -384,26 +384,3 @@ def energy(m: Material) -> float:
     return power / max(1, m.feed) * max(1, m.passes)
 
 
-LG_DITHER = {"floyd": "Floyd-Steinberg", "jarvis": "Jarvis", "stucki": "Stucki", "atkinson": "Atkinson"}
-
-
-def lasergrbl_recipe(m: Material) -> str:
-    """The same settings in LaserGRBL's picture import."""
-    q = f"Quality {1 / m.pitch:g} lines/mm"
-    nxt = f"in the next window: Engraving speed {m.feed} mm/min, Laser mode M4"
-    neg = " Press LaserGRBL's invert (negative) button, because Negative is on here." if m.negative else ""
-    if m.style in LG_DITHER:
-        return (f"choose '1bit BW Dithering' > {LG_DITHER[m.style]}, {q}; {nxt}, S-MIN 0, S-MAX {m.power} "
-                f"(= {m.power / 10:g}%).{neg}")
-    if m.style == "grayscale":
-        return (f"choose 'Line To Line Tracing', {q}; {nxt}, S-MIN {m.power_min}, S-MAX {m.power} "
-                f"(= {m.power_min / 10:g}-{m.power / 10:g}%).{neg}")
-    if m.style == "threshold":
-        return (f"choose 'Line To Line Tracing' with Threshold ticked, {q}; {nxt}, S-MIN 0, S-MAX {m.power} "
-                f"(= {m.power / 10:g}%).{neg}")
-    if m.style == "centerline":
-        return f"choose 'Centerline' (close, not identical); {nxt}, S-MAX {m.power} (= {m.power / 10:g}%)."
-    if m.style == "layers":
-        return ("nothing matches: LaserGRBL's picture import makes a single pass, so it can't do layers. Open this "
-                "app's layer files (01, 02, ...) in LaserGRBL one at a time, or run the job from this app.")
-    return "nothing matches this style. Save the job here, then File > Open its .nc file in LaserGRBL."
