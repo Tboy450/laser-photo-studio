@@ -25,8 +25,7 @@ class PreviewPanel(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(fill="x")
         ttk.Label(bar, text="Preview:", style="H2.TLabel").pack(side="left")
-        for text, val in (("Looks like", "look"), ("What burns", "map"), ("In LaserGRBL", "lgrbl"),
-                          ("Picture", "pic")):
+        for text, val in (("Looks like", "look"), ("What burns", "map"), ("Picture", "pic")):
             ttk.Radiobutton(bar, text=text, value=val, variable=self.view, command=self.refresh).pack(side="left",
                                                                                                       padx=4)
         self.show_box = ttk.Combobox(bar, textvariable=self.show, state="readonly", width=18)
@@ -101,8 +100,6 @@ class PreviewPanel(ttk.Frame):
                 im = simulate.appearance(job, sel)
             elif self.view.get() == "map":
                 im = simulate.burn_map(job, sel)
-            elif self.view.get() == "lgrbl":
-                im = simulate.lasergrbl_view(job, sel)
             else:
                 im = simulate.source_view(job)
             self._cache = {key: im}
@@ -234,10 +231,6 @@ class PreviewPanel(ttk.Frame):
         if self.view.get() == "map":
             self.legend.configure(text="Colours: orange = layer 1, red = layer 2, dark red = layer 3, blue = thin "
                                        "lines/labels, black = dots. Pink = no-burn area.")
-        elif self.view.get() == "lgrbl":
-            self.legend.configure(text="How LaserGRBL draws the .nc (its default dark theme): light = laser on, "
-                                       "brighter = more power. It doesn't invert anything - wood jobs just look "
-                                       "like negatives there. 'Looks like' shows the real result.")
         else:
             self.legend.configure(text="Blue dashes = art box, grey dashes = usable area and laser-off run-ups, "
                                        "red = keep-out zones and the origin.")
