@@ -32,7 +32,7 @@ Right-click **`install.ps1`** and choose *Run with PowerShell*. It's safe to run
    every start and end. Nothing reaches the laser until this passes. Save the checked job or export G-code.
 5. **Laser.** Connect, set the origin, **perimeter check**, then Start.
 
-The **Guide** button (top right) explains everything in plain words: power, print styles, preview polarity,
+The **Guide** button (top right) explains power, print styles, G-code machine parameters, preview polarity,
 origin and perimeter checks, USB dropouts, safety and saved jobs.
 Blue links in the steps open the right Guide page.
 
@@ -116,14 +116,14 @@ Run-ups grow automatically with speed (about 10 mm at 6000 mm/min). Save the bes
   they blur dots. Energy per mm is roughly power ÷ speed.
 - **Negative** burns the light parts of a picture. Use it for photos on materials that mark light (anodized,
   slate, black acrylic); keep it off for wood and for black-on-white artwork such as the card `IMPORT.png` files.
-- **Preview polarity:** "Looks like" approximates the result on the material; "What burns" shows the intended marks. Exported G-code already encodes Negative.
+- **Preview polarity:** "Looks like" approximates the result; "What burns" identifies layers; "Toolpath" shows planned powered marks against dark. Toolpath is a simulated image, not live head telemetry or laser-off travel. Exported G-code already encodes Negative.
 - **After a USB dropout:** use the Studio recovery checklist and verify the stop point before resuming. Never use Home on a machine without homing switches.
 
 ## Files
 
 - **Jobs:** `Documents\Laser Photo Studio\Jobs\<date>_<name>\` (on this PC inside `OneDrive\Documents`):
   `passes\01 Layer 1.nc ...` (one per layer), `<name> - all passes.nc` (portable G-code), previews
-  (`1 LOOKS LIKE`, `2 LASER INPUT`, `3 burn map`), `README.txt`, `job.json`, `state.json`,
+  (`1 LOOKS LIKE`, `2 LASER INPUT`, `3 TOOLPATH`, `4 burn map`), `README.txt`, `job.json`, `state.json`,
   `log.txt`, `photos\`.
 - **Presets and settings:** `Documents\Laser Photo Studio\my-presets.json`, `settings.json`.
 - **Sample photos:** built in under `assets\samples\` (made from the project's tests by `tools\make_samples.py`,
