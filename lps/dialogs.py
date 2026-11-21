@@ -6,7 +6,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from . import jobs, machine, presets
 from .presets import STYLES, Material
-from .ui_common import COLORS, wrap_label
+from .ui_common import COLORS, ScrollFrame, wrap_label
 
 
 class FormDialog(tk.Toplevel):
@@ -273,15 +273,25 @@ class RecoveryDialog(tk.Toplevel):
         self.point = tuple(self.res.get("expected_start", (0.0, 0.0)))
         self.title("Resume the job")
         self.transient(app.root)
-        self.resizable(False, False)
+        # The recovery checklist can be taller than a laptop screen. Cap the window
+        # to the visible display and keep the action buttons outside the scroller.
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        width = min(600, max(240, sw - 80))
+        height = min(600, max(220, sh - 120))
+        self.geometry(f"{width}x{height}")
+        self.minsize(min(width, 340), min(height, 260))
+        self.resizable(True, True)
         self.declared = False
-        f = ttk.Frame(self, padding=16)
-        f.pack(fill="both", expand=True)
+        shell = ttk.Frame(self, padding=12)
+        shell.pack(fill="both", expand=True)
+        ttk.Label(shell, text="Resume the job", style="H1.TLabel").pack(anchor="w")
+        scroller = ScrollFrame(shell)
+        scroller.pack(fill="both", expand=True, pady=(6, 0))
+        f = scroller.inner
         job = jobs.read_json(folder / "job.json", {}) or {}
         npass = len(job.get("passes", []))
         pi = int(self.res.get("start_pass", 0))
         ptitle = job.get("passes", [{}] * (pi + 1))[pi].get("title", f"pass {pi + 1}") if pi < npass else "end"
-        ttk.Label(f, text="Resume the job", style="H1.TLabel").pack(anchor="w")
         wrap_label(f, state.get("message", ""), width=500).pack(anchor="w", pady=(4, 6))
         wrap_label(f, f"It will continue {ptitle} ({pi + 1} of {npass}) from where it stopped, without burning "
                       f"anything twice. Stop point: X {self.point[0]:.2f}, Y {self.point[1]:.2f} mm.",
@@ -331,7 +341,8 @@ class RecoveryDialog(tk.Toplevel):
         s4.pack(fill="x", pady=4)
         self.pause = tk.BooleanVar(value=bool(app.settings.get("pause_between_layers", True)))
         ttk.Checkbutton(s4, text="Pause after each remaining layer for a photo", variable=self.pause).pack(anchor="w")
-        bar = ttk.Frame(s4)
+        # Fixed footer stays visible even when the recovery instructions scroll.
+        bar = ttk.Frame(shell)
         bar.pack(fill="x", pady=(8, 0))
         self.go = ttk.Button(bar, text="Resume engraving", style="Big.TButton", command=self.resume)
         self.go.pack(side="left")
