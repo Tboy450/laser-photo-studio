@@ -359,8 +359,8 @@ class LaserMixin:
                                         + ("  Origin set." if self.origin_set else ""))
         job = self.job
         if self.gfile:
-            self.engrave_lbl.configure(text="Checking a G-code file. To burn it, open it in LaserGRBL; this app "
-                                            "burns the jobs it made and checked itself.")
+            self.engrave_lbl.configure(text="Imported G-code can be checked with a laser-off perimeter trace. "
+                                            "To engrave here, open the source artwork and verify a new Studio job.")
             self.btn_start.state(["disabled"])
         elif job is None:
             self.engrave_lbl.configure(text="Open a picture first (step 1).")
