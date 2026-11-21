@@ -402,4 +402,4 @@ def gcode_settings_summary(m: Material) -> str:
             f"feed F{int(m.feed)} mm/min  |  "
             f"row pitch {pitch:g} mm ({1.0 / pitch:.2f} lines/mm)  |  M4 dynamic power\n"
             f"{passes}  |  {max(1, int(m.interlace))} cooling row group(s)  |  "
-            f"Negative {'ON' if m.negative else 'OFF'} in image processing")
+            f"preset Negative default {'ON' if m.negative else 'OFF'} (may be overridden in step 4)")
