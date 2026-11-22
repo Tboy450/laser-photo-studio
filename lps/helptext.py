@@ -6,7 +6,7 @@ from .presets import STYLES, lasergrbl_recipe
 
 START = """# Five steps
 1. Picture - open a photo, drawing or logo (phone HEIC photos work). Turn it if it's sideways.
-2. Material - pick your material. Green = proven on your U20. Yellow = a starting point from other 20 W lasers: run a test grid first. Proven settings show photos of their test ladders and charts, and of finished pieces made with them; click a photo to enlarge it.
+2. Material - pick your material. Green = proven on the recorded U20 setup. Yellow = a starting point from other 20 W lasers: run a test grid first. Proven settings show photos of their test ladders and charts, and of finished pieces made with them; click a photo to enlarge it.
 3. Size - enter the piece size, where the origin is (lower-left corner or centre) and any no-burn zones like twine holes.
 4. Check - adjust the picture while watching the preview. The app replays every command before anything can run.
 5. Laser - connect, set the origin, run the perimeter check with the 1% dot, then Start.
@@ -81,6 +81,20 @@ Jobs run from this app record exactly where the head stopped and resume safely. 
 PERIMETER = """# The origin
 The origin (X0 Y0) is the spot the job is measured from: the lower-left corner or the centre of the piece (step 3). Jog the head there with the dot on, then press 'Set origin here'. Nothing moves when you set it.
 
+# 2 in reflective tin workpiece
+The preset 'Reflective tin lid 2 in (45.72 mm face)' describes the geometry only:
+- Outside diameter: 50.8 mm.
+- Center origin: X0 Y0 is the physical centre of the lid.
+- 2.54 mm margin on each side leaves a 45.72 mm circular artwork area.
+
+This is not a proven engraving setting. The Red Hill tin marks are still being tested, so choose a separate material/style setting and keep its evidence status honest.
+
+# Aligning a tin in a jig
+1. Seat the lid fully in its pocket and make sure the jig itself is registered to the machine bed.
+2. Use the low-power pointer to locate the actual centre of the lid (or a measured jig reference that has been checked against that centre).
+3. Jog the head to that point and press 'Set origin here' in step 5. This sets the work coordinate; it does not move the head.
+4. Run the perimeter check. It checks the planned artwork footprint relative to the origin; it cannot detect a lid that is sitting off-centre in its pocket.
+
 # The perimeter check
 The head moves to each corner of the burn area with the laser OFF, flashes the 1% positioning dot there (S10, 0.25 s bursts), then comes back to the origin.
 - Before each flash it checks the machine is idle with zero output, and that the controller has 1% programmed while the laser is off.
@@ -103,6 +117,28 @@ When the USB drops out, the controller restarts and forgets where the head is. T
 - A short, shielded USB cable with a ferrite clip, in a port on the back of the PC.
 - Keep the USB cable away from the laser's power lead.
 - Don't move the cable during a job."""
+
+MACHINE_CHANGE = """# When the laser hardware changes
+The PROVEN label belongs to the exact machine setup used for the test, not just the frame name or advertised wattage.
+- A different diode module, lens, controller, firmware or axis calibration can change the result.
+- Treat old material results as historical evidence after a hardware change; do not carry their PROVEN label forward automatically.
+- Recheck focus and placement, then make new material test grids and compare actual samples before saving new proven presets.
+- Keep the old photos and settings so the new setup can be compared with the previous one."""
+
+
+WOOD_SURFACE = """# Read the wood surface
+A wood image is not a flat, uniform sheet:
+- Grain, knots and uneven coloration can change how the finished mark reads.
+- Ordered Grid dots place marks on a regular pattern; they can make a test easier to compare across grain, but they do not correct a ridge or a change in surface height.
+- A raised or warped area changes the distance from the lens to the wood. Check that the board is supported and the focus remains consistent across the image area.
+- Use a small offcut or test area when changing species, surface preparation or image style.
+
+# Stain and finish records
+There is no universal stain-before or stain-after setting in the app. Record the finish product, whether it was applied before or after the burn, and its dry/cure state. Compare the result on matching offcuts before choosing a repeatable sequence. A finish that changes contrast is not automatically a better or more durable finish.
+
+# Surface marks
+The diode process shown in these examples makes a surface burn. It does not create a routed groove or carved relief. Record appearance, residue and finish separately from physical depth."""
+
 
 SAFETY = """- Stay with the machine the whole time. Wood, cardboard and leather can catch fire.
 - Wear laser safety glasses made for your laser's wavelength, also for the 1% dot.
@@ -141,6 +177,8 @@ def topics(mat) -> list:
             ("Too light or too dark?", DARKNESS),
             ("Negatives & LaserGRBL", NEGATIVE),
             ("Print styles", styles_text()),
+            ("Wood grain & finishing", WOOD_SURFACE),
+            ("Machine changes & revalidation", MACHINE_CHANGE),
             ("Using LaserGRBL", LASERGRBL.format(name=mat.name, recipe=lasergrbl_recipe(mat))),
             ("Origin & perimeter check", PERIMETER),
             ("USB dropouts", DROPOUT),

@@ -194,7 +194,7 @@ class App(PlaceMixin, LaserMixin):
     # ================================================================ step 2
     def _page_material(self, f):
         ttk.Label(f, text="2. Material & print style", style="H1.TLabel").pack(anchor="w")
-        wrap_label(f, "Green = proven on your machine. Yellow = good starting points from other 20 W lasers - "
+        wrap_label(f, "Green = proven on the recorded U20 setup. Yellow = good starting points from other 20 W lasers - "
                       "run a test grid first.", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
         self.tree = ttk.Treeview(f, show="tree", height=12, selectmode="browse")
         self.tree.pack(fill="x")
