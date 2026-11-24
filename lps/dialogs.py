@@ -1,12 +1,13 @@
 """Dialogs: start checklist, resume-after-dropout wizard, test grid, settings, simple forms."""
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import jobs, machine, presets
 from .presets import STYLES, Material
-from .ui_common import COLORS, ScrollFrame, wrap_label
+from .ui_common import COLORS, ScrollFrame, paint, wrap_label
 
 
 class FormDialog(tk.Toplevel):
@@ -32,6 +33,12 @@ class FormDialog(tk.Toplevel):
                 v = tk.StringVar(value=str(default))
                 ttk.Combobox(body, textvariable=v, values=kind, state="readonly", width=26).grid(row=i, column=1,
                                                                                                  sticky="we")
+            elif kind == "picture_path":
+                v = tk.StringVar(value=str(default))
+                entry = ttk.Frame(body)
+                entry.grid(row=i, column=1, sticky="we")
+                ttk.Entry(entry, textvariable=v, width=30).pack(side="left")
+                ttk.Button(entry, text="Choose...", command=lambda var=v: self._choose_picture(var)).pack(side="left")
             else:
                 v = tk.StringVar(value=str(default))
                 ttk.Entry(body, textvariable=v, width=28).grid(row=i, column=1, sticky="we")
@@ -44,6 +51,13 @@ class FormDialog(tk.Toplevel):
         self.bind("<Escape>", lambda e: self.destroy())
         self.grab_set()
         self.wait_window()
+
+    def _choose_picture(self, variable):
+        from .imaging import PICTURE_TYPES
+        path = filedialog.askopenfilename(parent=self, title="Choose evidence photo",
+                                          filetypes=[("Pictures", " ".join("*"+ext for ext in PICTURE_TYPES))])
+        if path:
+            variable.set(path)
 
     def _ok(self):
         out = {}
@@ -63,6 +77,157 @@ class FormDialog(tk.Toplevel):
         self.destroy()
 
 
+class CarDialog(tk.Toplevel):
+    """Toy car (Hot Wheels size): body type, size, windshield and rear window, with a top view to scale."""
+
+    FIELDS = [("length", "Length, nose to tail (mm)"), ("width", "Width (mm)"),
+              ("ws_from", "Windshield starts, from the nose (mm)"), ("ws_len", "Windshield length (mm)"),
+              ("rear_from", "Rear window starts, from the nose (mm)"), ("rear_len", "Rear window length (0 = none)"),
+              ("window_w", "Window width across the car (mm)"), ("clearance", "Extra clearance round windows (mm)")]
+
+    def __init__(self, master, values: dict, wait=True):
+        super().__init__(master)
+        self.title("Toy car (Hot Wheels size)")
+        self.transient(master)
+        self.resizable(False, False)
+        self.result = None
+        self._loading = False
+        f = ttk.Frame(self, padding=16)
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text="Toy car, seen from above", style="H1.TLabel").grid(row=0, column=0, columnspan=3,
+                                                                             sticky="w")
+        ttk.Label(f, wraplength=860, justify="left",       # fixed width: this window doesn't resize
+                  text="Pick the body type, then measure your car and fix the numbers. The windshield and rear "
+                       "window become no-burn zones, and the start point goes on a spot you can find with the dot. "
+                       "The car's top is curved: keep the art on the flattest part (usually the roof or hood)."
+                  ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 10))
+        self.v = {}
+        ttk.Label(f, text="Body type").grid(row=2, column=0, sticky="w", pady=3)
+        self.body_keys = list(presets.CAR_BODIES)
+        self.body_box = ttk.Combobox(f, state="readonly", width=40,
+                                     values=[presets.CAR_BODIES[k]["name"] for k in self.body_keys])
+        self.body_box.grid(row=2, column=1, sticky="w", padx=(10, 0))
+        self.body_box.bind("<<ComboboxSelected>>", lambda e: self._body_picked())
+        for i, (k, label) in enumerate(self.FIELDS, 3):
+            ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=2)
+            self.v[k] = tk.StringVar()
+            sp = ttk.Spinbox(f, from_=0, to=300, increment=0.5, width=8, textvariable=self.v[k])
+            sp.grid(row=i, column=1, sticky="w", padx=(10, 0))
+            self.v[k].trace_add("write", lambda *a: self._draw())
+        r = 3 + len(self.FIELDS)
+        ttk.Label(f, text="On the bed, the nose points").grid(row=r, column=0, sticky="w", pady=(6, 2))
+        self.front = tk.StringVar()
+        fr = ttk.Frame(f)
+        fr.grid(row=r, column=1, sticky="w", padx=(10, 0), pady=(6, 2))
+        for val in ("right", "left"):
+            ttk.Radiobutton(fr, text=val, value=val, variable=self.front, command=self._draw).pack(side="left",
+                                                                                               padx=(0, 8))
+        ttk.Label(f, text="Start point (where the dot goes)").grid(row=r + 1, column=0, sticky="w", pady=2)
+        self.start_keys = list(presets.CAR_STARTS)
+        self.start_box = ttk.Combobox(f, state="readonly", width=40, values=list(presets.CAR_STARTS.values()))
+        self.start_box.grid(row=r + 1, column=1, sticky="w", padx=(10, 0))
+        self.start_box.bind("<<ComboboxSelected>>", lambda e: self._draw())
+        self.canvas = tk.Canvas(f, width=470, height=250, background=COLORS["panel"], highlightthickness=1,
+                                highlightbackground=COLORS["border"])
+        self.canvas.grid(row=2, column=2, rowspan=r - 2, sticky="n", padx=(16, 0))
+        self.note = ttk.Label(f, style="Small.TLabel", wraplength=470, justify="left")
+        self.note.grid(row=r, column=2, rowspan=2, sticky="nw", padx=(16, 0))
+        bar = ttk.Frame(f)
+        bar.grid(row=r + 2, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        ttk.Button(bar, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(bar, text="Use this car", command=self._ok).pack(side="right", padx=6)
+        self._fill(values)
+        if wait:
+            self.grab_set()
+            self.wait_window()
+
+    def _fill(self, values):
+        self._loading = True
+        try:
+            self.body_box.current(self.body_keys.index(values.get("body", "mustang")))
+            for k, _ in self.FIELDS:
+                self.v[k].set(f"{float(values.get(k, 0)):g}")
+            self.front.set(values.get("front", "right"))
+            self.start_box.current(self.start_keys.index(values.get("start", "windshield")))
+            self.corner = float(values.get("corner", 4.0))
+        finally:
+            self._loading = False
+        self._draw()
+
+    def _body_picked(self):
+        """Another body type: its typical numbers (keeping which way the nose points and the start point)."""
+        body = self.body_keys[self.body_box.current()]
+        keep = dict(front=self.front.get(), start=self.start_keys[self.start_box.current()])
+        self._fill(dict(presets.car_values(body), **keep))
+
+    def values(self):
+        out = dict(body=self.body_keys[self.body_box.current()], front=self.front.get(),
+                   start=self.start_keys[self.start_box.current()], corner=self.corner)
+        for k, _ in self.FIELDS:
+            out[k] = max(0.0, float(self.v[k].get()))
+        return out
+
+    def _draw(self):
+        if self._loading:
+            return
+        c = self.canvas
+        c.delete("all")
+        try:
+            v = self.values()
+            pc = presets.car_piece(v)
+        except (ValueError, KeyError):
+            return
+        L, W = pc["w"], pc["h"]
+        if L <= 0 or W <= 0:
+            return
+        s = min(340 / L, 140 / W)
+        ox, oy = (470 - L * s) / 2, 50 + (140 - W * s) / 2
+        tx = lambda x: ox + x * s
+        ty = lambda y: oy + (W - y) * s
+        rr = min(v["corner"], W / 2) * s
+        x0, y0, x1, y1 = tx(0), ty(W), tx(L), ty(0)
+        c.create_polygon(x0 + rr, y0, x1 - rr, y0, x1, y0, x1, y0 + rr, x1, y1 - rr, x1, y1, x1 - rr, y1,
+                         x0 + rr, y1, x0, y1, x0, y1 - rr, x0, y0 + rr, x0, y0, smooth=True, fill="#f5d76e",
+                         outline="#8a6d1d", width=2)
+        c.create_line(x0, ty(W / 2), x1, ty(W / 2), fill="#8a6d1d", dash=(4, 3))
+        for k in pc["keepouts"]:
+            c.create_rectangle(tx(k["x"]), ty(k["y"] + k["h"]), tx(k["x"] + k["w"]), ty(k["y"]),
+                               outline=COLORS["bad"], width=2, fill=COLORS["keepout"], stipple="gray50")
+        sx, sy = pc["spot"]
+        c.create_line(tx(sx) - 12, ty(sy), tx(sx) + 12, ty(sy), fill=COLORS["bad"], width=2)
+        c.create_line(tx(sx), ty(sy) - 12, tx(sx), ty(sy) + 12, fill=COLORS["bad"], width=2)
+        right = v["front"] == "right"
+        nose, tail = (x1, x0) if right else (x0, x1)
+        # overall length above the car, width at the tail, windshield distance from the nose below
+        c.create_line(x0, y0 - 14, x1, y0 - 14, arrow="both", fill=COLORS["ink"])
+        c.create_text((x0 + x1) / 2, y0 - 26, text=f"{L:g} mm ({L / 25.4:.2f} in), nose on the {v['front']}",
+                      fill=COLORS["ink"])
+        wx = tail - 12 if right else tail + 12
+        c.create_line(wx, y0, wx, y1, arrow="both", fill=COLORS["ink"])
+        c.create_text(wx - 4 if right else wx + 4, (y0 + y1) / 2, text=f"{W:g}", anchor="e" if right else "w",
+                      fill=COLORS["ink"])
+        wsx = tx(L - v["ws_from"]) if right else tx(v["ws_from"])
+        c.create_line(nose, y1 + 14, wsx, y1 + 14, arrow="both", fill=COLORS["bad"])
+        c.create_text(nose, y1 + 26, text=f"windshield {v['ws_from']:g} mm from the nose",
+                      anchor="e" if right else "w", fill=COLORS["bad"])
+        self.note.configure(text=f"Red boxes: no-burn zones over the windows (plus {v['clearance']:g} mm). Red "
+                                 f"cross: the start point, {presets.CAR_STARTS[v['start']].lower()}. Dashed: the "
+                                 "centerline. Sizes are typical 1:64 cars: measure yours.")
+
+    def _ok(self):
+        try:
+            v = self.values()
+        except ValueError:
+            messagebox.showerror("Check the numbers", "Use plain numbers in mm.", parent=self)
+            return
+        if not (20 <= v["length"] <= 300 and 5 <= v["width"] <= 150) or v["ws_from"] + v["ws_len"] > v["length"]:
+            messagebox.showerror("Check the numbers", "The length must be 20-300 mm, the width 5-150 mm, and the "
+                                 "windshield has to fit on the car.", parent=self)
+            return
+        self.result = v
+        self.destroy()
+
+
 class StartDialog(tk.Toplevel):
     def __init__(self, master, summary: str, pause_default: bool, multi: bool):
         super().__init__(master)
@@ -73,22 +238,31 @@ class StartDialog(tk.Toplevel):
         f = ttk.Frame(self, padding=16)
         f.pack(fill="both", expand=True)
         ttk.Label(f, text="Ready to engrave?", style="H1.TLabel").pack(anchor="w")
-        wrap_label(f, summary, width=460).pack(anchor="w", pady=(6, 10))
+        review = ttk.Frame(f)
+        review.pack(fill="x", pady=(6, 10))
+        details = paint(tk.Text(review, width=67, height=10, wrap="word", relief="solid", borderwidth=1),
+                        background="face", foreground="ink")
+        scroll = ttk.Scrollbar(review, orient="vertical", command=details.yview)
+        details.configure(yscrollcommand=scroll.set)
+        details.insert("1.0", summary)
+        details.configure(state="disabled")
+        details.pack(side="left", fill="x", expand=True)
+        scroll.pack(side="right", fill="y")
         self.checks = []
-        for text in ("I ran the perimeter check and the art is where I want it.",
+        for text in ("I have checked where this job will engrave on the piece.",
                      "The laser is focused, and air assist and ventilation are on.",
                      "I'll stay with the machine the whole time (fire risk) and wear laser glasses."):
             v = tk.BooleanVar(value=False)
             ttk.Checkbutton(f, text=text, variable=v, command=self._update).pack(anchor="w", pady=2)
             self.checks.append(v)
         self.pause = tk.BooleanVar(value=pause_default and multi)
-        cb = ttk.Checkbutton(f, text="Pause after each layer so I can take a photo (head parks at the origin)",
+        cb = ttk.Checkbutton(f, text="Pause after each pass so I can take a photo (head parks at the start point)",
                              variable=self.pause)
         cb.pack(anchor="w", pady=(10, 2))
         if not multi:
             cb.state(["disabled"])
         wrap_label(f, "The job runs in the background: you can close this app and it keeps going. "
-                      "If the USB drops out, the app records exactly where it stopped.", style="Small.TLabel",
+                      "After a USB dropout, Resume shows the last reported position and what still needs checking.", style="Small.TLabel",
                    width=460).pack(anchor="w", pady=(6, 0))
         bar = ttk.Frame(f)
         bar.pack(fill="x", pady=(14, 0))
@@ -104,6 +278,111 @@ class StartDialog(tk.Toplevel):
 
     def _ok(self):
         self.result = dict(pause_between=self.pause.get())
+        self.destroy()
+
+
+class LidLadderDialog(tk.Toplevel):
+    """Wide-range power x speed ladder on a round lid: the app works out the patch size and how many lids it takes."""
+
+    def __init__(self, master, wait=True):
+        super().__init__(master)
+        from . import ladder
+        self.ladder = ladder
+        self.title("Wide-range lid ladder")
+        self.transient(master)
+        self.resizable(False, False)
+        self.result = None
+        f = ttk.Frame(self, padding=16)
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text="Wide-range lid ladder (2 in circle)", style="H1.TLabel").grid(row=0, column=0, columnspan=3,
+                                                                                        sticky="w")
+        ttk.Label(f, wraplength=640, justify="left",
+                  text="Solid patches for every power and speed, packed into the lid. Each speed is its own pass, "
+                       "fastest first and slowest last. Patches have no engraved labels: the job folder gets a "
+                       "printable map ('5 LADDER MAP'), and one small mark burns at the top.").grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(4, 10))
+        self.v = {}
+        rows = [("material", "Lid material"), ("powers", "Powers (%)"), ("speeds", "Speeds (mm/min)"),
+                ("diameter", "Lid diameter (mm)"), ("safe", "Safe circle for marks (mm)"), ("lid", "Lid number")]
+        for i, (k, label) in enumerate(rows, 2):
+            ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=3)
+            self.v[k] = tk.StringVar()
+            if k == "material":
+                w = ttk.Combobox(f, textvariable=self.v[k], values=ladder.LID_MATERIALS, width=44)
+            else:
+                w = ttk.Entry(f, textvariable=self.v[k], width=46)
+            w.grid(row=i, column=1, sticky="w", padx=(10, 0))
+            self.v[k].trace_add("write", lambda *a: self._summary())
+        pr = ttk.Frame(f)
+        pr.grid(row=2, column=2, rowspan=3, sticky="nw", padx=(10, 0))
+        ttk.Button(pr, text="A: 6 powers x 8 speeds", command=lambda: self._preset("A")).pack(anchor="w")
+        ttk.Button(pr, text="B: 11 powers x 8 speeds", command=lambda: self._preset("B")).pack(anchor="w", pady=4)
+        sr = ttk.Frame(f)
+        sr.grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Label(sr, text="Fill speeds evenly (log scale): from").pack(side="left")
+        self.lo, self.hi, self.count = tk.StringVar(value="50"), tk.StringVar(value="6000"), tk.StringVar(value="8")
+        for var, txt in ((self.lo, "to"), (self.hi, "mm/min, count"), (self.count, "")):
+            ttk.Entry(sr, textvariable=var, width=6).pack(side="left", padx=4)
+            if txt:
+                ttk.Label(sr, text=txt).pack(side="left")
+        ttk.Button(sr, text="Fill", command=self._log_fill).pack(side="left", padx=6)
+        self.info = ttk.Label(f, wraplength=640, justify="left")
+        self.info.grid(row=9, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        bar = ttk.Frame(f)
+        bar.grid(row=10, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        ttk.Button(bar, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(bar, text="Make the ladder", command=self._ok).pack(side="right", padx=6)
+        for k, val in (("material", ladder.LID_MATERIALS[0]), ("diameter", "50.8"), ("safe", "45.72"), ("lid", "1")):
+            self.v[k].set(val)
+        self._preset("A")
+        if wait:
+            self.grab_set()
+            self.wait_window()
+
+    def _preset(self, key):
+        p = self.ladder.PRESETS[key]
+        self.v["powers"].set(", ".join(f"{x:g}" for x in p["powers"]))
+        self.v["speeds"].set(", ".join(f"{x:g}" for x in p["speeds"]))
+
+    def _log_fill(self):
+        try:
+            sp = self.ladder.log_speeds(float(self.lo.get()), float(self.hi.get()), int(self.count.get()))
+        except (ValueError, ZeroDivisionError):
+            return
+        self.v["speeds"].set(", ".join(f"{x:g}" for x in sp))
+
+    def values(self):
+        nums = lambda s: [float(x) for x in s.replace(";", ",").split(",") if x.strip()]
+        d = dict(kind="lid", material=self.v["material"].get().strip(), powers=nums(self.v["powers"].get()),
+                 speeds=[int(x) for x in nums(self.v["speeds"].get())], diameter=float(self.v["diameter"].get()),
+                 safe=float(self.v["safe"].get()), lid=int(float(self.v["lid"].get() or 1)))
+        if not d["powers"] or not d["speeds"] or any(not 1 <= p <= 100 for p in d["powers"]) \
+                or any(not 50 <= s <= 6000 for s in d["speeds"]) or not 10 <= d["safe"] <= d["diameter"] <= 200:
+            raise ValueError("Powers must be 1-100 %, speeds 50-6000 mm/min, and the safe circle inside the lid.")
+        return d
+
+    def _summary(self):
+        try:
+            d = self.values()
+        except (ValueError, KeyError) as e:
+            self.info.configure(text=str(e) if "must" in str(e) else "Check the numbers.", foreground=COLORS["bad"])
+            return
+        lad = self.ladder
+        pl = lad.plan(d["powers"], d["speeds"], d["safe"] / 2)
+        patches, _ = lad.assign(d["powers"], d["speeds"], pl["cells"], min(d["lid"], pl["lids"]), pl["per_lid"])
+        n = len(d["powers"]) * len(d["speeds"])
+        fit = (f"{n} patches of {pl['patch']:g} mm fit on one lid ({len(pl['cells'])} spaces)." if pl["lids"] == 1 else
+               f"{n} patches need {pl['lids']} lids at {pl['patch']:g} mm ({pl['per_lid']} per lid): make lid 1, "
+               "then lid 2 and so on.")
+        warn = lad.notes(d["powers"], d["speeds"], d["diameter"] / 2, patches, pl["patch"])
+        self.info.configure(text=fit + "\n\n" + "\n".join("- " + w for w in warn), foreground=COLORS["ink"])
+
+    def _ok(self):
+        try:
+            self.result = self.values()
+        except ValueError as e:
+            messagebox.showerror("Check the numbers", str(e), parent=self)
+            return
         self.destroy()
 
 
@@ -182,15 +461,17 @@ class HelpWindow(tk.Toplevel):
         self.topics = helptext.topics(app.mat)
         body = ttk.Frame(self, padding=8)
         body.pack(fill="both", expand=True)
-        self.lst = tk.Listbox(body, activestyle="none", exportselection=False, width=26, font=("Segoe UI", 11),
-                              borderwidth=0, highlightthickness=0, selectbackground="#c2410c")
+        self.lst = paint(tk.Listbox(body, activestyle="none", exportselection=False, width=26,
+                                    font=("Segoe UI", 11), borderwidth=0, highlightthickness=0),
+                         background="field", foreground="ink", selectbackground="select",
+                         selectforeground="select_ink")
         self.lst.pack(side="left", fill="y", padx=(0, 8))
         for title, _ in self.topics:
             self.lst.insert("end", "  " + title)
         self.lst.bind("<<ListboxSelect>>", lambda e: self._render(self.lst.curselection()[0])
                       if self.lst.curselection() else None)
-        self.txt = tk.Text(body, wrap="word", padx=18, pady=12, borderwidth=0, font=("Segoe UI", 10),
-                           cursor="arrow", background="#fffdf9")
+        self.txt = paint(tk.Text(body, wrap="word", padx=18, pady=12, borderwidth=0, font=("Segoe UI", 10),
+                                 cursor="arrow"), background="panel", foreground="ink")
         sb = ttk.Scrollbar(body, orient="vertical", command=self.txt.yview)
         self.txt.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
@@ -199,7 +480,11 @@ class HelpWindow(tk.Toplevel):
         self.txt.tag_configure("p", spacing3=4)
         self.txt.tag_configure("li", lmargin1=14, lmargin2=32, spacing3=3)
         self.txt.tag_configure("title", font=("Segoe UI", 16, "bold"), spacing3=6)
-        self._img = None
+        self.txt.tag_configure("contact", foreground=COLORS["blue"], underline=True, spacing3=4)
+        self.txt.tag_bind("contact", "<Button-1>", self._open_contact)
+        self.txt.tag_bind("contact", "<Enter>", lambda e: self.txt.configure(cursor="hand2"))
+        self.txt.tag_bind("contact", "<Leave>", lambda e: self.txt.configure(cursor="arrow"))
+        self._imgs = []
         self.show_topic(topic)
 
     def show_topic(self, topic=None):
@@ -210,10 +495,12 @@ class HelpWindow(tk.Toplevel):
         self._render(idx)
 
     def _render(self, idx):
+        from .helptext import DEVELOPER_CONTACT
         title, text = self.topics[idx]
         t = self.txt
         t.configure(state="normal")
         t.delete("1.0", "end")
+        self._imgs = []
         t.insert("end", title + "\n", "title")
         for line in text.splitlines():
             s = line.strip()
@@ -225,12 +512,19 @@ class HelpWindow(tk.Toplevel):
                 t.insert("end", s + "\n", "li")
             elif s.startswith("[image:") and s.endswith("]"):
                 self._image(s[7:-1])
+            elif s == DEVELOPER_CONTACT:
+                t.insert("end", s + "\n", "contact")
             elif s:
                 t.insert("end", s + "\n", "p")
             else:
                 t.insert("end", "\n")
         t.configure(state="disabled")
         t.yview_moveto(0)
+
+    def _open_contact(self, _=None):
+        import webbrowser
+        from .helptext import DEVELOPER_CONTACT
+        webbrowser.open(DEVELOPER_CONTACT)
 
     def _image(self, rel):
         path = jobs.APP_DIR / rel
@@ -240,9 +534,9 @@ class HelpWindow(tk.Toplevel):
         im = Image.open(path)
         width = max(300, self.txt.winfo_width() - 60) if self.txt.winfo_width() > 100 else 700
         im.thumbnail((width, 2000), Image.Resampling.LANCZOS)
-        self._img = ImageTk.PhotoImage(im)
+        self._imgs.append(ImageTk.PhotoImage(im))
         self.txt.insert("end", "\n")
-        self.txt.image_create("end", image=self._img, padx=4, pady=6)
+        self.txt.image_create("end", image=self._imgs[-1], padx=4, pady=6)
         self.txt.insert("end", "\n")
 
 
@@ -253,13 +547,31 @@ class SettingsDialog(FormDialog):
             ("port", "Laser USB port", settings["port"], ports + (["COM4"] if "COM4" not in ports else [])),
             ("baud", "Baud rate", settings["baud"], "int"),
             ("phone_folder", "Folder where phone photos arrive", settings["phone_folder"], "str"),
-            ("lasergrbl", "LaserGRBL.exe", settings["lasergrbl"], "str"),
-            ("pulses", "Dot flashes per corner (perimeter check)", settings["pulses"], "int"),
-            ("perimeter_feed", "Perimeter travel speed (mm/min)", settings["perimeter_feed"], "int"),
-            ("perimeter_spacing", "Extra edge dots every N mm (0 = corners only)", settings["perimeter_spacing"],
-             "float"),
-        ], intro="Machine: Tronxy Ultrabot U20 (MKS DLC32, Grbl 1.1h). The app checks $30=1000, $31=0, $32=1 and "
+            ("perimeter_feed", "Actual-outline check speed (mm/min)", settings["perimeter_feed"], "int"),
+        ], intro=f"Studio data folder: {jobs.SETTINGS_FILE.parent}\n\n"
+                 "Machine: Tronxy Ultrabot U20 (MKS DLC32, Grbl 1.1h). The app checks $30=1000, $31=0, $32=1 and "
                  "$100/$101=100 before any laser output, and never homes.", ok_text="Save")
+
+
+def _recovery_work_area(parent):
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class MonitorInfo(ctypes.Structure):
+            _fields_ = [("size", wintypes.DWORD), ("screen", wintypes.RECT),
+                        ("work", wintypes.RECT), ("flags", wintypes.DWORD)]
+
+        user32 = ctypes.windll.user32
+        user32.MonitorFromWindow.argtypes = (wintypes.HWND, wintypes.DWORD)
+        user32.MonitorFromWindow.restype = wintypes.HMONITOR
+        user32.GetMonitorInfoW.argtypes = (wintypes.HMONITOR, ctypes.POINTER(MonitorInfo))
+        monitor = user32.MonitorFromWindow(parent.winfo_id(), 2)
+        info = MonitorInfo(size=ctypes.sizeof(MonitorInfo))
+        if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            area = info.work
+            return area.left, area.top, area.right, area.bottom
+    return 0, 0, parent.winfo_screenwidth(), parent.winfo_screenheight() - 48
 
 
 class RecoveryDialog(tk.Toplevel):
@@ -272,98 +584,133 @@ class RecoveryDialog(tk.Toplevel):
         self.kept = bool(self.res.get("kept_position"))
         self.point = tuple(self.res.get("expected_start", (0.0, 0.0)))
         self.title("Resume the job")
-        self.transient(app.root)
-        # The recovery checklist can be taller than a laptop screen. Cap the window
-        # to the visible display and keep the action buttons outside the scroller.
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        width = min(600, max(240, sw - 80))
-        height = min(600, max(220, sh - 120))
-        self.geometry(f"{width}x{height}")
-        self.minsize(min(width, 340), min(height, 260))
-        self.resizable(True, True)
+        # An ordinary top-level can maximize on Windows. Position it inside
+        # the owner's monitor work area, which excludes the taskbar.
+        left, top, right, bottom = _recovery_work_area(app.root)
+        frame_space = round(self.winfo_fpixels("42p"))
+        horizontal_space = round(self.winfo_fpixels("18p"))
+        width = max(1, min(640, right - left - horizontal_space))
+        height = max(1, min(640, bottom - top - frame_space))
+        x = left + (right - left - width) // 2
+        y = top + max(0, (bottom - top - height - frame_space) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.minsize(min(480, width), min(280, height))
         self.declared = False
-        shell = ttk.Frame(self, padding=12)
-        shell.pack(fill="both", expand=True)
-        ttk.Label(shell, text="Resume the job", style="H1.TLabel").pack(anchor="w")
-        scroller = ScrollFrame(shell)
-        scroller.pack(fill="both", expand=True, pady=(6, 0))
-        f = scroller.inner
+        footer = ttk.Frame(self, padding=(14, 6, 14, 12))
+        footer.pack(side="bottom", fill="x")
+        page = ScrollFrame(self)
+        page.pack(fill="both", expand=True)
+        f = page.inner
         job = jobs.read_json(folder / "job.json", {}) or {}
         npass = len(job.get("passes", []))
         pi = int(self.res.get("start_pass", 0))
         ptitle = job.get("passes", [{}] * (pi + 1))[pi].get("title", f"pass {pi + 1}") if pi < npass else "end"
-        wrap_label(f, state.get("message", ""), width=500).pack(anchor="w", pady=(4, 6))
-        wrap_label(f, f"It will continue {ptitle} ({pi + 1} of {npass}) from where it stopped, without burning "
-                      f"anything twice. Stop point: X {self.point[0]:.2f}, Y {self.point[1]:.2f} mm.",
+        ttk.Label(f, text="Resume the job", style="H1.TLabel").pack(anchor="w")
+        wrap_label(f, f"{job.get('name', folder.name)}\nContinue {ptitle} ({pi + 1} of {npass}) at X {self.point[0]:.2f}, "
+                      f"Y {self.point[1]:.2f} mm in the saved job coordinates.",
+                   width=500).pack(anchor="w", pady=(4, 0))
+        wrap_label(f, "Resume uses the commands saved for this run. Edits in another preview do not change the remaining passes.",
                    width=500).pack(anchor="w")
+        details = ttk.Frame(f)
+        show_details = tk.BooleanVar(value=False)
+
+        def toggle_details():
+            if show_details.get():
+                details.pack(after=details_toggle, fill="x", pady=(4, 0))
+            else:
+                details.pack_forget()
+
+        details_toggle = ttk.Checkbutton(f, text="Show interruption details", variable=show_details,
+                                         command=toggle_details)
+        details_toggle.pack(anchor="w", pady=(4, 0))
+        wrap_label(details, state.get("message", ""), width=500).pack(anchor="w")
+        evidence = state.get("position_record") or {}
+        last = (evidence.get("last_reported") or {}).get("wpos")
+        idle = (evidence.get("last_idle") or {}).get("wpos")
+        if last or idle:
+            wrap_label(details, f"Last reported XY: {last}. Last confirmed idle XY: {idle}.\n"
+                          f"Accepted command: {state.get('last_accepted')}; sent command: {state.get('last_written')}. "
+                          "Accepted means queued, not necessarily engraved.", width=500).pack(anchor="w")
         self.steps = ttk.Frame(f)
         self.steps.pack(fill="x", pady=(10, 0))
         s1 = ttk.LabelFrame(self.steps, text="1. Connect", style="Card.TLabelframe")
         s1.pack(fill="x", pady=4)
-        wrap_label(s1, "Plug the USB back in. If Windows says the device isn't working, switch the laser off and "
-                       "on, then connect. Don't move the head.", width=470).pack(anchor="w")
+        wrap_label(s1, "Reconnect the USB with the head and workpiece in place.", width=470).pack(anchor="w")
         row = ttk.Frame(s1)
         row.pack(fill="x", pady=(6, 0))
         ttk.Button(row, text="Connect", command=self.app.connect).pack(side="left")
         ttk.Button(row, text="Unlock ($X, no movement)", command=self.app.unlock).pack(side="left", padx=6)
         self.conn = ttk.Label(s1, style="Muted.TLabel")
         self.conn.pack(anchor="w", pady=(4, 0))
-        s2 = ttk.LabelFrame(self.steps, text="2. Tell the controller where the head is", style="Card.TLabelframe")
+        s2 = ttk.LabelFrame(self.steps, text="2. Verify the stop point", style="Card.TLabelframe")
         s2.pack(fill="x", pady=4)
-        txt = ("The job stopped cleanly, so the controller still knows its position. If it shows the stop point "
-               "below, skip to step 3." if self.kept else
-               "A replug restarts the controller and it forgets where the head is. The head stopped at the end of "
-               "the last command sent, so declare that point (this never moves the head).")
+        txt = ("If the controller kept its alignment and reports the saved stop point, you can resume."
+               if self.kept else "Check the head against the end of the last mark. After a USB drop the saved "
+               "point is a candidate. Turn the dot off before confirming. Confirmation records coordinates "
+               "with the head stationary.")
         wrap_label(s2, txt, width=470).pack(anchor="w")
-        ttk.Button(s2, text=f"The head is at the stop point (X {self.point[0]:.2f}, Y {self.point[1]:.2f})",
-                   command=self.declare).pack(anchor="w", pady=(6, 0))
-        s3 = ttk.LabelFrame(self.steps, text="3. Check with the 1% dot", style="Card.TLabelframe")
-        s3.pack(fill="x", pady=4)
-        wrap_label(s3, "Turn the dot on. It should sit right at the end of the last burned line. If it's off, nudge "
-                       "the head until it is, then press 'Dot is on the spot'.", width=470).pack(anchor="w")
-        row = ttk.Frame(s3)
+        row = ttk.Frame(s2)
         row.pack(fill="x", pady=(6, 0))
         self.dot_btn = ttk.Button(row, text="Dot on", command=self.app.toggle_dot)
         self.dot_btn.pack(side="left")
         self.step = tk.DoubleVar(value=0.1)
         for t, dx, dy in (("<", -1, 0), (">", 1, 0), ("^", 0, 1), ("v", 0, -1)):
             ttk.Button(row, text=t, width=3, style="Tool.TButton",
-                       command=lambda dx=dx, dy=dy: self.app.jog(dx * self.step.get(), dy * self.step.get())
+                       command=lambda dx=dx, dy=dy: self.app.jog(dx * self.step.get(), dy * self.step.get(),
+                                                                move_picture=False)
                        ).pack(side="left", padx=1)
         ttk.Combobox(row, textvariable=self.step, values=[0.1, 0.2, 0.5, 1.0], width=5, state="readonly").pack(
             side="left", padx=4)
         ttk.Label(row, text="mm").pack(side="left")
-        ttk.Button(s3, text="Dot is on the spot - declare it as the stop point", command=self.declare).pack(
+        ttk.Button(s2, text="Confirm head at the stop point", command=self.declare).pack(
             anchor="w", pady=(6, 0))
-        self.pos = ttk.Label(s3, style="Muted.TLabel")
+        self.pos = ttk.Label(s2, style="Muted.TLabel")
         self.pos.pack(anchor="w", pady=(4, 0))
-        s4 = ttk.LabelFrame(self.steps, text="4. Continue", style="Card.TLabelframe")
-        s4.pack(fill="x", pady=4)
         self.pause = tk.BooleanVar(value=bool(app.settings.get("pause_between_layers", True)))
-        ttk.Checkbutton(s4, text="Pause after each remaining layer for a photo", variable=self.pause).pack(anchor="w")
-        # Fixed footer stays visible even when the recovery instructions scroll.
-        bar = ttk.Frame(shell)
-        bar.pack(fill="x", pady=(8, 0))
-        self.go = ttk.Button(bar, text="Resume engraving", style="Big.TButton", command=self.resume)
+        ttk.Checkbutton(self.steps, text="Pause after each remaining pass for a photo",
+                        variable=self.pause).pack(anchor="w", pady=(4, 0))
+        self.resume_reason = wrap_label(footer, "", width=500, style="Small.TLabel")
+        self.resume_reason.pack(anchor="w", fill="x")
+        bar = ttk.Frame(footer)
+        bar.pack(fill="x", pady=(4, 0))
+        self.go = ttk.Button(bar, text="3. Resume engraving", style="Big.TButton", command=self.resume)
         self.go.pack(side="left")
         ttk.Button(bar, text="Close", command=self.close).pack(side="right")
         app.event_hooks.append(self.on_event)
         self.protocol("WM_DELETE_WINDOW", self.close)
+        self._refresh_status()
+
+    def _refresh_status(self):
         self.refresh()
+        self._refresh_after = self.after(250, self._refresh_status)
 
     def close(self):
+        self.after_cancel(self._refresh_after)
         if self.on_event in self.app.event_hooks:
             self.app.event_hooks.remove(self.on_event)
         self.app.dot_off()
         self.destroy()
 
     def declare(self):
-        if not self.app.connected:
+        if not self.app.connected or self.app.worker is None:
             messagebox.showinfo("Connect first", "Connect to the laser first (step 1).", parent=self)
             return
-        self.app.worker.submit("declare", machine.set_origin_here, self.point[0], self.point[1])
+        observed = self.app.last_status
+        if self.app.dot_on or self.app.status_stale() or not observed or not observed.idle_off or not observed.wpos:
+            messagebox.showinfo("Check the head position",
+                                "Turn off the 1% dot and wait for a fresh Idle position before confirming.",
+                                parent=self)
+            return
+        if not self.kept and not messagebox.askyesno("Confirm the interrupted position",
+                "Does the physical head match the saved candidate endpoint? A write/acknowledgement is not proof "
+                "the move finished. Only declare this point after checking it.", parent=self):
+            return
+        if self.app.connected and self.app.worker is not None:
+            self.app.worker.submit("declare", machine.set_origin_here, self.point[0], self.point[1], observed)
 
     def on_event(self, ev):
+        if ev[0] in ("connected", "disconnected", "rebooted", "link_lost"):
+            self.declared = False
         if ev[0] == "done" and ev[1] == "declare":
             self.declared = True
         if ev[0] == "dot":
@@ -383,16 +730,46 @@ class RecoveryDialog(tk.Toplevel):
                                 (" - locked: press Unlock" if st and st.state == "Alarm" else ""))
         else:
             self.conn.configure(text="Not connected.")
-        if st and st.wpos:
+        if self.app.connected and st and st.wpos and not self.app.status_stale():
             ok = self.at_point()
             self.pos.configure(text=f"Controller says the head is at X {st.wpos[0]:.2f}, Y {st.wpos[1]:.2f}"
                                     + ("  - matches the stop point" if ok else ""))
-        ready = self.app.connected and st is not None and st.state == "Idle" and self.at_point()
-        self.go.state(["!disabled"] if ready else ["disabled"])
+        else:
+            self.pos.configure(text="Current head position unavailable.")
+        blocked = self.blocked_reason()
+        self.resume_reason.configure(text=blocked or "Ready to continue from the saved stop point.")
+        self.go.state(["disabled"] if blocked else ["!disabled"])
+
+    def blocked_reason(self):
+        st = self.app.last_status
+        if not self.app.connected:
+            return "Connect to the laser in step 1."
+        if st is None or self.app.status_stale():
+            return "Waiting for a fresh controller position."
+        if st.state == "Alarm":
+            return "The controller is locked. Use Unlock in step 1."
+        if self.app.dot_on:
+            return "Turn the 1% dot off before resuming."
+        if not st.idle_off:
+            return "The controller must report Idle with the beam off."
+        worker = self.app.worker
+        if worker and (worker.busy or not worker.tasks.empty()):
+            return "Wait for the current laser control to finish."
+        if not (self.declared or self.kept and self.app.origin_set):
+            return "Verify the physical stop point and confirm it in step 2."
+        if not self.at_point():
+            return "The reported head position does not match the saved stop point."
+        return ""
+
+    def ready(self):
+        return not self.blocked_reason()
 
     def resume(self):
-        if not messagebox.askokcancel("Resume", "Did the 1% dot sit on the end of the last burned line?\n\n"
-                                                "Resume engraving now?", parent=self):
+        if not self.ready():
+            return
+        if not messagebox.askokcancel("Resume", "Continue engraving from the saved stop point now?", parent=self):
+            return
+        if not self.ready():
             return
         spec = dict(self.res)
         spec.pop("kept_position", None)

@@ -11,23 +11,12 @@ Power is in Grbl S units: S1000 = 100% because the controller is set to $30=1000
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-def _documents() -> Path:
-    """The real Documents folder (OneDrive moves it on this PC)."""
-    try:
-        import ctypes
-        from ctypes import wintypes
-        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
-        if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:
-            return Path(buf.value)
-    except Exception:
-        pass
-    return Path.home() / "Documents"
-
-
-DATA_DIR = _documents() / "Laser Photo Studio"
+LOCAL_APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+DATA_DIR = Path(os.environ.get("LASER_PHOTO_STUDIO_DATA_DIR") or LOCAL_APP_DATA / "Laser Photo Studio")
 
 # ---------------------------------------------------------------------------------------------------------------
 # Print styles: how a picture becomes laser marks.
@@ -81,9 +70,9 @@ STYLES = {
         best="Logos, text, line art, silhouettes."),
     "centerline": dict(
         name="Thin lines (centerlines)",
-        what="Dark strokes are burned as 1-cell-wide centerlines.",
-        why="Char spreads about 0.1 mm per side, so a centerline grows back to the stroke's true width instead "
-            "of smearing. Proven for lettering on the pine plank (max S300).",
+        what="Thins dark strokes to a 1-cell skeleton, then engraves it in horizontal raster rows.",
+        why="Proven for lettering on the pine plank (max S300). This is not a continuous vector trace; "
+            "the physical line width depends on focus, material and exposure.",
         best="Lettering, signatures, line drawings on wood."),
     "sketch": dict(
         name="Pencil sketch",
@@ -104,6 +93,8 @@ LOOKS = {  # preview colours: (bare material RGB, fully marked RGB)
     "tile": ((242, 242, 238), (28, 28, 28)),
     "glass": ((210, 222, 222), (40, 44, 44)),
     "acrylic": ((16, 16, 18), (150, 150, 152)),
+    "tin": ((214, 216, 220), (110, 100, 92)),          # reflective tin lid: bright silver, grey-brown marks
+    "blacktin": ((30, 30, 33), (196, 196, 202)),       # black aluminum tin: marks come out light
 }
 
 
@@ -116,7 +107,7 @@ class Material:
     look: str                       # key of LOOKS
     summary: str                    # one plain sentence
     notes: list = field(default_factory=list)
-    pitch: float = 0.1              # row spacing / dot size, mm
+    pitch: float = 0.15             # row spacing / dot size, mm. Tristan's standard is 0.15 (Nov 18-20); 0.10 = high density
     feed: int = 2250                # burn speed, mm/min
     power: int = 500                # S for dot/line styles; grayscale maximum
     power_min: int = 0              # grayscale minimum (lightest burned tone)
@@ -134,6 +125,8 @@ class Material:
     brightness: int = 0
     gamma: float = 1.0
     autolevel: bool = False
+    black_point: int = 0
+    white_point: int = 255
     runup: float = 4.0              # laser-off run-up/out at each row end, mm (raised automatically for speed)
     feature_runup: float = 1.0
     row_feed: int = 600             # laser-off move to the next row
@@ -143,6 +136,23 @@ class Material:
     test_speed: tuple = (3000, 6000)
     piece: str = ""                 # suggested workpiece
     based_on: str = ""              # my presets: the built-in preset they were saved from (for its photos)
+    scan_direction: str = "alternating"  # forward = every marked row left to right; return moves stay off
+    fast_blank_gaps: bool = False   # opt-in: long internal S0 gaps travel faster (see blank_guard_mm)
+    blank_feed: int = 6000          # fast gaps: Blank travel speed, its own setting (not the rewind/return speed)
+    blank_guard_mm: float = 2.0     # fast gaps: laser-off distance kept at engraving speed on EACH side of a gap
+    blank_min_fast_mm: float = 2.0  # fast gaps: shortest fast middle worth it; shorter gaps stay at engraving speed
+
+    def __post_init__(self):
+        if self.scan_direction not in ("alternating", "forward"):
+            raise ValueError("Scan direction must be alternating or forward.")
+        if type(self.fast_blank_gaps) is not bool:
+            raise ValueError("Fast blank gaps must be true or false.")
+        if not 1 <= int(self.blank_feed) <= 6000:
+            raise ValueError("Blank travel speed must be 1-6000 mm/min (6000 is the controller's maximum, $110).")
+        if not 0.5 <= float(self.blank_guard_mm) <= 20.0:
+            raise ValueError("Fast blank gaps: the slow-down / speed-up offset each side must be 0.5-20 mm.")
+        if not 0.0 <= float(self.blank_min_fast_mm) <= 100.0:
+            raise ValueError("Fast blank gaps: the shortest fast part must be 0-100 mm.")
 
     def copy(self, **changes) -> "Material":
         d = asdict(self)
@@ -194,8 +204,8 @@ BUILTIN = [
         key="anodized-dots", name="Black anodized aluminum - photo dots", badge="PROVEN", style="floyd",
         look="anodized",
         summary="Silver dots on black: 50% power, 2500 mm/min, 0.1 mm rows, one pass.",
-        notes=["Good result on the heart card (Floyd-Steinberg dots, 1.8 mm run-up). The engineering card ran the same "
-               "settings in LaserGRBL: 10 min 37 s, 0 errors.",
+        notes=["Good result on the heart card (Floyd-Steinberg dots, 1.8 mm run-up). The engineering card's "
+               "recorded trial took 10 min 37 s, with 0 errors.",
                "The laser makes LIGHT marks, so photos are engraved as a negative to look right. Turn Negative "
                "off for black-on-white artwork that should be marked exactly as drawn.",
                "Marks too dim or grey? This is only 50% power: raise power first (60-75%), or slow down "
@@ -302,6 +312,20 @@ BUILTIN = [
         test_power=(20, 60), test_speed=(2000, 5000)),
 ]
 
+# Standard row spacing is now 0.15 mm. The PROVEN recipes were proven at 0.10 mm: say so instead of hiding it.
+for _m in BUILTIN:
+    if _m.badge == "PROVEN":
+        _m.notes = list(_m.notes) + ["Proven at 0.10 mm rows. Studio's standard is now 0.15 mm; set Row spacing to "
+                                     "0.10 for the original proven density."]
+
+def lid_piece(diameter: float = 50.8, safe: float = 45.72, name: str | None = None) -> dict:
+    """The one round-lid geometry: outside diameter, usable face, centre origin. Step 3's 2 in tin template and
+    the lid ladders both use this, so the same lid is never defined twice."""
+    m = round((diameter - safe) / 2, 3)
+    return dict(name=name or f"Round lid {diameter / 25.4:g} in ({safe:g} mm face, centre zero)", shape="circle",
+                w=diameter, h=diameter, origin="center", margins=(m, m, m, m), corner=0.0, keepouts=[])
+
+
 PIECES = {
     "plank76": dict(name="Pine plank 7 x 6 in (twine holes at top)", shape="rect", w=177.8, h=152.4,
                     origin="lower-left", margins=(6.0, 6.0, 6.0, 16.0), corner=0.0,
@@ -313,15 +337,88 @@ PIECES = {
                            margins=(4.0, 2.0, 4.0, 2.0), corner=0.0, keepouts=[]),
     "lid76": dict(name="Jar lid 3 in (flat face 49 mm)", shape="circle", w=76.2, h=76.2, origin="center",
                   margins=(13.6, 13.6, 13.6, 13.6), corner=0.0, keepouts=[]),
-    "coaster100": dict(name="Slate coaster 100 mm, rounded", shape="rect", w=100.0, h=100.0,
-                       origin="lower-left", margins=(5.0, 5.0, 5.0, 5.0), corner=8.0, keepouts=[]),
+    "tin50": lid_piece(50.8, 45.72, "Reflective tin lid 2 in (45.72 mm face, centre zero)"),
+    "coaster100": dict(name="Square 100.6 x 100.6 mm (slate)", shape="rect", w=100.6, h=100.6,
+                       origin="lower-left", margins=(5.8, 5.8, 5.8, 5.8), corner=0.0, keepouts=[]),
     "tile108": dict(name="Tile 4.25 in (108 mm)", shape="rect", w=108.0, h=108.0, origin="lower-left",
                     margins=(5.0, 5.0, 5.0, 5.0), corner=0.0, keepouts=[]),
-    "square100": dict(name="Square 100 x 100 mm", shape="rect", w=100.0, h=100.0, origin="lower-left",
+    "square100": dict(name="Square 100 x 100 mm (generic; 3 mm margins)", shape="rect", w=100.0, h=100.0, origin="lower-left",
                       margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
     "custom": dict(name="Custom size", shape="rect", w=100.0, h=100.0, origin="lower-left",
                    margins=(3.0, 3.0, 3.0, 3.0), corner=0.0, keepouts=[]),
 }
+
+# Toy cars (1:64 die-cast, Hot Wheels size), seen from above. Window positions are fractions of the car's length
+# measured from the FRONT, so they scale with the length you enter. They're starting points: measure your own car
+# (calipers or a ruler) and adjust them in the 'Toy car' window. Widths are the window's width across the car.
+CAR_BODIES = {
+    "mustang": dict(name="Your yellow Mustang (86.4 x 30.5 mm as measured)", length=86.36, width=30.48,
+                    windshield=(0.30, 0.42), rear=(0.60, 0.80), window_w=22.0, corner=5.0),
+    "coupe": dict(name="Coupe / muscle car", length=75.0, width=30.0,
+                  windshield=(0.33, 0.44), rear=(0.58, 0.68), window_w=22.0, corner=5.0),
+    "fastback": dict(name="Fastback (long sloping rear window)", length=76.0, width=30.0,
+                     windshield=(0.30, 0.42), rear=(0.58, 0.80), window_w=22.0, corner=5.0),
+    "sports": dict(name="Low sports car", length=74.0, width=31.0,
+                   windshield=(0.30, 0.46), rear=(0.58, 0.66), window_w=21.0, corner=6.0),
+    "pickup": dict(name="Pickup truck", length=78.0, width=30.0,
+                   windshield=(0.28, 0.38), rear=(0.50, 0.53), window_w=23.0, corner=4.0),
+    "van": dict(name="Van / SUV (no rear window on top)", length=72.0, width=30.0,
+                windshield=(0.16, 0.28), rear=None, window_w=24.0, corner=4.0),
+}
+CAR_STARTS = {"windshield": "Front edge of the windshield, on the centerline",
+              "roof": "Middle of the roof",
+              "nose": "Front tip of the car, on the centerline"}
+
+
+def car_values(body: str, length: float | None = None) -> dict:
+    """The body type's numbers in mm for a car of this length (its own length if not given)."""
+    b = CAR_BODIES[body]
+    L = float(length or b["length"])
+    ws, rear = b["windshield"], b["rear"]
+    return dict(body=body, length=L, width=b["width"], front="right", ws_from=round(ws[0] * L, 1),
+                ws_len=round((ws[1] - ws[0]) * L, 1), rear_from=round(rear[0] * L, 1) if rear else 0.0,
+                rear_len=round((rear[1] - rear[0]) * L, 1) if rear else 0.0, window_w=b["window_w"],
+                clearance=1.0, corner=b["corner"], start="windshield")
+
+
+def car_piece(v: dict) -> dict:
+    """A piece (top view of a toy car) with no-burn zones over the windshield and rear window and the start point
+    on a spot you can find on the real car. x runs along the car, y across it."""
+    L, W, c = float(v["length"]), float(v["width"]), float(v.get("clearance", 1.0))
+    right = v.get("front", "right") == "right"
+
+    def x_from_front(d):
+        return L - d if right else d
+
+    def window(d0, n):
+        xa, xb = sorted((x_from_front(d0 - c), x_from_front(d0 + n + c)))
+        xa, xb = max(0.0, xa), min(L, xb)
+        ww = min(W, float(v["window_w"]) + 2 * c)
+        return dict(kind="rect", x=round(xa, 2), y=round((W - ww) / 2, 2), w=round(xb - xa, 2), h=round(ww, 2))
+
+    keepouts = [window(float(v["ws_from"]), float(v["ws_len"]))]
+    if float(v.get("rear_len") or 0) > 0:
+        keepouts.append(window(float(v["rear_from"]), float(v["rear_len"])))
+    start = v.get("start", "windshield")
+    if start == "roof" and float(v.get("rear_len") or 0) > 0:
+        d = (float(v["ws_from"]) + float(v["ws_len"]) + float(v["rear_from"])) / 2
+    elif start == "roof":
+        d = float(v["ws_from"]) + float(v["ws_len"]) + 10.0
+    elif start == "nose":
+        d = 0.0
+    else:
+        d = float(v["ws_from"])
+    name = CAR_BODIES.get(v.get("body"), {}).get("name", "Toy car")
+    return dict(name=f"Toy car: {name}", shape="rect", w=round(L, 2), h=round(W, 2), origin="spot",
+                spot=[round(x_from_front(d), 2), round(W / 2, 2)], margins=(1.0, 1.0, 1.0, 1.0),
+                corner=float(v.get("corner", 4.0)), keepouts=keepouts, car=dict(v))
+
+
+# The toy car shows up in step 3's piece list (just before 'Custom size'); 'Toy car...' adjusts it.
+PIECES = {**{k: v for k, v in PIECES.items() if k != "custom"},
+          "car": dict(car_piece(car_values("mustang")), name="Toy car, top view (Hot Wheels size)"),
+          "custom": PIECES["custom"]}
+
 
 BADGES = {
     "PROVEN": "Proven on your U20",
@@ -333,6 +430,106 @@ BADGES = {
 
 def user_presets_path() -> Path:
     return DATA_DIR / "my-presets.json"
+
+
+def matching_recipe(material: Material, materials: list) -> Material | None:
+    """Reuse a stored recipe without confusing picture adjustments with material settings."""
+    separate = {'key', 'name', 'badge', 'summary', 'notes', 'based_on', 'piece', 'test_power', 'test_speed',
+                'brightness', 'contrast', 'gamma', 'sharpen', 'autolevel', 'negative', 'black_point', 'white_point'}
+    recipe = {f.name: getattr(material, f.name) for f in fields(Material) if f.name not in separate}
+    matches = [m for m in materials if all(getattr(m, k) == v for k, v in recipe.items())]
+    return next((m for m in matches if m.key == material.key), matches[0] if matches else None)
+
+
+def print_settings(m: Material) -> dict:
+    """Operator-facing values used by the current picture style; omit inactive settings."""
+    power = f"{m.power / 10:g}%"
+    if m.style == "layers":
+        power = "/".join(f"{p / 10:g}" for p in m.tone_power) + "%"
+    elif m.style == "grayscale":
+        power = f"{m.power_min / 10:g}–{power}"
+    values = {"Style": STYLES[m.style]["name"], "Power": power, "Speed": f"{m.feed:g} mm/min",
+              "Row spacing": f"{m.pitch:g} mm",
+              "Direction": "Left to right" if m.scan_direction == "forward" else "Alternating",
+              "Return": f"{m.row_feed:g} mm/min", "Run-up": f"{m.runup:g} mm",
+              "Row groups": str(m.interlace), "Fast blank gaps": "Off"}
+    if m.fast_blank_gaps:
+        values["Fast blank gaps"] = (f"{m.blank_feed:g} mm/min, {m.blank_guard_mm:g} mm each side, "
+                                     f"{m.blank_min_fast_mm:g} mm minimum middle")
+    if m.style == "layers":
+        values.update({"Layer rule": str(m.layer_rule), "Tone cuts": str(m.tone_cuts),
+                       "Widen white gaps": "On" if m.widen_gaps else "Off",
+                       "Thin line pass": "Off"})
+        if m.thin_pass:
+            values["Thin line pass"] = (f"{m.thin_cap / 10:g}% cap, "
+                                        f"{m.hop_feed:g} mm/min travel, {m.feature_runup:g} mm run-up")
+    else:
+        values["Passes"] = str(m.passes)
+    if m.style == "halftone":
+        values["Halftone spacing"] = f"{m.halftone_cell:g} mm"
+    return values
+
+
+def settings_changes(before: dict, after: dict) -> list[str]:
+    """Return effective changes in display order, including style-specific controls."""
+    return [f"{key}: {before.get(key, 'unused')} → {after.get(key, 'unused')}"
+            for key in dict.fromkeys((*before, *after)) if before.get(key) != after.get(key)]
+
+
+def matching_piece_key(piece: dict) -> str | None:
+    """Match full saved geometry, allowing JSON's lists in place of template tuples."""
+    def geometry(p):
+        return json.loads(json.dumps({k: v for k, v in p.items() if k != 'name'}))
+    target = geometry(piece)
+    return next((key for key, candidate in PIECES.items()
+                 if key != 'custom' and geometry(candidate) == target), None)
+
+
+def piece_choice_label(piece: dict) -> str:
+    """Describe real geometry; a close nominal size must not claim an exact match."""
+    key = matching_piece_key(piece)
+    if key:
+        return PIECES[key]['name']
+    w, h = piece['w'], piece['h']
+    if piece.get('outline'):
+        return f'Shaped piece {w:g} x {h:g} mm (own outline)'
+    if piece.get('shape') == 'circle':
+        return f'Custom round lid ({w:g} mm outside diameter)'
+    shape = 'square' if w == h else 'rectangle'
+    return f'Custom {shape} {w:g} x {h:g} mm'
+
+
+def piece_explanation(piece: dict, fit: str = "whole", loaded_job: bool = False) -> str:
+    """What the size box means right now, and which setting wins. Shown under the template list."""
+    key = matching_piece_key(piece)
+    m = piece.get("margins", (0, 0, 0, 0))
+    shape = "circle" if piece.get("shape") == "circle" else "rectangle"
+    usable = (f"{piece['w'] - m[0] - m[2]:g} mm usable face" if shape == "circle"
+              else f"{piece['w'] - m[0] - m[2]:g} x {piece['h'] - m[1] - m[3]:g} mm usable area")
+    zero = {"center": "the centre", "lower-left": "the lower-left corner", "spot": "a picked spot"}.get(
+        piece.get("origin"), piece.get("origin", "?"))
+    what = f"Template '{PIECES[key]['name']}'" if key else "Custom size"
+    if shape == "circle" and fit != "exact" and len(set(m)) == 1:
+        lines = [f"{what}. Outside diameter: {piece['w']:g} mm ({piece['w'] / 25.4:g} in). "
+                 f"Rim inset: {m[0]:g} mm per side. Artwork limit: {usable}. Job zero at {zero}."]
+    else:
+        lines = [f"{what}: {piece['w']:g} x {piece['h']:g} mm {shape}, {usable}, job zero at {zero}."]
+    if piece.get("outline"):
+        lines.append(f"Shaped piece: marks stay inside its own {len(piece['outline'])}-point outline, and Stock "
+                     "perimeter traces that outline.")
+    if fit == "exact":
+        lines.append("Exact image size is on: the box is the image itself, margins are ignored.")
+    elif fit == "art-exact":
+        lines.append("Exact image size is on: the image keeps its proportions within the usable face.")
+    if loaded_job:
+        lines.append("The job opened with its saved piece. These are the current values. Selecting a size template "
+                     "replaces them and rebuilds the job.")
+    elif key:
+        lines.append("Precedence: editing width, height, margins, corner or origin overrides the template and turns "
+                     "it into a measured size; nothing else changes it behind your back.")
+    else:
+        lines.append("Precedence: these exact numbers are used as shown. Pick a template to replace them.")
+    return " ".join(lines)
 
 
 def load_materials() -> list:
@@ -350,19 +547,22 @@ def load_materials() -> list:
 
 
 def save_user_material(m: Material) -> None:
+    from .jobs import write_json
     p = user_presets_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     items = []
     if p.exists():
         try:
             items = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            items = []
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError(f"The existing preset library could not be read. It is still at {p}.") from exc
+        if not isinstance(items, list) or not all(isinstance(item, dict) and item.get("key") for item in items):
+            raise ValueError(f"The existing preset library has an unrecognized format. It is still at {p}.")
     items = [d for d in items if d.get("key") != m.key]
     d = asdict(m)
     d["badge"] = "MINE"
     items.append(d)
-    p.write_text(json.dumps(items, indent=1), encoding="utf-8")
+    write_json(p, items)
 
 
 def delete_user_material(key: str) -> None:
@@ -384,26 +584,22 @@ def energy(m: Material) -> float:
     return power / max(1, m.feed) * max(1, m.passes)
 
 
-LG_DITHER = {"floyd": "Floyd-Steinberg", "jarvis": "Jarvis", "stucki": "Stucki", "atkinson": "Atkinson"}
 
 
-def lasergrbl_recipe(m: Material) -> str:
-    """The same settings in LaserGRBL's picture import."""
-    q = f"Quality {1 / m.pitch:g} lines/mm"
-    nxt = f"in the next window: Engraving speed {m.feed} mm/min, Laser mode M4"
-    neg = " Press LaserGRBL's invert (negative) button, because Negative is on here." if m.negative else ""
-    if m.style in LG_DITHER:
-        return (f"choose '1bit BW Dithering' > {LG_DITHER[m.style]}, {q}; {nxt}, S-MIN 0, S-MAX {m.power} "
-                f"(= {m.power / 10:g}%).{neg}")
-    if m.style == "grayscale":
-        return (f"choose 'Line To Line Tracing', {q}; {nxt}, S-MIN {m.power_min}, S-MAX {m.power} "
-                f"(= {m.power_min / 10:g}-{m.power / 10:g}%).{neg}")
-    if m.style == "threshold":
-        return (f"choose 'Line To Line Tracing' with Threshold ticked, {q}; {nxt}, S-MIN 0, S-MAX {m.power} "
-                f"(= {m.power / 10:g}%).{neg}")
-    if m.style == "centerline":
-        return f"choose 'Centerline' (close, not identical); {nxt}, S-MAX {m.power} (= {m.power / 10:g}%)."
+def gcode_settings_summary(m: Material) -> str:
+    """Neutral machine-readable recipe summary; does not assert compatibility with other controllers."""
     if m.style == "layers":
-        return ("nothing matches: LaserGRBL's picture import makes a single pass, so it can't do layers. Open this "
-                "app's layer files (01, 02, ...) in LaserGRBL one at a time, or run the job from this app.")
-    return "nothing matches this style. Save the job here, then File > Open its .nc file in LaserGRBL."
+        powers = "layer tone power " + "/".join(f"S{int(v)}" for v in m.tone_power)
+        passes = "layered tone passes (plus thin detail where generated)"
+    elif m.style == "grayscale":
+        powers = f"power S{m.power_min}–S{m.power}"
+        passes = f"{max(1, int(m.passes))} pass(es)"
+    else:
+        powers = f"power S{m.power}"
+        passes = f"{max(1, int(m.passes))} pass(es)"
+    pitch = max(float(m.pitch), 1e-6)
+    return (f"{powers} ($30=1000 scale on the U20)  |  "
+            f"feed F{int(m.feed)} mm/min  |  "
+            f"row pitch {pitch:g} mm ({1.0 / pitch:.2f} lines/mm)  |  M4 dynamic power\n"
+            f"{passes}  |  {max(1, int(m.interlace))} cooling row group(s)  |  "
+            f"preset Negative default {'ON' if m.negative else 'OFF'} (may be overridden in step 4)")

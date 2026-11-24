@@ -146,7 +146,8 @@ class FakeController:
             self.out.append("ok\r\n")
 
     def _soft_reset(self):
-        moving = self.cur is not None and not self.hold
+        # Grbl only alarms on a reset during motion; a G4 dwell runs after the buffer has synced (state Idle)
+        moving = self.cur is not None and self.cur["kind"] != "dwell" and not self.hold
         self._interrupt()
         self._boot()
         if moving:
@@ -351,11 +352,11 @@ def coverage(ctrl: FakeController, geom, bed_from_work=(0.0, 0.0), tol: float = 
         wy = y0 - bed_from_work[1]
         if abs(y1 - y0) > 1e-6:
             raise AssertionError(f"powered move not horizontal: {(x0, y0, x1, y1)}")
-        r = (geom.yt - wy) / geom.pitch - 0.5
+        r = (geom.yt - wy) / geom.y_pitch - 0.5
         ri = int(round(r))
-        if abs(r - ri) > tol / geom.pitch or not 0 <= ri < geom.rows:
+        if abs(r - ri) > tol / geom.y_pitch or not 0 <= ri < geom.rows:
             raise AssertionError(f"burn off the row grid at y={wy:.4f}")
-        a, b = (min(wx0, wx1) - geom.x0) / geom.pitch, (max(wx0, wx1) - geom.x0) / geom.pitch
+        a, b = (min(wx0, wx1) - geom.x0) / geom.x_pitch, (max(wx0, wx1) - geom.x0) / geom.x_pitch
         for c in range(max(0, int(math.floor(a))), min(geom.cols, int(math.ceil(b)))):
             cov[ri, c] += max(0.0, min(b, c + 1) - max(a, c))
     return cov

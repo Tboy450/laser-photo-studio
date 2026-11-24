@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .planner import JobPlan
 from .presets import LOOKS
@@ -18,11 +18,19 @@ def _blur(a: np.ndarray, radius: float) -> np.ndarray:
     return np.asarray(im.filter(ImageFilter.GaussianBlur(radius)), np.float64) / 255.0
 
 
-def appearance(job: JobPlan, passes=None) -> Image.Image:
+def appearance_palette(look, glass_marks="Default", glass_backing="Default"):
+    base, mark = LOOKS.get(look, LOOKS["pine"])
+    if look == "glass":
+        base = {"Light": (230, 238, 238), "Dark": (28, 37, 43)}.get(glass_backing, base)
+        mark = {"Light": (245, 246, 245), "Dark": (40, 44, 44)}.get(glass_marks, mark)
+    return base, mark
+
+
+def appearance(job: JobPlan, passes=None, *, glass_marks="Default", glass_backing="Default") -> Image.Image:
     """Rough look of the finished burn on the material (char spread blurs wood marks ~0.1-0.2 mm)."""
     g = job.geom
     m = job.material
-    base, mark = (np.array(c, np.float64) for c in LOOKS.get(m.look, LOOKS["pine"]))
+    base, mark = (np.array(c, np.float64) for c in appearance_palette(m.look, glass_marks, glass_backing))
     chosen = [p for p in job.passes if passes is None or p.key in passes]
     energy = np.zeros((g.rows, g.cols))
     woody = m.look in ("pine", "lightwood", "darkwood", "leather", "cardboard")
@@ -44,6 +52,43 @@ def appearance(job: JobPlan, passes=None) -> Image.Image:
     return Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8), "RGB")
 
 
+def glass_pattern_previews(job: JobPlan):
+    """Offline alternatives at the current image, tone, workpiece and grid."""
+    from .planner import plan_cells
+    if job.material.look != "glass" or job.gray is None or job.allowed is None:
+        raise ValueError("Open an editable glass picture first.")
+    return [(label, laser_input(plan_cells(job.gray, job.material.copy(style=style),
+                                          job.geom, job.allowed, job.name, job.piece)))
+            for label, style in ((f"Halftone ({job.material.halftone_cell:g} mm screen)", "halftone"),
+                                 ("Stucki (irregular dots)", "stucki"))]
+
+
+def spot_label(sp) -> str:
+    return f"{float(sp['seconds']):g}s" + chr(10) + f"{int(sp['s']) / 10:g}%"
+
+
+def mark_spots(im: Image.Image, job: JobPlan, passes=None) -> Image.Image:
+    """Burn-in-place spots are single dots, too small to see: ring each one and label its time and power.
+    `im` is a picture at the job's dot resolution (one pixel per cell), as appearance() and burn_map() make."""
+    spots = [sp for p in job.passes if p.kind == "dwell" and (passes is None or p.key in passes) for sp in p.spots or []]
+    if not spots:
+        return im
+    g = job.geom
+    out = im.convert("RGB").resize((im.width * 4, im.height * 4), Image.Resampling.NEAREST)   # room for labels
+    d = ImageDraw.Draw(out)
+    px = 4 / g.pitch                                            # output pixels per mm
+    try:
+        font = ImageFont.truetype("arial.ttf", max(10, int(0.75 * px)))
+    except OSError:
+        font = ImageFont.load_default()
+    r = max(6, 0.5 * px)
+    for sp in spots:
+        x, y = (sp["x"] - g.x0) * px, (g.yt - sp["y"]) * px
+        d.ellipse((x - r, y - r, x + r, y + r), outline=(200, 0, 0), width=max(2, int(r / 5)))
+        d.multiline_text((x, y + r + 2), spot_label(sp), fill=(200, 0, 0), font=font, anchor="ma", align="center")
+    return out
+
+
 def burn_map(job: JobPlan, passes=None) -> Image.Image:
     """White background; each pass in its own colour (later passes drawn on top)."""
     g = job.geom
@@ -58,13 +103,36 @@ def burn_map(job: JobPlan, passes=None) -> Image.Image:
     return Image.fromarray(out, "RGB")
 
 
+def edge_burn(job: JobPlan, width_mm: float = 0.5) -> float:
+    """Share (0-1) of the art box's outer edge that the picture marks as 'burn' (dark after Negative). Near 1 means
+    the picture's background burns too, so a logo or sticker comes out as a filled rectangle. Only a plain, even
+    edge counts: a photo that runs to its edges has varied tones there and returns 0."""
+    if job.gray is None:
+        return 0.0
+    a = job.gray
+    H, W = a.shape
+    n = max(1, int(round(width_mm / job.geom.pitch)))
+    if H <= 2 * n or W <= 2 * n:
+        return 0.0
+    ring = np.ones((H, W), bool)
+    ring[n:-n, n:-n] = False
+    if job.allowed is not None:
+        ring &= job.allowed
+    if not ring.any() or a[ring].std() > 20:
+        return 0.0
+    return float((a[ring] < 160).mean())
+
+
 def source_view(job: JobPlan) -> Image.Image:
     g = job.gray if job.gray is not None else np.full((job.geom.rows, job.geom.cols), 255.0)
     return Image.fromarray(np.clip(g, 0, 255).astype(np.uint8), "L").convert("RGB")
 
 
-LASERGRBL_BG = (23, 30, 38)        # LaserGRBL default "CAD Dark" theme: PreviewBackColor
-LASERGRBL_LINE = (220, 220, 220)   # PreviewLaserPower; brightness follows S relative to the file's strongest S
+TOOLPATH_BG = (23, 30, 38)
+TOOLPATH_MARK = (220, 220, 220)  # Intensity follows planned S power across selected passes
+# Backward-compatible aliases for older extensions and saved workflows.
+LASERGRBL_BG = TOOLPATH_BG
+LASERGRBL_LINE = TOOLPATH_MARK
 
 
 def _power_sum(job: JobPlan, passes=None):
@@ -79,17 +147,21 @@ def _power_sum(job: JobPlan, passes=None):
     return np.clip(acc, 0, 1)
 
 
-def lasergrbl_view(job: JobPlan, passes=None) -> Image.Image:
-    """How LaserGRBL's preview draws the .nc: light lines where the laser fires on a dark background.
-    It does not invert anything - wood jobs simply look like negatives there."""
+def toolpath_view(job: JobPlan, passes=None) -> Image.Image:
+    """Preview planned powered marks on dark material, not travel moves or live head telemetry."""
     a = _power_sum(job, passes)
-    bg, fg = np.array(LASERGRBL_BG, float), np.array(LASERGRBL_LINE, float)
+    bg, fg = np.array(TOOLPATH_BG, float), np.array(TOOLPATH_MARK, float)
     rgb = bg[None, None, :] + (fg - bg)[None, None, :] * a[:, :, None]
     return Image.fromarray(rgb.astype(np.uint8), "RGB")
 
 
+def lasergrbl_view(job: JobPlan, passes=None) -> Image.Image:
+    """Legacy API: preserve older callers while the UI uses Studio's toolpath preview."""
+    return toolpath_view(job, passes)
+
+
 def laser_input(job: JobPlan) -> Image.Image:
-    """Black = the laser fires (darker = more power), white = untouched. Same convention as LaserGRBL's picture
-    import and the project's *-IMPORT.png files. 1 pixel = 1 dot."""
+    """Black = planned laser-on cells, white = untouched. Same pixel convention as Studio's
+    import masks; 1 pixel equals one planned mark cell."""
     a = _power_sum(job)
     return Image.fromarray((255 - a * 255).astype(np.uint8), "L")

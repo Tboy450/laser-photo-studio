@@ -7,6 +7,7 @@ shrinking layers, thin-feature detection by connected components, and Zhang-Suen
 from __future__ import annotations
 
 import os
+import math
 import subprocess
 import tempfile
 from pathlib import Path
@@ -91,14 +92,45 @@ def tone_lut(brightness: float = 0, contrast: float = 0, gamma: float = 1.0, neg
     return [int(round(x)) for x in np.clip(v, 0, 255)]
 
 
+def saved_size_mm(path) -> tuple | None:
+    """The real size stored in a picture file (from its DPI), or None. 72 and 96 are just screen defaults."""
+    try:
+        with Image.open(path) as im:
+            dpi, (w, h) = im.info.get("dpi"), im.size
+            orientation = im.getexif().get(274, 1)
+        # PNG stores integer pixels/metre, so an ordinary 96 DPI tag can decode as 96.012.
+        if not dpi or len(dpi) < 2 or not all(math.isfinite(v) and v > 96.1 for v in dpi[:2]):
+            return None
+        size = round(w / float(dpi[0]) * 25.4, 2), round(h / float(dpi[1]) * 25.4, 2)
+        return size[::-1] if orientation in (5, 6, 7, 8) else size
+    except Exception:
+        return None
+
+
+def auto_level_points(im: Image.Image, crop=None):
+    if crop is not None:
+        im = im.crop(tuple(int(round(c)) for c in crop))
+    hist = np.asarray(im.convert('L').histogram(), dtype=np.int64)
+    cut = int(hist.sum() // 100)
+    lo = int(np.searchsorted(hist.cumsum(), cut, side='right'))
+    hi = 255 - int(np.searchsorted(hist[::-1].cumsum(), cut, side='right'))
+    return (lo, hi) if hi > lo else (0, 255)
+
+
 def to_grid(im: Image.Image, cols: int, rows: int, crop=None, *, autolevel=False, brightness=0, contrast=0,
-            gamma=1.0, negative=False, sharpen=0) -> np.ndarray:
+            gamma=1.0, negative=False, sharpen=0, black_point=0, white_point=255) -> np.ndarray:
     """Resize the picture to the burn grid (one cell per row/column pitch) and apply the look settings.
     Returns float32 lightness 0 (black) .. 255 (white)."""
     if crop is not None:
         im = im.crop(tuple(int(round(c)) for c in crop))
     if autolevel:
         im = ImageOps.autocontrast(im, cutoff=1)
+    if not 0 <= black_point < white_point <= 255:
+        raise ValueError('Black point must be below White point (0..255).')
+    if (black_point, white_point) != (0, 255):
+        scale = 255.0 / (white_point - black_point)
+        offset = -black_point * scale
+        im = im.point([max(0, min(255, int(x * scale + offset))) for x in range(256)])
     im = im.point(tone_lut(brightness, contrast, gamma, False))
     im = im.resize((max(1, cols), max(1, rows)), Image.Resampling.LANCZOS)
     if sharpen > 0:
