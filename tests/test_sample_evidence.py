@@ -50,6 +50,11 @@ class SampleEvidence(unittest.TestCase):
         t=helptext.LEARNING
         for phrase in ['not independent motion','56 damaged book pages','F240','None of these has raster DPI','M3','not physically run','different proposed surface comparison','0.10 mm']:
             self.assertIn(phrase,t)
+    def test_tin_recipe_does_not_inherit_anodized_card_photos(self):
+        base = next(m for m in presets.BUILTIN if m.key == 'anodized-dots')
+        tin = base.copy(key='my-tin', look='tin', based_on=base.key)
+        self.assertTrue(samples.for_material(base)[0])
+        self.assertEqual(samples.for_material(tin)[0], [])
     def test_user_dialog_saves_and_builtin_dialog_is_readonly(self):
         root=tk.Tk();root.withdraw()
         try:

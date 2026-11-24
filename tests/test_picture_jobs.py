@@ -1033,7 +1033,7 @@ class PictureJobUI(unittest.TestCase):
         self.assertEqual(a.build_params()[1], planner.Placement(a.piece, **position))
         self.assertFalse(picture_jobs.registration_conflicts(original, a.job))
         np.testing.assert_array_equal(original.passes[0].cells > 0, a.job.passes[0].cells > 0)
-        a.tree.selection_set(row)
+        a.review_base.invoke()
         self.root.update()
         a.require_pair.set(True)
         a.apply_full_preset.invoke()
@@ -1204,9 +1204,47 @@ class PictureJobUI(unittest.TestCase):
         with patch.object(a,'_show_material'):
             a._adopt_material_snapshot(snapshot)
         self.assertIsNotNone(a._job_material_snapshot)
-        a.tree.selection_set('m:'+snapshot.key);a._tree_pick()
+        self.assertEqual(a.tree.selection(), ('m:'+snapshot.key,))
+        a._tree_pick(review_active=True)
         self.assertIsNone(a._job_material_snapshot)
         self.assertEqual(a.mat.feed,presets.BUILTIN[0].feed)
+
+    def test_open_picture_choose_tin_edit_save_and_reopen_retains_preset_and_print(self):
+        a = self.a
+        profile = presets.BUILTIN[0].copy(key='my-tin', name='Stored tin',
+            badge='MINE', look='tin', style='floyd', feed=140, power=800, pitch=.10)
+        a.materials.append(profile)
+        a._fill_tree()
+        path = self.path / 'mask.png'
+        Image.new('L', (30, 30), 0).save(path)
+        with patch('tkinter.filedialog.askopenfilename', return_value=str(path)):
+            a.open_picture()
+        a.goto(1)
+        a.tree.selection_set('m:my-tin')
+        self.root.update()
+        a.apply_full_preset.invoke()
+        for field, value in [('feed', '2400'), ('power', '50'), ('pitch', '.15')]:
+            a.adv_vars[field][0].set(value)
+        a._adv_changed()
+        a.set_piece('tin51face')
+        self.pump()
+        self.compile()
+        commands = [p.commands.copy() for p in a.job.passes]
+        folder = a.save_current_job(quiet=True)
+        self.assertTrue(a.open_saved_job(folder))
+        self.root.update()
+        self.assertEqual(a.tree.selection(), ('m:my-tin',))
+        self.assertIsNone(a._pending_material)
+        self.assertIn('Stored tin (edited for this job)', a.active_recipe.cget('text'))
+        self.assertIn('Speed: 140 mm/min → 2400 mm/min', a.m_summary.cget('text'))
+        self.assertFalse(a.sample_strip.winfo_manager())
+        self.assertEqual(a.piece_key, 'tin51face')
+        self.assertEqual(commands, [p.commands for p in a.job.passes])
+        a.review_base.invoke()
+        self.assertEqual(a._pending_material, 'my-tin')
+        a._dismiss_material_choice()
+        self.assertEqual(a.mat.feed, 2400)
+        self.assertEqual(profile.feed, 140)
 
     def test_preview_modes_match_marks_and_slate_polarity_without_changing_commands(self):
         a=self.a

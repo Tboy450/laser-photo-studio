@@ -323,7 +323,10 @@ class App(PlaceMixin, LaserMixin):
     def _adopt_material_snapshot(self, material):
         """Load job values without registering a project name as another preset."""
         self._dismiss_material_choice()
-        match = presets.matching_recipe(material, self.materials)
+        # Prefer the operator's recorded choice even when edits happen to match another recipe.
+        match = next((m for m in self.materials if m.key == material.key and m.look == material.look), None)
+        if match is None:
+            match = presets.matching_recipe(material, self.materials)
         self._job_material_snapshot = material
         self._snapshot_preset_key = match.key if match else None
         self.mat = material
@@ -474,7 +477,10 @@ class App(PlaceMixin, LaserMixin):
         self.apply_exposure = ttk.Button(self.material_choice, command=self._apply_exposure)
         self.apply_exposure.pack(anchor="w", padx=5, pady=(3, 0))
         self.tree.bind("<Return>", self._focus_preset_action)
+        self.tree.bind("<ButtonRelease-1>", self._review_clicked_base)
         self.tree.bind("<Escape>", lambda _: self._dismiss_material_choice())
+        self.review_base = ttk.Button(f, text="Review the stored preset values",
+                                      command=self._review_base_recipe)
         self.preset_impact = wrap_label(self.material_choice, "", style="Small.TLabel")
         self.preset_impact.pack(fill="x", padx=5)
         self.require_pair = tk.BooleanVar(value=False)
@@ -619,7 +625,8 @@ class App(PlaceMixin, LaserMixin):
     def _fill_tree(self):
         self.tree.delete(*self.tree.get_children())
         if self._job_material_snapshot is not None and self._snapshot_preset_key is None:
-            self.tree.insert('', 'end', iid='job:material', text='Job recipe in use')
+            self.tree.insert('', 'end', iid='job:material',
+                             text=f"Saved {self.mat.look} settings (no matching preset)")
         for kind, title in GROUPS:
             items = [m for m in self.materials if m.badge == kind]
             if not items:
@@ -628,13 +635,13 @@ class App(PlaceMixin, LaserMixin):
             for m in items:
                 self.tree.insert(gid, "end", iid=f"m:{m.key}", text=m.name)
 
-    def _tree_pick(self, _=None):
+    def _tree_pick(self, _=None, *, review_active=False):
         sel = self.tree.selection()
         if not self._loading and self._pending_material and sel != ('m:' + self._pending_material,):
             self._pending_material = None
             self.material_choice.pack_forget()
         if sel and sel[0].startswith("m:") and not self._loading and (
-                sel[0][2:] != (self._snapshot_preset_key or self.mat.key) or
+                review_active or sel[0][2:] != (self._snapshot_preset_key or self.mat.key) or
                 (self._job_material_snapshot is not None and self._snapshot_preset_key is None)):
             key = sel[0][2:]
             if self.picture is None or self.grid_spec or self.gfile:
@@ -691,7 +698,21 @@ class App(PlaceMixin, LaserMixin):
                 self.tree.focus(active)
                 self.tree.see(active)
 
+    def _review_clicked_base(self, event):
+        if (self.review_base.winfo_manager() and self.tree.identify_row(event.y) == 'm:' + self.base_mat.key
+                and self.tree.identify_region(event.x, event.y) == 'tree'):
+            self._review_base_recipe()
+
+    def _review_base_recipe(self):
+        row = 'm:' + self.base_mat.key
+        self.tree.selection_set(row)
+        self.tree.focus(row)
+        self.tree.see(row)
+        self._tree_pick(review_active=True)
+
     def _focus_preset_action(self, _event):
+        if not self._pending_material and self.review_base.winfo_manager():
+            self._tree_pick(review_active=True)
         if self._pending_material:
             self.apply_exposure.focus_set()
         return "break"
@@ -763,19 +784,33 @@ class App(PlaceMixin, LaserMixin):
     def _show_material(self):
         m = self.mat
         active = presets.print_settings(m)
-        self.active_recipe.configure(text=f"In use: {active['Power']} at {m.feed:g} mm/min · "
-                                          f"{m.pitch:g} mm rows · {active['Style']} · {m.look} surface")
         base = self.base_mat
-        adjusted = bool(presets.settings_changes(presets.print_settings(base), presets.print_settings(m)))
-        self.m_name.configure(text=base.name if self._snapshot_preset_key and not adjusted else m.name)
+        changes = presets.settings_changes(presets.print_settings(base), active)
+        adjusted = bool(changes)
+        known = self._job_material_snapshot is None or self._snapshot_preset_key is not None
+        source = (f"Preset: {base.name}" + (" (edited for this job)" if adjusted else "")
+                  if known else "Saved settings · no matching material preset")
+        self.active_recipe.configure(text=f"{source}\nIn use: {active['Power']} at {m.feed:g} mm/min · "
+                                          f"{m.pitch:g} mm rows · {active['Style']} · {m.look} surface")
+        self.m_name.configure(text=base.name if known else m.name)
+        if adjusted and known:
+            self.review_base.pack(anchor="w", after=self.preset_list, pady=3)
+        else:
+            self.review_base.pack_forget()
         historical = m.badge == "PROVEN"
         evidence = ("Edited print settings" if adjusted else "Saved job settings" if self._job_material_snapshot
                     else "Preset based on a 0.10 mm test" if historical else BADGES[m.badge])
         bg, fg = badge_colors("MINE" if adjusted or self._job_material_snapshot or historical else m.badge)
         self.m_badge.configure(text=f" {evidence} ", background=bg, foreground=fg)
-        self.m_summary.configure(text=("Reference notes: " if adjusted or historical or self._job_material_snapshot
-                                       else "") + m.summary)
-        self.sample_strip.show(m)
+        summary = ("Reference notes: " if adjusted or historical or self._job_material_snapshot else "") + m.summary
+        if adjusted and known:
+            summary = "Stored preset → current job\n" + "\n".join(changes) + "\n" + summary
+        self.m_summary.configure(text=summary)
+        if known and not adjusted and m.look == base.look:
+            self.sample_strip.pack(fill="x", pady=(6, 6), before=self.m_notes)
+            self.sample_strip.show(base)
+        else:
+            self.sample_strip.pack_forget()
         self.m_notes.configure(text="\n".join("- " + n for n in m.notes))
         s = STYLES[m.style]
         if m.style == "layers":

@@ -92,11 +92,11 @@ def for_material(mat) -> tuple:
     the user's own photos."""
     items, note = _builtin(mat.key)
     based_on = getattr(mat, "based_on", "")
-    if not items and based_on:
+    parent = next((m for m in BUILTIN if m.key == based_on), None)
+    if not items and parent is not None and parent.look == mat.look:
         items, _ = _builtin(based_on)
         if items:
-            name = next((m.name for m in BUILTIN if m.key == based_on), based_on)
-            note = f"Photos from '{name}', the preset this one was saved from."
+            note = f"Photos from '{parent.name}', the preset this one was saved from."
     return items + user_samples(mat.key), note
 
 
