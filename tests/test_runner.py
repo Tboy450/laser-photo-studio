@@ -68,8 +68,10 @@ class FullRuns(RunnerBase):
         with patch.object(jobs.subprocess, 'Popen'):
             jobs.launch_runner(folder, original)
         run = Runner(folder, wire=FakeWire(self.ctrl()))
-        for command in ('pause', 'continue', 'estop', 'resume'):
-            jobs.send_control(folder, command)
+        # Windows wall time may return the same value for every click in a burst.
+        with patch.object(jobs.time, 'time_ns', return_value=1):
+            for command in ('pause', 'continue', 'estop', 'resume'):
+                jobs.send_control(folder, command)
         self.assertEqual(run.check_control(), 'estop')
         self.assertTrue(run.estop_req)
         self.assertEqual([jobs.take_control(run.control_queue) for _ in range(3)], ['pause', 'continue', 'resume'])

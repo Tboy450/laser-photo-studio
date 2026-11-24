@@ -317,8 +317,9 @@ def send_control(folder: Path, cmd: str) -> None:
     if queue is not None:
         if cmd not in ("pause", "resume", "stop", "continue", "estop"):
             raise ValueError(f"Unknown job control: {cmd}")
-        # A distinct atomic file for each request, including across Studio windows.
-        request = queue / f"{time.time_ns():020d}-{uuid.uuid4().hex}.{cmd}"
+        # A shared, high-resolution clock orders requests across Windows processes.
+        # Wall time can repeat during a burst or move backwards when adjusted.
+        request = queue / f"{time.perf_counter_ns():020d}-{uuid.uuid4().hex}.{cmd}"
         request.touch(exist_ok=False)
         return
     cur = read_json(folder / "control.json", {}) or {}
