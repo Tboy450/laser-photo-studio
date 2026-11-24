@@ -28,6 +28,8 @@ CONTROLLER_TRAVEL = (420.0, 400.0)   # $130 / $131 read from this controller in 
 
 # name -> (columns, rows, enabled slot count or None for all). Slot 1 is top-left; rows run left to right.
 PRESETS = {
+    "42 (7 x 6)": (7, 6, None),
+    "6 (2 x 3)": (2, 3, None),
     "7 x 3 (21)": (7, 3, None),
     "20 = 7 + 7 + 6 (last slot off)": (7, 3, 20),
     "18 = 7 + 7 + 4": (7, 3, 18),
@@ -67,6 +69,7 @@ class Layout:
     group_dy: float = 0.0
     flip_alternate_rows: bool = False   # turn every second row's pictures half way (carton rows facing each other)
     slots: list = field(default_factory=list)
+    stagger_x: float = 0.0          # shift odd-numbered row indices to match measured staggered pockets
 
     def __post_init__(self):
         if self.zero not in ZERO_MODES:
@@ -79,14 +82,24 @@ class Layout:
             self.slots = [Slot(r, c) for r in range(self.rows) for c in range(self.cols)]
         if len(self.slots) != self.rows * self.cols:
             raise ValueError("The layout's slot list doesn't match its rows and columns.")
+        positions = {(s.row, s.col) for s in self.slots}
+        if positions != {(r, c) for r in range(self.rows) for c in range(self.cols)}:
+            raise ValueError("Each pocket must occupy a distinct row and column in the layout.")
+        if any(not math.isfinite(v) for v in (self.group_dx, self.group_dy, self.stagger_x,
+                *(value for s in self.slots for value in (s.dx, s.dy)))):
+            raise ValueError("Pocket and group offsets must be finite distances.")
+        if any(type(s.rot) is not int or not 0 <= s.rot <= 3 for s in self.slots):
+            raise ValueError("Picture orientation must be a quarter turn.")
 
     # ---------------------------------------------------------------- geometry
     def base(self, i: int) -> tuple:
         """Slot i's nominal centre (no nudges), relative to job zero."""
         s = self.slots[i]
-        x, y = s.col * self.pitch_x, -s.row * self.pitch_y
+        x, y = s.col * self.pitch_x + (self.stagger_x if s.row % 2 else 0), -s.row * self.pitch_y
         if self.zero == "centre":
             x -= (self.cols - 1) * self.pitch_x / 2
+            if self.rows > 1:
+                x -= self.stagger_x / 2
             y += (self.rows - 1) * self.pitch_y / 2
         return x, y
 
@@ -111,10 +124,12 @@ class Layout:
 
     # ---------------------------------------------------------------- edits
     def nudge(self, indices, dx: float = 0.0, dy: float = 0.0):
-        for i in indices:
-            s = self.slots[i]
-            if s.done:
-                raise ValueError(f"Tin {i + 1} is already burned; nudging it now would misplace the record.")
+        selected = [self.slots[i] for i in dict.fromkeys(indices)]
+        if not all(math.isfinite(n) for n in (dx, dy)):
+            raise ValueError("Enter finite X and Y distances.")
+        if any(s.done for s in selected):
+            raise ValueError("A selected tin is already burned. Its position is locked.")
+        for s in selected:
             s.dx, s.dy = round(s.dx + dx, 3), round(s.dy + dy, 3)
 
     def move_group(self, dx: float = 0.0, dy: float = 0.0):
@@ -209,7 +224,7 @@ def tin_piece(layout: Layout, i: int, piece: dict) -> dict:
     pc = copy.deepcopy(piece)
     w, h = float(pc["w"]), float(pc["h"])
     zero = "tin 1's centre" if layout.zero == "slot1" else "the layout centre"
-    pc.update(origin="spot", spot=(round(w / 2 - cx, 3), round(h / 2 - cy, 3)),
+    pc.update(origin="spot", spot=(w / 2 - cx, h / 2 - cy),
               name=f"Tin {i + 1} of '{layout.name}' (job zero = {zero})")
     return pc
 

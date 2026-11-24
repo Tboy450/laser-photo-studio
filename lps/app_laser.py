@@ -1155,6 +1155,17 @@ class LaserMixin:
             return [outlines.rounded_box_path(rect, piece.get("corner", 0.0))]
         return []
 
+    def _jig_placement_ok(self, ref, job):
+        if ref is None:
+            return True
+        from .jig_project import validate_placement
+        try:
+            validate_placement(ref, job, getattr(self, "_jig_window", None))
+            return True
+        except Exception as exc:
+            messagebox.showinfo("Check jig placement", str(exc), parent=self.root)
+            return False
+
     def run_perimeter(self, mode):
         if self.layout_pending and not self.gfile:
             self.say("The picture is updating. Choose a check after the preview refreshes.")
@@ -1179,6 +1190,8 @@ class LaserMixin:
         self.preview.redraw()
         if not self.need_connection():
             return
+        if not self._jig_placement_ok((self.source_provenance or {}).get("jig_reference"), self.job):
+            return
         if mode in ("image", "sticker") and not self.gfile and not self.verified_layout():
             self.say("Wait for Step 4 to verify the current picture before running Image Trace.", "warn")
             return
@@ -1188,6 +1201,8 @@ class LaserMixin:
         key = self.check_key(mode)
         if not messagebox.askokcancel(
                 CHECK_LABELS[mode], help_text + "\n\nWatch the head. It returns to job zero after the check."):
+            return
+        if not self._jig_placement_ok((self.source_provenance or {}).get("jig_reference"), self.job):
             return
         if (key != self.check_key(mode) or not self.origin_set or not self.need_connection() or
                 self.status_stale() or not self.last_status or self.last_status.state != "Idle" or jobs.active_runner()):
@@ -1271,6 +1286,16 @@ class LaserMixin:
     def launch(self, folder, spec, fresh_context=False):
         if self._closing:
             return
+        descriptor = jobs.read_json(Path(folder) / "job.json", {}) or {}
+        if "jig_reference" in descriptor:
+            from .picture_jobs import read
+            try:
+                placed = read(folder)[2]
+            except Exception as exc:
+                messagebox.showinfo("Check jig placement", str(exc), parent=self.root)
+                return
+            if not self._jig_placement_ok(descriptor["jig_reference"], placed):
+                return
         if jobs.active_runner():
             messagebox.showerror("Busy", "Another job is already running.")
             return

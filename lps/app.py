@@ -187,6 +187,7 @@ class App(PlaceMixin, LaserMixin):
                       "material. A Reference opens in your photo viewer.",
                    style="Small.TLabel").pack(anchor="w", pady=(2, 0))
         self.pic_info = wrap_label(f, "No picture yet.")
+        ttk.Button(f, text="Tin jig…", command=self.open_tin_jig).pack(anchor="w", pady=(6, 0))
         self.pic_info.pack(anchor="w", pady=(8, 4))
         box = ttk.LabelFrame(f, text="Is it the right way up?", style="Card.TLabelframe")
         box.pack(fill="x", pady=8)
@@ -204,6 +205,14 @@ class App(PlaceMixin, LaserMixin):
         ttk.Button(g, text="Open G-code for a perimeter check...", command=lambda: self.perimeter_mode(None)).pack(
             anchor="w", pady=(6, 0))
         self._next(f, "Next: material  >", 1)
+
+    def open_tin_jig(self):
+        from .jig_window import JigWindow
+        window = getattr(self, "_jig_window", None)
+        if window is None or not window.winfo_exists():
+            self._jig_window = JigWindow(self)
+        else:
+            window.lift()
 
     def open_sample_library(self):
         browser = getattr(self, "_sample_library", None)
@@ -386,6 +395,13 @@ class App(PlaceMixin, LaserMixin):
             if self._build_after:
                 self.root.after_cancel(self._build_after)
                 self._build_after = None
+            old_jig = (self.source_provenance or {}).get("jig_reference") or {}
+            new_jig = provenance.get("jig_reference") or {}
+            st = self.last_status
+            keep_jig_zero = bool(new_jig.get("datum") and old_jig.get("file") == new_jig.get("file")
+                                 and old_jig.get("datum") == new_jig["datum"] and self.origin_set and self.connected
+                                 and st and st.idle_off and st.wpos and not self.status_stale()
+                                 and all(abs(v) <= .01 for v in st.wpos[:2]))
             self.gen += 1  # reject outstanding builds of the previous picture
             self._adopt_material_snapshot(job.material)
             self.picture = self.picture_raw = raw
@@ -415,7 +431,7 @@ class App(PlaceMixin, LaserMixin):
                 v.set(value)
             self.proportions_var.set(provenance['keep_proportions'])
             self.sync_place_fields()
-            self.origin_set = False
+            self.origin_set = keep_jig_zero
             self.observed_dot = None
             self.completed_checks.clear()
             self.layout_pending, self.layout_error = False, None
@@ -436,7 +452,8 @@ class App(PlaceMixin, LaserMixin):
         self.show_saved_size()
         self.update_check_panel()
         self.refresh_laser_page()
-        self.say('Editable job loaded and verified. Picture controls are live; establish job zero for this setup.', 'ok')
+        self.say('Pocket loaded at the existing jig zero. Verify its placement.'
+                 if keep_jig_zero else 'Editable job loaded and verified. Picture controls are live; establish job zero for this setup.', 'ok')
         self._remember_picker_folder("job", opened, Path(path) if Path(path).is_file() else None)
         return True
 

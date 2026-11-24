@@ -113,4 +113,6 @@ def read(folder):
                       keep_proportions=bool(doc.get('keep_proportions', False)),
                       pair_check_required=bool(doc.get('pair_check_required', False)),
                       image_perimeter_border_mm=str(doc.get("image_perimeter_border_mm", "")))
+    if "jig_reference" in doc:
+        provenance["jig_reference"] = doc["jig_reference"]
     return raw, picture, job, report, look, placement, provenance

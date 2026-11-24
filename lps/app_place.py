@@ -1052,6 +1052,10 @@ class PlaceMixin:
         if job.gray is not None and not self.grid_spec:
             direction = "Left to right" if job.material.scan_direction == "forward" else "Alternating"
             current += f"\n{presets.STYLES[job.material.style]['name']} · {direction}."
+            jig = (self.source_provenance or {}).get("jig_reference")
+            if jig and jig.get("datum"):
+                zero = "pocket 1's centre" if jig["datum"][0] == "slot1" else "the carton centre"
+                current += f"\nPocket {jig['pocket']+1}. Use {zero} for every layer's shared job zero."
             if self._repeat_reference:
                 folder, original, original_look = self._repeat_reference
                 changes = presets.settings_changes(presets.print_settings(original), presets.print_settings(job.material))
@@ -1199,6 +1203,8 @@ class PlaceMixin:
                      image_perimeter_border_mm=self.image_border.get().strip())
         if self._repeat_reference and job.gray is not None and not self.grid_spec:
             extra["based_on_job"] = str(self._repeat_reference[0])
+        if (self.source_provenance or {}).get("jig_reference"):
+            extra["jig_reference"] = self.source_provenance["jig_reference"]
         previews = {"1 LOOKS LIKE - finished piece": simulate.mark_spots(simulate.appearance(job), job),
                     "2 LASER INPUT - black means the laser fires": simulate.laser_input(job),
                     "3 TOOLPATH - powered marks on dark": simulate.toolpath_view(job),
