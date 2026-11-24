@@ -1054,7 +1054,7 @@ class PlaceMixin:
             current += f"\n{presets.STYLES[job.material.style]['name']} · {direction}."
             jig = (self.source_provenance or {}).get("jig_reference")
             if jig and jig.get("datum"):
-                zero = "pocket 1's centre" if jig["datum"][0] == "slot1" else "the carton centre"
+                zero = "pocket 1's centre" if jig["datum"][0] == "slot1" else "the jig centre"
                 current += f"\nPocket {jig['pocket']+1}. Use {zero} for every layer's shared job zero."
             if self._repeat_reference:
                 folder, original, original_look = self._repeat_reference

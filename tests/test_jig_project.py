@@ -74,6 +74,28 @@ class JigProjectTests(unittest.TestCase):
         self.assertEqual(lay.centre(0),(0.,0.))
         self.assertEqual(self.project.neighbouring_pockets(0,55),[2,4])
 
+    def test_flush_three_by_three_full_face_keeps_source_grid_at_fractional_centres(self):
+        project=jig_project.Project(tinjig.flush_layout())
+        image=Image.new("L",(340,340),0)
+        placement=dict(fit="whole",art_w=51.,dx=0.,dy=0.)
+        job=planner.compile_job(planner.build_job(image,self.mat,planner.Placement(self.piece,**placement)))
+        folder=jobs.save_job(job,verify.verify_job(job),picture=image,extra=dict(placement=placement),folder=self.root/"disk")
+        layer=jig_project.Layer.checked(folder)
+        original=layer.read()
+        for i in project.layout.enabled():
+            project.layers[i]=[layer]
+            placed,report,_=project.check(i,lambda _:original)[0]
+            dx,dy=project.layout.centre(i)
+            self.assertAlmostEqual(placed.geom.x0,job.geom.x0+dx,places=8)
+            self.assertAlmostEqual(placed.geom.yt,job.geom.yt+dy,places=8)
+            self.assertTrue(report["ok"])
+            np.testing.assert_array_equal(placed.passes[0].cells,job.passes[0].cells)
+        path=self.root/"flush.lpsjig"
+        project.save(path)
+        with patch.object(jobs,"JOBS_DIR",self.root/"placed"):
+            folder=project.prepare(path,1,0)
+        self.assertEqual(picture_jobs.read(folder)[2].geom,project.check(1)[0][0].geom)
+
     def test_selected_layer_reopens_and_stale_pocket_cannot_launch(self):
         p=self.project
         p.layers[4]=[self.source("first"),self.source("second")]
@@ -116,13 +138,16 @@ class JigProjectTests(unittest.TestCase):
         window.add_path(layer.path)
         with patch("tkinter.messagebox.askyesno",return_value=True):
             window.fill_empty()
-        self.assertEqual(len(window.project.layers),6)
+        self.assertEqual((window.project.layout.cols,window.project.layout.rows),(3,3))
+        self.assertEqual(window.project.layout.pitch_x,52.3875)
+        self.assertEqual(window.project.layout.centre(8),(104.775,-104.775))
+        self.assertEqual(len(window.project.layers),9)
         window.check(whole=True)
         deadline = time.monotonic()+12
         while window.check_stop and time.monotonic()<deadline:
             root.update()
             time.sleep(.01)
-        self.assertIn("6 assigned pocket(s) checked",window.status.get())
+        self.assertIn("9 assigned pocket(s) checked",window.status.get())
         self.assertEqual(window.checked[0][0].material.scan_direction,"forward")
         self.assertEqual(window.map_mode.get(),"Travel")
         for mode in ("Image circle","Burn map"):

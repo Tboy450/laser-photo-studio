@@ -156,6 +156,14 @@ def layout(img_size: tuple, placement: Placement, pitch: float) -> Geometry:
     cy = (uy0 + uy1) / 2 + placement.dy
     x0 = round(cx - cols * pitch / 2, 2)
     yt = round(cy + rows * pitch / 2, 2)
+    if "jig_source_corner" in placement.piece:
+        # Lay out on the source job's grid first. Rounding after a fractional-mm
+        # pocket shift can move the outermost stroke beyond the usable face.
+        source_x, source_y = placement.piece["jig_source_corner"]
+        px, py, _, _ = piece_rect(placement.piece)
+        tx, ty = px - source_x, py - source_y
+        x0 = round(cx - tx - cols * pitch / 2, 2) + tx
+        yt = round(cy - ty + rows * pitch / 2, 2) + ty
     return Geometry(pitch, cols, rows, x0, yt, crop, piece_rect(placement.piece), (ux0, uy0, ux1, uy1))
 
 

@@ -70,10 +70,13 @@ class Layout:
     flip_alternate_rows: bool = False   # turn every second row's pictures half way (carton rows facing each other)
     slots: list = field(default_factory=list)
     stagger_x: float = 0.0          # shift odd-numbered row indices to match measured staggered pockets
+    outside_diameter: float | None = None  # physical tin OD, independent of engraving and pocket spacing
 
     def __post_init__(self):
         if self.zero not in ZERO_MODES:
             raise ValueError(f"Layout zero must be one of {ZERO_MODES}.")
+        if self.outside_diameter is not None and not 0 < self.outside_diameter <= 200:
+            raise ValueError("Tin outside diameter must be greater than zero and at most 200 mm.")
         if not (1 <= self.cols <= 12 and 1 <= self.rows <= 12):
             raise ValueError("A layout is 1-12 columns by 1-12 rows.")
         if not (10.0 <= self.pitch_x <= 200.0 and 10.0 <= self.pitch_y <= 200.0):
@@ -106,7 +109,7 @@ class Layout:
     def centre(self, i: int) -> tuple:
         s = self.slots[i]
         bx, by = self.base(i)
-        return round(bx + self.group_dx + s.dx, 3), round(by + self.group_dy + s.dy, 3)
+        return round(bx + self.group_dx + s.dx, 6), round(by + self.group_dy + s.dy, 6)
 
     def rotation(self, i: int) -> int:
         """Quarter turns for tin i's picture: its own turn, plus a half turn on alternate rows if flipped.
@@ -164,6 +167,11 @@ def preset(name: str, **changes) -> Layout:
         for i, s in enumerate(lay.slots):
             s.enabled = i < count
     return lay
+
+
+def flush_layout(name="9 (3 x 3)", diameter=52.3875):
+    """Touching round tins in straight rows. Use the outside diameter for both centre spacings."""
+    return preset(name, pitch_x=diameter, pitch_y=diameter, outside_diameter=diameter)
 
 
 # ---------------------------------------------------------------- fit
@@ -225,6 +233,7 @@ def tin_piece(layout: Layout, i: int, piece: dict) -> dict:
     w, h = float(pc["w"]), float(pc["h"])
     zero = "tin 1's centre" if layout.zero == "slot1" else "the layout centre"
     pc.update(origin="spot", spot=(w / 2 - cx, h / 2 - cy),
+              jig_source_corner=list(planner.piece_rect(piece)[:2]),
               name=f"Tin {i + 1} of '{layout.name}' (job zero = {zero})")
     return pc
 

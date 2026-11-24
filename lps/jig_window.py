@@ -17,22 +17,24 @@ class JigWindow(tk.Toplevel):
     def __init__(self, app):
         super().__init__(app.root)
         self.app = app
-        self.title("Tin jig · Laser Photo Studio")
+        self.title("Flush tin jig · Laser Photo Studio")
         self.geometry("820x570")
-        self.project = jig_project.Project(tinjig.preset("6 (3 x 2)"))
+        self.project = jig_project.Project(tinjig.flush_layout())
         self.index = 0
         self.file = None
         self.dirty = False
         self.checked = []
         self.check_stop = None
         self.carton_travel = None
-        self.status = tk.StringVar(value="Choose a pocket, then add a checked job. Pocket spacing is editable in Layout.")
+        self.status = tk.StringVar(value="9 tins in three flush rows. 2 1/16 in outside diameter (52.3875 mm). "
+                                         "Use Flush spacing to enter another diameter.")
         self.pocket_label = tk.StringVar()
         self.map_mode = tk.StringVar(value="Burn map")
         bar = ttk.Frame(self, padding=5)
         bar.pack(fill="x")
         for name, action in (("New layout…", self.new), ("Open jig…", self.open), ("Save jig", self.save),
-                             ("Save as…", lambda: self.save(True)), ("Layout…", self.edit_layout)):
+                             ("Save as…", lambda: self.save(True)), ("Flush spacing…", self.flush_spacing),
+                             ("Layout…", self.edit_layout)):
             ttk.Button(bar, text=name, command=action).pack(side="left", padx=2)
         self.canvas = tk.Canvas(self, background="#20262b", height=210, highlightthickness=0)
         self.canvas.pack(fill="both", expand=True, padx=6)
@@ -58,7 +60,7 @@ class JigWindow(tk.Toplevel):
         carton = ttk.Frame(footer)
         carton.pack(fill="x", pady=2)
         ttk.Button(carton, text="Copy layers to empty pockets", command=self.fill_empty).pack(side="left")
-        ttk.Button(carton, text="Check carton travel", command=lambda: self.check(whole=True)).pack(side="left", padx=2)
+        ttk.Button(carton, text="Check jig travel", command=lambda: self.check(whole=True)).pack(side="left", padx=2)
         ttk.Button(carton, text="Open selected layer in Check", command=self.open_selected).pack(side="right")
         ttk.Label(footer, textvariable=self.status, wraplength=720, justify="left").pack(anchor="w", pady=4)
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -114,13 +116,33 @@ class JigWindow(tk.Toplevel):
             name = selected.get()
             picker.destroy()
             if self.may_replace():
-                self.project = jig_project.Project(tinjig.preset(name))
+                diameter = self.project.layout.outside_diameter or self.project.layout.pitch_x
+                self.project = jig_project.Project(tinjig.flush_layout(name, diameter))
                 self.file, self.index, self.dirty = None, 0, True
                 self.title("Tin jig · New layout")
-                self.refresh("Enter measured pocket spacing in Layout.")
+                self.refresh(f"Flush rows. Tin outside diameter and both centre spacings are {diameter:g} mm.")
         ttk.Button(picker, text="Create layout", command=create).pack(pady=6)
         picker.transient(self)
         picker.grab_set()
+
+    def flush_spacing(self):
+        layout = self.project.layout
+        diameter = layout.outside_diameter or layout.pitch_x
+        values = FormDialog(self, "Flush tin spacing",
+            [("diameter","Tin outside diameter (mm)",diameter,"float")],
+            intro="Touching tins in straight rows use one outside diameter between centres in both directions. "
+                  "Existing individual pocket adjustments are retained.").result
+        if values:
+            try:
+                if any(s.done for s in layout.slots):
+                    raise ValueError("Completed pockets lock the layout.")
+                d = values["diameter"]
+                self.project.layout = tinjig.Layout.from_dict(dict(layout.to_dict(), outside_diameter=d,
+                    pitch_x=d, pitch_y=d, stagger_x=0))
+                self.changed()
+                self.status.set(f"Flush spacing set to {d:g} mm on both axes.")
+            except ValueError as exc:
+                self.status.set(str(exc))
 
     def edit_layout(self):
         layout = self.project.layout
@@ -229,7 +251,7 @@ class JigWindow(tk.Toplevel):
             if self.app.open_saved_job(folder):
                 self.app.goto(3)
                 self.app.root.lift()
-                zero = "pocket 1's centre" if self.project.layout.zero == "slot1" else "the carton centre"
+                zero = "pocket 1's centre" if self.project.layout.zero == "slot1" else "the jig centre"
                 self.app.say(f"Pocket {self.index+1} loaded. Use {zero} as shared jig zero. Verify travel before Start.", "ok")
         except Exception as exc:
             self.status.set(f"Could not prepare this pocket. {exc}")
@@ -249,7 +271,7 @@ class JigWindow(tk.Toplevel):
             self.layers.select_set(0)
         x,y = self.project.layout.centre(self.index)
         layout = self.project.layout
-        datum = "pocket 1" if layout.zero == "slot1" else "carton centre"
+        datum = "pocket 1" if layout.zero == "slot1" else "jig centre"
         state = "" if layout.slots[self.index].enabled else " (off)"
         self.pocket_label.set(f"Pocket {self.index+1}{state} · X {x:g}, Y {y:g} mm from {datum} · picture {90*layout.rotation(self.index)}°")
         if message:
@@ -340,7 +362,7 @@ class JigWindow(tk.Toplevel):
         w,h=max(c.winfo_width(),10),max(c.winfo_height(),10)
         layout = self.project.layout
         centers = [layout.centre(i) for i in range(len(layout.slots))]
-        r = min(layout.pitch_x,layout.pitch_y)*.42
+        r = (layout.outside_diameter or min(layout.pitch_x, layout.pitch_y)) / 2
         x0,y0 = min(0,min(x for x,y in centers)-r), min(0,min(y for x,y in centers)-r)
         x1,y1 = max(0,max(x for x,y in centers)+r), max(0,max(y for x,y in centers)+r)
         selected=self.layers.curselection()

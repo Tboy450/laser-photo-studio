@@ -187,7 +187,7 @@ class App(PlaceMixin, LaserMixin):
                       "material. A Reference opens in your photo viewer.",
                    style="Small.TLabel").pack(anchor="w", pady=(2, 0))
         self.pic_info = wrap_label(f, "No picture yet.")
-        ttk.Button(f, text="Tin jig…", command=self.open_tin_jig).pack(anchor="w", pady=(6, 0))
+        ttk.Button(f, text="Flush tin jig…", command=self.open_tin_jig).pack(anchor="w", pady=(6, 0))
         self.pic_info.pack(anchor="w", pady=(8, 4))
         box = ttk.LabelFrame(f, text="Is it the right way up?", style="Card.TLabelframe")
         box.pack(fill="x", pady=8)
