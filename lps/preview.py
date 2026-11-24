@@ -339,7 +339,7 @@ class PreviewPanel(ttk.Frame):
             c.create_image(0, 0, image=self._check_photo, anchor="nw")
             return
         paths = app.check_paths(mode)
-        if mode == "image":
+        if mode == "sticker":
             key = (mode, app.check_key(mode), self.T, width, height, COLORS["art"])
             if key != self._check_cache:
                 overlay = Image.new("RGBA", (width, height))
@@ -637,6 +637,8 @@ class PreviewPanel(ttk.Frame):
             if any(p.kind == "dwell" for p in app.job.passes):
                 items.append(("dot", COLORS["bad"], "burn-in-place spot: laser on, standing still, for the time shown"))
         if app.check_mode == "image":
+            items.append(("line", COLORS["art"], "image alignment perimeter · one lap"))
+        elif app.check_mode == "sticker":
             items.append(("line", COLORS["art"], "outside of the powered artwork"))
         elif app.check_mode == "stock":
             items.append(("dash", COLORS["travel"], "stock perimeter, beam off"))

@@ -282,6 +282,7 @@ class App(PlaceMixin, LaserMixin):
         self.picture_path = Path(path)
         self.source_provenance = None
         if not keep_layout:
+            self.image_border.set("")
             if self.fit_var.get() == "saved-whole":
                 self.fit_var.set("whole")
             self._opened_placement = None
@@ -392,6 +393,7 @@ class App(PlaceMixin, LaserMixin):
             self._opened_placement = self.placement_summary(job, report, planner.Placement(job.piece, **placement))
             self._pair = None
             self._pair_review_required = provenance.get('pair_check_required', False)
+            self.image_border.set(provenance.get("image_perimeter_border_mm", ""))
             self.grid_spec = self.gfile = None
             self.piece = copy.deepcopy(job.piece)
             self.piece_key = presets.matching_piece_key(self.piece) or 'custom'
@@ -960,6 +962,7 @@ class App(PlaceMixin, LaserMixin):
         self._before_exact = self._opened_placement = None
         self._repeat_reference = None
         self.grid_spec = d
+        self.image_border.set("")
         self._pair = None
         self._pair_review_required = False
         self.picture_path = Path("test-grid.png")
@@ -998,6 +1001,7 @@ class App(PlaceMixin, LaserMixin):
         self._before_exact = self._opened_placement = None
         self._repeat_reference = None
         self.grid_spec = c
+        self.image_border.set("")
         self._pair = None
         self._pair_review_required = False
         self.mat = self.base_mat = ladder.lid_material(self.mat, c.get("material", ""))
@@ -1024,6 +1028,7 @@ class App(PlaceMixin, LaserMixin):
         self._before_exact = self._opened_placement = None
         self._repeat_reference = None
         self.grid_spec = d
+        self.image_border.set("")
         self._pair = None
         self._pair_review_required = False
         self.mat = self.base_mat = ladder.lid_material(self.mat, d.get("material", ""))
@@ -1057,7 +1062,7 @@ class App(PlaceMixin, LaserMixin):
         if self._build_after:
             self.root.after_cancel(self._build_after)
         self._build_after = self.root.after(delay, self._start_build)
-        if self.check_mode == "image":
+        if self.check_mode in ("image", "sticker"):
             self.preview.refresh()
         self.refresh_laser_page()
 

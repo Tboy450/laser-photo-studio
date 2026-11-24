@@ -688,7 +688,7 @@ class PlaceMixin:
         if min(g.x0 - ux0, g.y0 - uy0, ux1 - g.x1, uy1 - g.yt) < -0.001:
             text += "\nPicture enters a margin or extends outside the piece; affected marks are masked."
         text += ("\nNegative gap = extends outside the piece. These are box clearances, not the nearest marks. "
-                 "Round edges and no-burn zones can clip marks inside the box. Image Trace follows the remaining marks. "
+                 "Round edges and no-burn zones can clip marks inside the box. Sticker outline follows the remaining marks. "
                  "Total travel includes laser-off run-ups.")
         self.clearance_lbl.configure(text=text)
 
@@ -1193,7 +1193,8 @@ class PlaceMixin:
                      saved_source_transform=dict(file=str(self.picture_path) if self.picture_path else None,
                          rotate=self.rotate, mirror=self.mirror),
                      keep_proportions=self.proportions_var.get(),
-                     pair_check_required=bool(self._pair or self._pair_review_required))
+                     pair_check_required=bool(self._pair or self._pair_review_required),
+                     image_perimeter_border_mm=self.image_border.get().strip())
         if self._repeat_reference and job.gray is not None and not self.grid_spec:
             extra["based_on_job"] = str(self._repeat_reference[0])
         previews = {"1 LOOKS LIKE - finished piece": simulate.mark_spots(simulate.appearance(job), job),

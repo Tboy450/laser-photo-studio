@@ -56,6 +56,56 @@ def sticker_paths(paths):
             if sum(ax * by - bx * ay for (ax, ay), (bx, by) in zip(path, path[1:])) < 0]
 
 
+def circular_image_guide(job, border="", partner=None):
+    """One positioning circle in work coordinates, independent of engraving commands."""
+    g = job.geom
+    cx, cy = (g.x0 + g.x1) / 2, (g.y0 + g.yt) / 2
+    diameter = min(g.art_w, g.art_h)
+    source = "placed image (no outer ring detected)"
+    if border.strip():
+        try:
+            inset = float(border)
+        except ValueError:
+            inset = math.nan
+        if not math.isfinite(inset) or inset < 0 or 2 * inset >= diameter:
+            return [], f"Enter a border from 0 to less than {diameter / 2:g} mm per side, or leave it blank for Auto."
+        diameter -= 2 * inset
+        source = f"placed image, {inset:g} mm border per side"
+    else:
+        for layer, label in ((job, "printed outer ring"), (partner, "paired layer's printed outer ring")):
+            if layer is None:
+                continue
+            paths = layer.trace_paths()
+            if len(paths) != 1:
+                continue
+            points = np.asarray(paths[0])
+            low, high = points.min(axis=0), points.max(axis=0)
+            center = (low + high) / 2
+            width, height = high - low
+            radius = max(width, height) / 2
+            tolerance = 2.5 * max(g.x_pitch, g.y_pitch)
+            # Include edge midpoints so a diamond's four tips cannot pass as a circle.
+            samples = np.vstack((points, (points[:-1] + points[1:]) / 2))
+            radii = np.linalg.norm(samples - center, axis=1)
+            if (radius > 3 * tolerance and abs(width - height) <= tolerance
+                    and np.all(np.abs(radii - radius) <= tolerance)):
+                cx, cy = center
+                diameter = 2 * radius
+                source = label
+                break
+    px0, py0, px1, py1 = g.piece_rect
+    radius = diameter / 2
+    usable = (px1 - px0) / 2 - job.piece["margins"][0]
+    offset = math.hypot(cx - (px0 + px1) / 2, cy - (py0 + py1) / 2)
+    if offset + radius > usable + 1e-7:
+        return [], "The image circle extends beyond the usable lid face. Check placement or enter a larger image border."
+    # A multiple of four includes every cardinal point and closes once.
+    n = 4 * max(8, math.ceil(math.pi * math.sqrt(radius / 0.05) / 4))
+    path = [(cx + radius * math.cos(math.tau * i / n), cy + radius * math.sin(math.tau * i / n))
+            for i in range(n)]
+    return [path + path[:1]], f"One circle, {diameter:.2f} mm diameter, center X {cx:.2f} Y {cy:.2f} mm. Based on {source}."
+
+
 def cell_contours(mask):
     """Closed edge loops in (column,row) coordinates, including holes and separate islands.
 

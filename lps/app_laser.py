@@ -12,7 +12,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import gcodeinfo, imaging, jobs, machine, outlines, planner, verify, position_memory, presets, ports
+from . import gcodeinfo, imaging, jobs, machine, outlines, picture_jobs, planner, verify, position_memory, presets, ports
 from .dialogs import RecoveryDialog, StartDialog
 from .presets import DATA_DIR
 from .preview import fmt_dur
@@ -26,9 +26,10 @@ PHASE_TEXT = dict(starting="Starting", connecting="Connecting", running="Engravi
                   stopping="Stopping after this row", waiting_photo="Waiting for your photo", complete="Finished",
                   stopped="Stopped - position kept", dropout="USB dropped out", fault="Stopped by a problem")
 CHECK_LABELS = {
+    "image": "Image perimeter",
     "travel": "Total travel perimeter",
     "travel_lit": "Total travel perimeter",
-    "image": "Image Trace",
+    "sticker": "Sticker outline",
     "stock": "Stock perimeter",
     "burn": "Full burn trace",
     "dry": "Dry run",
@@ -38,7 +39,8 @@ CHECK_HELP = {
     "travel_lit": "1% beam around the full travel envelope, including run-ups. This is the travel rectangle, "
                   "not the image or round lid outline; it can extend past the piece and cross no-burn zones. "
                   "Approach and return to job zero are laser off.",
-    "image": "1% beam along the outside of what burns in the displayed passes. The laser is off between shapes.",
+    "image": "One lap around the image for alignment. Approach and return are beam off. The 1% guide can cross blank areas.",
+    "sticker": "1% beam along the outside of what burns in the displayed passes. The laser is off between shapes.",
     "stock": "Laser off. Follows the outside edge of the piece entered in Size & placement.",
     "burn": "2% beam on the planned marking strokes, beam off for travel. Use a test piece if the surface may mark. "
             "This can take as long as the job.",
@@ -48,6 +50,7 @@ CHECK_HELP = {
 
 class LaserMixin:
     def init_machine_state(self):
+        self.image_border = tk.StringVar(value="")
         self.worker = None
         self.connected = False
         self.last_status = None
@@ -177,6 +180,12 @@ class LaserMixin:
                    style="Small.TLabel").pack(anchor="w")
         link(p, "How the start point and perimeter check work",
              lambda: self.open_help("Start point & perimeter check")).pack(anchor="w", pady=(2, 0))
+        self.border_row = ttk.Frame(p)
+        self.border_row.pack(fill="x")
+        ttk.Label(self.border_row, text="Image circle border per side (mm)").pack(side="left")
+        ttk.Entry(self.border_row, width=6, textvariable=self.image_border).pack(side="left", padx=4)
+        ttk.Label(self.border_row, text="Blank = Auto").pack(side="left")
+        self.image_border.trace_add("write", self._border_changed)
         br = ttk.Frame(p)
         br.pack(fill="x", pady=(8, 0))
         self.check_buttons = {}
@@ -187,7 +196,7 @@ class LaserMixin:
             ToolTip(b, CHECK_HELP[mode])
             self.check_buttons[mode] = b
         self.btn_stop_check = ttk.Button(br, text="Stop check", command=self.stop_perimeter)
-        self.btn_stop_check.grid(row=3, column=0, columnspan=2, sticky="w")
+        self.btn_stop_check.grid(row=(len(CHECK_LABELS) + 1) // 2, column=0, columnspan=2, sticky="w")
         self.box_lbl = wrap_label(p, "", style="H2.TLabel")
         self.box_lbl.pack(anchor="w", pady=(6, 0))
         self.perim_lbl = wrap_label(p, "", style="Muted.TLabel")
@@ -566,7 +575,8 @@ class LaserMixin:
                     external_file=self.gfile.get("path") if self.gfile else None,
                     check_mode=self.check_mode, job_name=self.job.name if self.job else None,
                     keep_proportions=self.proportions_var.get(), source_provenance=copy.deepcopy(self.source_provenance),
-                    pair_check_required=bool(self._pair or self._pair_review_required))
+                    pair_check_required=bool(self._pair or self._pair_review_required),
+                    image_perimeter_border_mm=self.image_border.get().strip())
 
     def remember_setup(self):
         if self.worker and self.connected and self.origin_set:
@@ -600,6 +610,7 @@ class LaserMixin:
         self.source_provenance = copy.deepcopy(ctx.get('source_provenance'))
         self._pair = None
         self._pair_review_required = bool(ctx.get("pair_check_required", False))
+        self.image_border.set(str(ctx.get("image_perimeter_border_mm", "")))
         self.rotate, self.mirror = ctx.get("rotate", 0), ctx.get("mirror", False)
         self.picture = imaging.orient(raw, self.rotate, self.mirror) if raw is not None else None
         self.grid_spec = ctx.get("grid")
@@ -914,6 +925,11 @@ class LaserMixin:
             self.refresh_ready()
             return
         job = self.job
+        if not self.gfile and job and job.piece.get("shape") == "circle" and not job.piece.get("outline"):
+            if not self.border_row.winfo_manager():
+                self.border_row.pack(fill="x", before=self.check_buttons["image"].master)
+        else:
+            self.border_row.pack_forget()
         pending = (self.layout_pending or self.layout_error) and not self.gfile
         for button in self.check_buttons.values():
             button.state(["disabled"] if pending or self.perim_running or live else ["!disabled"])
@@ -965,7 +981,9 @@ class LaserMixin:
 
     def check_key(self, mode=None):
         key = self.gen, self.origin_count, id(self.gfile) if self.gfile else None
-        passes = self.check_passes() if mode == "image" else None
+        if mode == "image" and (self.image_border.get().strip() or self._pair):
+            return (*key, self.image_border.get().strip(), self._pair[1] if self._pair else None)
+        passes = self.check_passes() if mode == "sticker" else None
         return (*key, passes) if passes else key
 
     def picture_box(self):
@@ -980,7 +998,8 @@ class LaserMixin:
         checked = bool(job is not None and self.report and self.report["ok"] and self.compiled_gen == self.gen and not empty)
         key = self.check_key()
         perim = (not self.layout_pending and self.origin_set and
-                 any(self.completed_checks.get(mode) == key for mode in ("image", "burn", "dry")))
+                 (self.completed_checks.get("image") == self.check_key("image") or
+                  any(self.completed_checks.get(mode) == key for mode in ("sticker", "burn", "dry"))))
         at_start = bool(self.connected and self.origin_set and not self.status_stale() and st and st.state == "Idle" and st.wpos
                         and math.hypot(st.wpos[0], st.wpos[1]) <= 0.05)
         return [
@@ -992,7 +1011,7 @@ class LaserMixin:
             (self.connected, "Connected to the laser", "press Connect at the top of this step."),
             (self.connected and self.origin_set, "Job zero aligned",
              f"put the head over the {self.origin_words()} and press 'Set job zero here'."),
-            (perim, "Placement checked", "run Image Trace with all passes, Full burn trace, or Dry run."),
+            (perim, "Placement checked", "run Image perimeter for one lap around the image."),
             (at_start, "Head at job zero, machine idle", "press 'Move head to job zero'."),
         ]
 
@@ -1057,10 +1076,38 @@ class LaserMixin:
         return bool(not self.gfile and not self.layout_pending and self.job and self.report
                     and self.report["ok"] and self.compiled_gen == self.gen)
 
+    def _border_changed(self, *_):
+        if self._loading:
+            return
+        self.saved.pop(self.gen, None)
+        self.completed_checks.pop("image", None)
+        if self.check_mode == "image":
+            self.perim_lbl.configure(text=self.image_guide()[1])
+            self.preview.redraw()
+        self.refresh_ready()
+
+    def image_guide(self):
+        if self.gfile:
+            bounds = self.gfile.get("picture_bbox") if self.gfile.get("linear_xy") else None
+            return ([outlines.box_path(bounds)], "One lap around the file's picture box.") if bounds else ([], "No image dimensions in this file.")
+        if not self.verified_layout():
+            return [], "Wait for Step 4 to verify the image."
+        piece, g = self.job.piece, self.job.geom
+        if piece.get("outline"):
+            return [planner.outline_path(piece, g.piece_rect[:2])], "One lap around the shaped piece."
+        if piece.get("shape") == "circle":
+            partner = self._pair[2] if self._pair else None
+            if partner and picture_jobs.registration_conflicts(self.job, partner):
+                return [], "The paired layouts differ. Match them in Check before using the shared circle."
+            return outlines.circular_image_guide(self.job, self.image_border.get(), partner)
+        return [outlines.box_path(self.picture_box())], "One lap around the placed image rectangle."
+
     def check_paths(self, mode):
         if self.gfile and not self.gfile.get("linear_xy"):
             return []
-        if mode in ("image", "sticker"):
+        if mode == "image":
+            return self.image_guide()[0]
+        if mode == "sticker":
             if self.gfile:
                 return self.gfile.get("trace_paths") or []
             if self.layout_pending or self.layout_error or not self.job:
@@ -1084,8 +1131,6 @@ class LaserMixin:
         return []
 
     def run_perimeter(self, mode):
-        if mode == "sticker":
-            mode = "image"
         if self.layout_pending and not self.gfile:
             self.say("The picture is updating. Choose a check after the preview refreshes.")
             return
@@ -1096,17 +1141,20 @@ class LaserMixin:
         if not paths and not replay:
             self.check_mode = None
             self.preview.refresh()
-            self.perim_lbl.configure(text=f"{CHECK_LABELS[mode]} unavailable. Open the source picture and let Step 4 check it.")
+            self.perim_lbl.configure(text=self.image_guide()[1] if mode == "image" else
+                                     f"{CHECK_LABELS[mode]} unavailable. Open the source picture and let Step 4 check it.")
             return
         self.check_mode = mode
         help_text = CHECK_HELP[mode]
-        if mode == "image" and self.check_passes():
+        if mode == "image":
+            help_text = self.image_guide()[1] + " " + help_text
+        if mode == "sticker" and self.check_passes():
             help_text += " This traces only the selected passes."
         self.perim_lbl.configure(text=help_text)
         self.preview.redraw()
         if not self.need_connection():
             return
-        if mode == "image" and not self.gfile and not self.verified_layout():
+        if mode in ("image", "sticker") and not self.gfile and not self.verified_layout():
             self.say("Wait for Step 4 to verify the current picture before running Image Trace.", "warn")
             return
         if not self.origin_set or self.status_stale() or not self.last_status or self.last_status.state != "Idle":
@@ -1136,7 +1184,7 @@ class LaserMixin:
                            shutdown=self.worker.quit,
                            progress=self.worker.trace_progress,
                            status=lambda st: events.put(("status", st)),
-                           illuminate=mode in ("travel_lit", "image"), moves=moves, move_count=count,
+                           illuminate=mode in ("travel_lit", "image", "sticker"), moves=moves, move_count=count,
                            live_trace=mode == "burn")
 
     def stop_perimeter(self):

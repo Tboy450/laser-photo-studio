@@ -111,5 +111,6 @@ def read(folder):
                       saved_source_transform=doc.get('saved_source_transform'),
                       original_material=copy.deepcopy(doc['material']),
                       keep_proportions=bool(doc.get('keep_proportions', False)),
-                      pair_check_required=bool(doc.get('pair_check_required', False)))
+                      pair_check_required=bool(doc.get('pair_check_required', False)),
+                      image_perimeter_border_mm=str(doc.get("image_perimeter_border_mm", "")))
     return raw, picture, job, report, look, placement, provenance
