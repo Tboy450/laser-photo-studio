@@ -51,6 +51,8 @@ CHECK_HELP = {
 class LaserMixin:
     def init_machine_state(self):
         self.image_border = tk.StringVar(value="")
+        self._edge_feedback_key = None
+        self._edge_feedback = ("", False)
         self.worker = None
         self.connected = False
         self.last_status = None
@@ -186,6 +188,8 @@ class LaserMixin:
         ttk.Entry(self.border_row, width=6, textvariable=self.image_border).pack(side="left", padx=4)
         ttk.Label(self.border_row, text="Blank = Auto").pack(side="left")
         self.image_border.trace_add("write", self._border_changed)
+        self.edge_lbl = wrap_label(p, "", style="Small.TLabel")
+        self.edge_lbl.pack(anchor="w", fill="x", pady=(2, 4))
         br = ttk.Frame(p)
         br.pack(fill="x", pady=(8, 0))
         self.check_buttons = {}
@@ -927,9 +931,10 @@ class LaserMixin:
         job = self.job
         if not self.gfile and job and job.piece.get("shape") == "circle" and not job.piece.get("outline"):
             if not self.border_row.winfo_manager():
-                self.border_row.pack(fill="x", before=self.check_buttons["image"].master)
+                self.border_row.pack(fill="x", before=self.edge_lbl)
         else:
             self.border_row.pack_forget()
+        self.show_edge_feedback()
         pending = (self.layout_pending or self.layout_error) and not self.gfile
         for button in self.check_buttons.values():
             button.state(["disabled"] if pending or self.perim_running or live else ["!disabled"])
@@ -1081,10 +1086,30 @@ class LaserMixin:
             return
         self.saved.pop(self.gen, None)
         self.completed_checks.pop("image", None)
+        self.show_edge_feedback()
         if self.check_mode == "image":
             self.perim_lbl.configure(text=self.image_guide()[1])
             self.preview.redraw()
         self.refresh_ready()
+
+    def edge_feedback(self):
+        if not self.verified_layout():
+            if (not self.gfile and not self.layout_pending and self.job and self.compiled_gen == self.gen
+                    and self.job.clipped_cells and not self.job.burn_cells):
+                return (f"All {self.job.clipped_cells:,} artwork cells fall outside the usable edge or in a "
+                        "no-burn zone. Check size and placement."), True
+            return ("Checking artwork edges…" if self.layout_pending else ""), False
+        key = (id(self.job), self.gen, self.image_border.get().strip(), id(self._pair))
+        if key != self._edge_feedback_key:
+            paths, guide = self.image_guide()
+            detail, warning = outlines.image_edge_feedback(self.job, paths)
+            self._edge_feedback = (" ".join(filter(None, (guide, detail))), warning or not paths)
+            self._edge_feedback_key = key
+        return self._edge_feedback
+
+    def show_edge_feedback(self):
+        text, warning = self.edge_feedback()
+        self.edge_lbl.configure(text=text, foreground=COLORS["warn"] if warning else COLORS["ink"])
 
     def image_guide(self):
         if self.gfile:
@@ -1147,7 +1172,7 @@ class LaserMixin:
         self.check_mode = mode
         help_text = CHECK_HELP[mode]
         if mode == "image":
-            help_text = self.image_guide()[1] + " " + help_text
+            help_text = self.edge_feedback()[0] + " " + help_text
         if mode == "sticker" and self.check_passes():
             help_text += " This traces only the selected passes."
         self.perim_lbl.configure(text=help_text)

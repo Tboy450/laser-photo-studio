@@ -332,6 +332,7 @@ class JobPlan:
     _outlines: dict = field(default_factory=dict, repr=False)
     _outline_key: str | None = field(default=None,repr=False)
     sizing_note: str = ""
+    clipped_cells: int = 0
 
     def trace_paths(self, pass_keys=None):
         if pass_keys not in self._outlines:
@@ -382,14 +383,21 @@ def _tone_words(min_tone: int) -> str:
 
 
 def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndarray, name: str = "job",
-               piece: dict | None = None) -> JobPlan:
+               piece: dict | None = None, *, excluded_stock=None) -> JobPlan:
     """Decide which cells burn in which pass (fast; used for previews)."""
     H, W = gray.shape
     passes: list[PassPlan] = []
     levels = labels = None
+    clipped_cells = 0
     style = mat.style
     if style == "layers":
         levels = imaging.tone_levels(gray, mat.tone_cuts, mat.widen_gaps)
+        if excluded_stock is not None and np.any((levels > 0) & excluded_stock):
+            # Thin-feature and erosion rules depend on their neighbours; compare the
+            # untrimmed result without changing how the real passes are generated.
+            original = plan_cells(gray, mat, geom, allowed | excluded_stock, name, piece)
+            powered = np.logical_or.reduce([p.cells > 0 for p in original.passes])
+            clipped_cells = int(np.count_nonzero(powered & excluded_stock))
         levels[~allowed] = 0
         shade = np.zeros((H, W), np.int16)
         for t in (1, 2, 3):
@@ -440,10 +448,13 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
         if dots is None:
             dark = 1.0 - gray / 255.0
             q = np.round(dark * 15.0) / 15.0
-            cells = np.where((q > 0) & allowed,
+            cells = np.where(q > 0,
                              np.round(mat.power_min + q * (mat.power - mat.power_min)), 0).astype(np.int16)
         else:
-            cells = np.where(dots & allowed, mat.power, 0).astype(np.int16)
+            cells = np.where(dots, mat.power, 0).astype(np.int16)
+        if excluded_stock is not None:
+            clipped_cells = int(np.count_nonzero((cells > 0) & excluded_stock))
+        cells[~allowed] = 0
         n = max(1, mat.interlace)
         order = [r for g in range(n) for r in range(H) if r % n == g]
         info = STYLES[style]["name"]
@@ -451,7 +462,8 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
         for k in range(max(1, mat.passes)):
             title = "Engrave" if mat.passes <= 1 else f"Pass {k + 1}"
             passes.append(PassPlan(f"P{k + 1}", title, explain, "rows", cells, order, mat.feed))
-    return JobPlan(name, mat, geom, piece or {}, passes, gray, levels, allowed, labels)
+    return JobPlan(name, mat, geom, piece or {}, passes, gray, levels, allowed, labels,
+                   clipped_cells=clipped_cells)
 
 
 # --------------------------------------------------------------------------------------------- commands
@@ -760,7 +772,10 @@ def build_job(picture: Image.Image, mat: Material, placement: Placement, look: d
             black_point=look.get("black_point", mat.black_point), white_point=look.get("white_point", mat.white_point))
         alpha = imaging.grid_alpha(picture, geom.cols, geom.rows, geom.crop)
         printable = allowed if alpha is None else allowed & (alpha > 0)
-        job = plan_cells(gray, mat, geom, printable, name, placement.piece)
+        excluded = None if allowed.all() else ~allowed
+        if excluded is not None and alpha is not None:
+            excluded &= alpha > 0
+        job = plan_cells(gray, mat, geom, printable, name, placement.piece, excluded_stock=excluded)
         job.allowed = allowed  # Registration compares the stock face, independently of each layer's artwork.
         return job
 
@@ -835,13 +850,14 @@ def build_mark_sized_job(image_size, mat, placement, plan_picture):
                    cell_w=geom.x_pitch * scale, cell_h=geom.y_pitch * scale)
     job.geom = geom
     job.allowed = allowed_cells(geom, stock)
-    clipped = False
+    removed = np.zeros_like(job.allowed)
     for p in job.passes:
-        clipped |= bool(p.cells[~job.allowed].any())
+        removed |= (p.cells > 0) & ~job.allowed
         p.cells = np.where(job.allowed, p.cells, 0)
     if job.levels is not None:
         job.levels[~job.allowed] = 0
-    if clipped:
+    job.clipped_cells = int(np.count_nonzero(removed))
+    if job.clipped_cells:
         job.sizing_note = "The rim, outline, or no-burn zones clip some marks at this size and placement."
     if scale * mark_w + 1e-8 < requested:
         job.sizing_note = f"The {limit} limits the requested engraved width. " + job.sizing_note

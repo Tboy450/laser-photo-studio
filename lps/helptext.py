@@ -109,6 +109,7 @@ Tick 'Move / resize no-burn zones on the preview'. Drag inside a window to move 
 # Choose the check that answers your question
 - Total travel perimeter (off): check head clearance around the full travel rectangle, including laser-off run-ups. It can cross a no-burn zone with the beam off.
 - Image perimeter (1%): one lap to align the image. On round stock, Auto uses a circular printed outer border when detected. A layer without an outer ring uses its placed image circle. For a padded pair, enter the same blank border per side in both windows (a 51 mm image with a 1 mm border gives a 49 mm circle). The diameter and center appear before motion. This setting only changes the alignment guide.
+- Check and Laser show how far the outermost mark is inside or outside the guide, plus any artwork clipped by the stock or no-burn zones. Moving the guide changes alignment feedback only. The closest distance is measured to the programmed stroke, before accounting for the physical laser spot.
 - Sticker outline (1%): follow the outside of the powered artwork shown in the selected passes. Closed holes are skipped and the beam is off between separate exterior shapes.
 - Stock perimeter (off): follow the outside edge of the piece entered in Size & placement.
 - Full burn trace (2%): replay the checked picture job with 2% on the planned marking strokes and the beam off during travel. This may take as long as the engraving.

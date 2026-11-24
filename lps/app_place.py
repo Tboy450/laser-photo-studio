@@ -1140,6 +1140,8 @@ class PlaceMixin:
             return
         lines = [("OK - " if rep["ok"] else "PROBLEM - ") + verify.summary_text(rep)]
         lines.append(self.placement_review_text(job, rep))
+        if self.verified_layout():
+            lines.insert(0, self.edge_feedback()[0])
         pair_problem = self.pair_blocker()
         if self._pair_review_required:
             lines.insert(0, "Start is blocked. " + pair_problem)

@@ -3,12 +3,31 @@ import unittest
 from collections import Counter
 
 import numpy as np
+from PIL import Image
 
-from lps import machine, outlines, planner
+from lps import machine, outlines, planner, presets
 from lps.fakegrbl import FakeController, FakeWire
 
 
 class LiteralOutlines(unittest.TestCase):
+    def test_border_feedback_counts_clipped_marks_once_and_ignores_transparency(self):
+        stock = presets.lid_piece(30, 24)
+        stock["keepouts"] = [dict(kind="circle", x=15, y=15, r=2)]
+        pl = planner.Placement(stock, art_w=24)
+        for style in ("threshold", "floyd", "grayscale", "layers"):
+            m = presets.load_materials()[0].copy(style=style, pitch=.15, negative=False)
+            image = Image.new("L", (160, 160), 0)
+            job = planner.build_job(image, m, pl)
+            original = planner.plan_cells(job.gray, m, job.geom, np.ones_like(job.allowed), piece=stock)
+            powered = np.logical_or.reduce([p.cells > 0 for p in original.passes])
+            self.assertEqual(job.clipped_cells, np.count_nonzero(powered & ~job.allowed))
+            self.assertGreater(job.clipped_cells, 0)
+            text, warn = outlines.image_edge_feedback(job, [])
+            self.assertTrue(warn)
+            self.assertIn(f"{job.clipped_cells:,}", text)
+            blank = planner.build_job(Image.new("RGBA", image.size, (0, 0, 0, 0)), m, pl)
+            self.assertEqual(blank.clipped_cells, 0)
+
     def assert_edges_match(self,mask):
         expected=Counter()
         h,w=mask.shape

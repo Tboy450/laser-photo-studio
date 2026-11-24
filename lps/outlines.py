@@ -98,12 +98,60 @@ def circular_image_guide(job, border="", partner=None):
     usable = (px1 - px0) / 2 - job.piece["margins"][0]
     offset = math.hypot(cx - (px0 + px1) / 2, cy - (py0 + py1) / 2)
     if offset + radius > usable + 1e-7:
-        return [], "The image circle extends beyond the usable lid face. Check placement or enter a larger image border."
+        return [], (f"The {diameter:.2f} mm image circle extends {offset + radius - usable:.2f} mm beyond "
+                    "the usable lid face. Check placement or increase the image border.")
     # A multiple of four includes every cardinal point and closes once.
     n = 4 * max(8, math.ceil(math.pi * math.sqrt(radius / 0.05) / 4))
     path = [(cx + radius * math.cos(math.tau * i / n), cy + radius * math.sin(math.tau * i / n))
             for i in range(n)]
     return [path + path[:1]], f"One circle, {diameter:.2f} mm diameter, center X {cx:.2f} Y {cy:.2f} mm. Based on {source}."
+
+
+def image_edge_feedback(job, paths):
+    """Compare planned marks to the alignment guide; distinguish clipping before output."""
+    messages = []
+    warn = bool(job.clipped_cells)
+    if warn:
+        messages.append(f"The usable edge or a no-burn zone clips {job.clipped_cells:,} artwork cells.")
+    if not paths or job.gray is None or job.piece.get("outline"):
+        return " ".join(messages), warn
+    g = job.geom
+    if job.piece.get("shape") != "circle":
+        box = job.burn_bbox()
+        if box:
+            gaps = (box[0] - g.x0, g.x1 - box[2], box[1] - g.y0, g.yt - box[3])
+            messages.append("Blank to image edge: " + ", ".join(f"{side} {gap:.2f}" for side, gap in
+                            zip(("left", "right", "bottom", "top"), gaps)) + " mm.")
+        return " ".join(messages), warn
+    path = np.asarray(paths[0])
+    lo, hi = path.min(axis=0), path.max(axis=0)
+    cx, cy = (hi + lo) / 2
+    radius = (hi[0] - lo[0]) / 2
+    # Only the extremes of each powered row can be farthest from the guide center.
+    cells = np.zeros((g.rows, g.cols), dtype=bool)
+    for p in job.passes:
+        cells |= p.cells > 0
+    rows = np.flatnonzero(cells.any(axis=1))
+    if rows.size:
+        left = cells.argmax(axis=1)[rows]
+        right = g.cols - cells[:, ::-1].argmax(axis=1)[rows]
+        dx = np.maximum(abs(g.x0 + left * g.x_pitch - cx), abs(g.x0 + right * g.x_pitch - cx))
+        dy = g.yt - (rows + .5) * g.y_pitch - cy
+        gap = radius - float(np.hypot(dx, dy).max())
+        if gap <= -.005:
+            messages.append(f"Artwork extends {abs(gap):.2f} mm past the guide. The guide does not crop the print.")
+            warn = True
+        elif gap >= .005:
+            messages.append(f"The nearest mark stops {gap:.2f} mm inside the guide.")
+        else:
+            messages.append("The outermost mark meets the guide (within 0.01 mm).")
+    else:
+        messages.append("This layer has no powered marks.")
+    padding = (lo[0] - g.x0, g.x1 - hi[0], lo[1] - g.y0, g.yt - hi[1])
+    if min(padding) >= -.001 and max(padding) >= .005:
+        messages.append("Image edge to guide: " + ", ".join(f"{side} {gap:.2f}" for side, gap in
+                        zip(("left", "right", "bottom", "top"), padding)) + " mm.")
+    return " ".join(messages), warn
 
 
 def cell_contours(mask):
