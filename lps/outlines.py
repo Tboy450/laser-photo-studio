@@ -56,6 +56,32 @@ def sticker_paths(paths):
             if sum(ax * by - bx * ay for (ax, ay), (bx, by) in zip(path, path[1:])) < 0]
 
 
+def find_outer_circle(paths, geom):
+    """Recognize an enclosing round exterior. An open arc also has a closed pixel contour,
+    but that contour does not wind around the center of the circle."""
+    if len(paths) != 1:
+        return None
+    points = np.asarray(paths[0])
+    low, high = points.min(axis=0), points.max(axis=0)
+    center = (low + high) / 2
+    width, height = high - low
+    radius = max(width, height) / 2
+    tolerance = 2.5 * max(geom.x_pitch, geom.y_pitch)
+    samples = np.vstack((points, (points[:-1] + points[1:]) / 2))
+    radii = np.linalg.norm(samples - center, axis=1)
+    if radius <= 3 * tolerance or abs(width - height) > tolerance or np.any(abs(radii - radius) > tolerance):
+        return None
+    angles = np.unwrap(np.arctan2(points[:, 1] - center[1], points[:, 0] - center[0]))
+    if abs(angles[-1] - angles[0]) < math.pi:
+        return None
+    return (*center, 2 * radius)
+
+
+def intended_circle(mask, geom):
+    paths = exterior_contours(mask, geom.x0, geom.yt, geom.x_pitch, geom.y_pitch)
+    return find_outer_circle(paths, geom)
+
+
 def circular_image_guide(job, border="", partner=None):
     """One positioning circle in work coordinates, independent of engraving commands."""
     g = job.geom
@@ -75,22 +101,10 @@ def circular_image_guide(job, border="", partner=None):
         for layer, label in ((job, "printed outer ring"), (partner, "paired layer's printed outer ring")):
             if layer is None:
                 continue
-            paths = layer.trace_paths()
-            if len(paths) != 1:
-                continue
-            points = np.asarray(paths[0])
-            low, high = points.min(axis=0), points.max(axis=0)
-            center = (low + high) / 2
-            width, height = high - low
-            radius = max(width, height) / 2
-            tolerance = 2.5 * max(g.x_pitch, g.y_pitch)
-            # Include edge midpoints so a diamond's four tips cannot pass as a circle.
-            samples = np.vstack((points, (points[:-1] + points[1:]) / 2))
-            radii = np.linalg.norm(samples - center, axis=1)
-            if (radius > 3 * tolerance and abs(width - height) <= tolerance
-                    and np.all(np.abs(radii - radius) <= tolerance)):
-                cx, cy = center
-                diameter = 2 * radius
+            circle = (layer.intended_circle if layer.clipped_cells else
+                      find_outer_circle(layer.trace_paths(), layer.geom))
+            if circle:
+                cx, cy, diameter = circle
                 source = label
                 break
     px0, py0, px1, py1 = g.piece_rect
@@ -99,7 +113,7 @@ def circular_image_guide(job, border="", partner=None):
     offset = math.hypot(cx - (px0 + px1) / 2, cy - (py0 + py1) / 2)
     if offset + radius > usable + 1e-7:
         return [], (f"The {diameter:.2f} mm image circle extends {offset + radius - usable:.2f} mm beyond "
-                    "the usable lid face. Check placement or increase the image border.")
+                    "the usable lid face. Adjust the picture size or placement in Size. Changing the guide alone does not move the print.")
     # A multiple of four includes every cardinal point and closes once.
     n = 4 * max(8, math.ceil(math.pi * math.sqrt(radius / 0.05) / 4))
     path = [(cx + radius * math.cos(math.tau * i / n), cy + radius * math.sin(math.tau * i / n))
@@ -145,6 +159,16 @@ def image_edge_feedback(job, paths):
             messages.append(f"The nearest mark stops {gap:.2f} mm inside the guide.")
         else:
             messages.append("The outermost mark meets the guide (within 0.01 mm).")
+        edge = find_outer_circle(job.trace_paths(), g)
+        if edge and math.hypot(edge[0] - cx, edge[1] - cy) + abs(edge[2] / 2 - radius) < max(g.x_pitch, g.y_pitch):
+            messages.append("A continuous circular border follows this guide at the print resolution.")
+        else:
+            messages.append("This layer has no confirmed continuous border along the guide.")
+            box = job.burn_bbox()
+            gaps = (box[0] - lo[0], hi[0] - box[2], box[1] - lo[1], hi[1] - box[3])
+            messages.append("At the four image extents: " + ", ".join(
+                f"{side} {abs(v):.2f} mm {'past' if v < -.005 else 'inside'}"
+                for side, v in zip(("left", "right", "bottom", "top"), gaps)) + ".")
     else:
         messages.append("This layer has no powered marks.")
     padding = (lo[0] - g.x0, g.x1 - hi[0], lo[1] - g.y0, g.yt - hi[1])

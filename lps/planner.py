@@ -333,6 +333,7 @@ class JobPlan:
     _outline_key: str | None = field(default=None,repr=False)
     sizing_note: str = ""
     clipped_cells: int = 0
+    intended_circle: tuple | None = None
 
     def trace_paths(self, pass_keys=None):
         if pass_keys not in self._outlines:
@@ -389,6 +390,7 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
     passes: list[PassPlan] = []
     levels = labels = None
     clipped_cells = 0
+    circle = None
     style = mat.style
     if style == "layers":
         levels = imaging.tone_levels(gray, mat.tone_cuts, mat.widen_gaps)
@@ -398,6 +400,9 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
             original = plan_cells(gray, mat, geom, allowed | excluded_stock, name, piece)
             powered = np.logical_or.reduce([p.cells > 0 for p in original.passes])
             clipped_cells = int(np.count_nonzero(powered & excluded_stock))
+            if clipped_cells and piece and piece.get("shape") == "circle":
+                from .outlines import intended_circle
+                circle = intended_circle(powered, geom)
         levels[~allowed] = 0
         shade = np.zeros((H, W), np.int16)
         for t in (1, 2, 3):
@@ -454,6 +459,9 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
             cells = np.where(dots, mat.power, 0).astype(np.int16)
         if excluded_stock is not None:
             clipped_cells = int(np.count_nonzero((cells > 0) & excluded_stock))
+            if clipped_cells and piece and piece.get("shape") == "circle":
+                from .outlines import intended_circle
+                circle = intended_circle((cells > 0) & (allowed | excluded_stock), geom)
         cells[~allowed] = 0
         n = max(1, mat.interlace)
         order = [r for g in range(n) for r in range(H) if r % n == g]
@@ -463,7 +471,7 @@ def plan_cells(gray: np.ndarray, mat: Material, geom: Geometry, allowed: np.ndar
             title = "Engrave" if mat.passes <= 1 else f"Pass {k + 1}"
             passes.append(PassPlan(f"P{k + 1}", title, explain, "rows", cells, order, mat.feed))
     return JobPlan(name, mat, geom, piece or {}, passes, gray, levels, allowed, labels,
-                   clipped_cells=clipped_cells)
+                   clipped_cells=clipped_cells, intended_circle=circle)
 
 
 # --------------------------------------------------------------------------------------------- commands
@@ -850,13 +858,15 @@ def build_mark_sized_job(image_size, mat, placement, plan_picture):
                    cell_w=geom.x_pitch * scale, cell_h=geom.y_pitch * scale)
     job.geom = geom
     job.allowed = allowed_cells(geom, stock)
-    removed = np.zeros_like(job.allowed)
+    powered = np.logical_or.reduce([p.cells > 0 for p in job.passes])
+    job.clipped_cells = int(np.count_nonzero(powered & ~job.allowed))
+    if job.clipped_cells and stock.get("shape") == "circle":
+        from .outlines import intended_circle
+        job.intended_circle = intended_circle(powered, geom)
     for p in job.passes:
-        removed |= (p.cells > 0) & ~job.allowed
         p.cells = np.where(job.allowed, p.cells, 0)
     if job.levels is not None:
         job.levels[~job.allowed] = 0
-    job.clipped_cells = int(np.count_nonzero(removed))
     if job.clipped_cells:
         job.sizing_note = "The rim, outline, or no-burn zones clip some marks at this size and placement."
     if scale * mark_w + 1e-8 < requested:

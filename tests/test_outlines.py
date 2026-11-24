@@ -10,6 +10,24 @@ from lps.fakegrbl import FakeController, FakeWire
 
 
 class LiteralOutlines(unittest.TestCase):
+    def test_keepout_breaks_printed_ring_but_retains_intended_alignment_circle(self):
+        y, x = np.indices((160, 160))
+        radius = np.hypot(x - 79.5, y - 79.5)
+        image = Image.fromarray(np.where((radius < 73) & (radius > 70), 0, 255).astype('uint8'))
+        stock = presets.lid_piece(30, 24)
+        stock['keepouts'] = [dict(kind='circle', x=25.7, y=15, r=1.5)]
+        mat = presets.load_materials()[0].copy(style='threshold', pitch=.15, negative=False)
+        job = planner.build_job(image, mat, planner.Placement(stock, art_w=24))
+        self.assertGreater(job.clipped_cells, 0)
+        self.assertIsNotNone(job.intended_circle)
+        self.assertIsNone(outlines.find_outer_circle(job.trace_paths(), job.geom))
+        paths, source = outlines.circular_image_guide(job)
+        self.assertEqual(len(paths), 1)
+        self.assertIn('outer ring', source)
+        feedback, warn = outlines.image_edge_feedback(job, paths)
+        self.assertTrue(warn)
+        self.assertIn('no confirmed continuous border', feedback)
+
     def test_border_feedback_counts_clipped_marks_once_and_ignores_transparency(self):
         stock = presets.lid_piece(30, 24)
         stock["keepouts"] = [dict(kind="circle", x=15, y=15, r=2)]
