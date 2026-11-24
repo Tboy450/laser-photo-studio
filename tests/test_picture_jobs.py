@@ -87,6 +87,155 @@ class PictureJobUI(unittest.TestCase):
         self.a._fit_changed()
         self.assertEqual(self.a.art_w, 22.5)
 
+    def test_whole_picture_material_and_piece_matrix(self):
+        a = self.a
+        for material in presets.BUILTIN:
+            a.select_material(material.key)
+            for pitch in (.15, .10):
+                a._customised(pitch=pitch)
+                for key in presets.PIECES:
+                    a.set_piece(key, user=False)
+                    a.fit_var.set("whole")
+                    a.artw_var.set("500")
+                    a._artw_edited()
+                    recipe, placement, _ = a.build_params()
+                    self.assertEqual((recipe.key, recipe.pitch), (material.key, pitch))
+                    self.assertEqual(placement.piece, presets.PIECES[key])
+                    for w, h in ((200, 100), (100, 200)):
+                        with self.subTest(material=material.key, piece=key, pitch=pitch, image=(w, h)):
+                            grid = planner.layout((w, h), placement, pitch)
+                            x0, y0, x1, y1 = grid.usable_rect
+                            scale = min(500 / w, (x1-x0) / w, (y1-y0) / h)
+                            self.assertAlmostEqual(grid.art_w, w * scale, delta=pitch)
+                            self.assertAlmostEqual(grid.art_h, h * scale, delta=pitch)
+                            self.assertLessEqual(grid.art_w, x1-x0 + 1e-8)
+                            self.assertLessEqual(grid.art_h, y1-y0 + 1e-8)
+
+    def test_exact_toggle_across_material_and_stock_presets(self):
+        a = self.a
+        a.picture = Image.new("L", (80,40), 74)
+        for material in presets.BUILTIN:
+            a.select_material(material.key)
+            for key, piece in presets.PIECES.items():
+                with self.subTest(material=material.key, piece=key):
+                    a.set_piece(key, user=False)
+                    a.proportions_var.set(True)
+                    a.artw_var.set("12")
+                    a._artw_edited()
+                    before = a.build_params()[1]
+                    a.exact_btn.invoke()
+                    recipe, during, look = a.build_params()
+                    if piece.get("shape") == "circle" or piece.get("outline"):
+                        self.assertEqual(during.piece, before.piece)
+                        self.assertEqual(during.fit, "art-exact")
+                    else:
+                        self.assertEqual(during.fit, "exact")
+                    job = planner.compile_job(planner.build_job(a.picture, recipe, during, look))
+                    self.assertAlmostEqual(job.geom.art_w / job.geom.art_h, 2)
+                    self.assertTrue(verify.verify_job(job)["ok"])
+                    a.exact_btn.invoke()
+                    self.assertEqual(a.build_params()[1], before)
+
+    def test_round_exact_restores_previous_engraved_width_after_file_size(self):
+        a = self.a
+        a.set_piece("tin50")
+        a.fit_var.set("marks")
+        a._fit_changed()
+        a.artw_var.set("39")
+        a._artw_edited()
+        a.dx, a.dy = .25, -.5
+        before = a.build_params()[1]
+        a.exact_btn.invoke()
+        a._exact_toggled((20, 10))
+        during = a.build_params()[1]
+        self.assertEqual(during, planner.Placement(before.piece, fit="art-exact", art_w=20, dx=.25, dy=-.5))
+        a.exact_btn.invoke()
+        self.assertEqual(a.build_params()[1], before)
+
+    def test_one_measured_rim_survives_exact_and_limits_the_burn_map(self):
+        a = self.a
+        a.set_piece("tin50")
+        a.rim_var.set("1.45")
+        a._piece_edited()
+        self.assertEqual(a.piece["margins"], (1.45,) * 4)
+        self.assertIn("47.9 mm", a.rim_note.cget("text"))
+        a.exact_btn.invoke()
+        material, placement, look = a.build_params()
+        job = planner.build_job(Image.new("L", (80,80), 0), material, placement, look)
+        self.assertEqual(job.geom.usable_rect, (-23.95,-23.95,23.95,23.95))
+        self.assertFalse(job.allowed[0, 0])
+        self.assertTrue(job.allowed[job.geom.rows//2, job.geom.cols//2])
+        self.assertEqual(a.piece["shape"], "circle")
+        a.rim_var.set("26")
+        a._piece_edited()
+        self.assertEqual(a.piece["margins"], (1.45,) * 4)
+        asymmetric = copy.deepcopy(placement)
+        asymmetric.piece["margins"] = (1, 2, 1, 1)
+        with self.assertRaisesRegex(ValueError, "one unprinted rim"):
+            planner.build_job(Image.new("L",(8,8)), material, asymmetric)
+        tiny = Image.new("L", (16, 16), 60)
+        old_place = planner.Placement(asymmetric.piece, art_w=6)
+        old = planner.compile_job(planner.build_job(tiny, material, old_place, look, legacy_round_margins=True))
+        folder = jobs.save_job(old, verify.verify_job(old), picture=tiny,
+                               extra=dict(placement=dict(fit="whole", art_w=6, dx=0, dy=0), look=look))
+        self.assertTrue(a.open_saved_job(folder))
+        self.assertEqual(a.job.passes[0].commands, old.passes[0].commands)
+        self.assertEqual(a.rim_var.get(), "")
+        self.assertIn("Unequal saved margins", a.rim_note.cget("text"))
+
+    def test_transparent_negative_and_legacy_saved_commands(self):
+        source = self.path / "transparent.png"
+        image = Image.new("RGBA", (40, 20), (121, 37, 46, 0))
+        image.paste((255, 255, 255, 255), (10, 5, 30, 15))
+        image.putpixel((20, 10), (0, 0, 0, 255))
+        image.save(source)
+        a = self.a
+        self.assertTrue(a.open_picture(source))
+        self.assertEqual(a.picture.mode, "LA")
+        self.assertEqual(a.picture.getpixel((20,10)), (0, 255))
+        placement = dict(fit="whole", art_w=6, dx=0, dy=0)
+        piece = dict(self.job.piece, margins=(0,)*4, keepouts=[], corner=0)
+        place = planner.Placement(piece, **placement)
+        for material in presets.BUILTIN:
+            for negative in (True, False):
+                with self.subTest(material=material.key, negative=negative):
+                    job = planner.build_job(a.picture, material.copy(pitch=.15), place,
+                                            look={"negative": negative})
+                    for p in job.passes:
+                        self.assertFalse(p.cells[:5].any() or p.cells[15:].any())
+                        self.assertFalse(p.cells[:, :10].any() or p.cells[:, 30:].any())
+        mat = self.job.material.copy(style="floyd", pitch=.15)
+        for legacy in (True, False):
+            raw = imaging.load_picture(source, flatten_on_white=legacy)
+            plan = planner.compile_job(planner.build_job(raw, mat, place, self.look))
+            folder = jobs.save_job(plan, verify.verify_job(plan), picture=raw, folder=self.path / str(legacy),
+                                   extra=dict(placement=placement, look=self.look))
+            if legacy:
+                image.save(folder / "picture.png")
+                doc = jobs.read_json(folder/"job.json")
+                doc["editable_picture"]["sha256"] = jobs.sha256(folder/"picture.png")
+                jobs.write_json(folder/"job.json", doc)
+            reopened, _, rebuilt, _, _, _, provenance = picture_jobs.read(folder)
+            self.assertEqual(provenance["legacy_alpha"], legacy)
+            self.assertEqual(reopened.mode, "L" if legacy else "LA")
+            self.assertEqual(rebuilt.passes[0].commands, plan.passes[0].commands)
+            self.assertEqual(bool(rebuilt.passes[0].cells[0].any()), legacy)
+
+    def test_soft_alpha_rotated_crop_and_negative_grayscale(self):
+        source = Image.new("LA", (40, 20), (255, 0))
+        source.paste((255, 128), (10, 5, 30, 15))
+        source.putpixel((20, 10), (255, 255))
+        other = source.copy()
+        other.paste((0, 0), (0, 0, 40, 5))
+        for image in (source, other):
+            grid = imaging.to_grid(image, 40, 20, negative=True)
+            self.assertEqual((grid[0, 20], grid[8, 20], grid[10, 20]), (255, 127, 0))
+        crop = (2, 6, 18, 35)
+        def adjusted(image):
+            return imaging.to_grid(imaging.orient(image, 1, True), 23, 42, crop,
+                                   negative=True, brightness=14, contrast=19, sharpen=70)
+        np.testing.assert_array_equal(adjusted(source), adjusted(other))
+
     def test_invalid_fields_restore_accepted_recipe_and_piece(self):
         a = self.a
         self.assertTrue(a.open_saved_job(self.folder))
@@ -439,12 +588,14 @@ class PictureJobUI(unittest.TestCase):
         self.assertIn("Unavailable", lib.listing.item("item:1", "values"))
         self.assertTrue(lib.open_button.instate(["disabled"]))
         select(0)
+        self.assertIn("photo viewer", lib.details.get("1.0", "end"))
         self.assertIn("Reference", lib.listing.item("item:0", "values"))
         with patch("lps.sample_library.os.startfile", create=True) as viewer:
             lib.open_button.invoke()
         viewer.assert_called_once_with(str(picture))
         self.assertIsNone(a.picture_path)
         select(3)
+        self.assertIn("current material", lib.details.get("1.0", "end"))
         with patch.object(jobs, "active_runner", return_value={"pid": 1}), \
                 patch("lps.sample_library.messagebox.showinfo") as info:
             lib.open_button.invoke()
@@ -457,6 +608,10 @@ class PictureJobUI(unittest.TestCase):
         group, = lib.listing.get_children()
         self.assertEqual(lib.listing.item(group, "text"), "Slate / Test")
         select(2)
+        help_text = lib.details.get("1.0", "end")
+        for label in ("saved picture", "Image including padding", "Engraved marks", "Set engraved width",
+                      "50% at 3500 mm/min", "0.2 mm"):
+            self.assertIn(label, help_text)
         lib.open_button.invoke()
         self.assertFalse(lib.winfo_exists())
         self.assertEqual(a.job.passes[0].commands, self.job.passes[0].commands)

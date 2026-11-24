@@ -232,7 +232,9 @@ class PreviewPanel(ttk.Frame):
         if job is not None:
             g = job.geom
             ux0, uy0, ux1, uy1 = g.usable_rect
-            c.create_rectangle(tx(ux0), ty(uy1), tx(ux1), ty(uy0), outline=COLORS["usable"], dash=(3, 3))
+            draw_face = (c.create_oval if piece.get("shape") == "circle"
+                         and len(set(piece.get("margins", (0,)))) == 1 else c.create_rectangle)
+            draw_face(tx(ux0), ty(uy1), tx(ux1), ty(uy0), outline=COLORS["usable"], dash=(3, 3))
             wpx, hpx = max(1, int(g.art_w * s)), max(1, int(g.art_h * s))
             im = self._art_image()
             if self.view.get() == "look":

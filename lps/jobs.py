@@ -239,6 +239,8 @@ def save_job(job: JobPlan, report: dict, picture=None, previews: dict | None = N
     if picture is not None:
         doc['editable_picture'] = dict(file='picture.png', sha256=sha256(folder / 'picture.png'),
                                       orientation='already applied; tone/dither not applied')
+        if "A" in picture.getbands():
+            doc["editable_picture"]["transparency"] = "unpowered"
     write_json(folder / "job.json", doc)
     (folder / "README.txt").write_text(readme_text(job, bool((extra or {}).get("look", {}).get("negative"))),
                                       encoding="utf-8")

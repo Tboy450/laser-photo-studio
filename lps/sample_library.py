@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import tkinter as tk
 from dataclasses import dataclass
@@ -10,13 +11,47 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import ImageTk
 
-from . import imaging, jobs, samples
+from . import imaging, jobs, presets, samples
 
 
 MATERIALS = ("Tin", "Slate", "Glass", "Wood")
 KINDS = {"reference": "Reference", "image": "Image input", "job": "Saved job"}
 PHOTO_ONLY = {".heic", ".heif"}
 CATALOG_SETTING = "project_sample_catalog"
+OPEN_HELP = {
+    "reference": "Opens in your photo viewer. Your current Studio job stays open.",
+    "image": "Opens the picture with your current material and its starting picture adjustments. "
+             "Check the piece, size, power and speed before printing.",
+    "job": "Restores the saved picture, material settings, size and placement. Studio checks the saved "
+           "commands when opening. In Size, choose Set engraved width (outside marks) to resize the engraving.",
+}
+
+
+def saved_setup(path):
+    doc = jobs.read_json(path)
+    if not isinstance(doc, dict):
+        return "Saved dimensions unavailable."
+    lines = []
+    piece = doc.get("piece")
+    if isinstance(piece, dict) and isinstance(piece.get("name"), str):
+        lines.append(f"Saved piece: {piece['name']}")
+    material = doc.get("material")
+    passes = doc.get("passes")
+    if isinstance(material, dict) and isinstance(passes, list) and passes and all(
+            isinstance(p, dict) and p.get("kind", "rows") in ("rows", "features") for p in passes):
+        try:
+            recipe = presets.Material.from_dict(material)
+            if {"power", "feed", "style", "pitch", "scan_direction"} <= material.keys():
+                lines.append(presets.describe_recipe(recipe, len(passes)))
+                lines.append(f"Saved row spacing setting: {recipe.pitch:g} mm")
+        except (KeyError, ValueError, TypeError):
+            pass  # Missing or unsupported values will be checked by the editable loader.
+    for field, label in (("picture_bbox", "Image including padding"), ("burn_bbox", "Engraved marks")):
+        box = doc.get(field)
+        if isinstance(box, list) and len(box) == 4 and all(
+                type(n) in (int, float) and math.isfinite(n) for n in box):
+            lines.append(f"{label}: {box[2] - box[0]:.2f} × {box[3] - box[1]:.2f} mm")
+    return "\n".join(lines) or "Saved dimensions unavailable."
 
 
 def local_path(value: str, directory: Path) -> Path:
@@ -125,6 +160,9 @@ class SampleLibrary(tk.Toplevel):
         self.preview = ttk.Label(details)
         self.preview.pack(side="right", padx=(8, 0))
         self.details = tk.Text(details, height=6, wrap="word", state="disabled")
+        detail_scroll = ttk.Scrollbar(details, orient="vertical", command=self.details.yview)
+        detail_scroll.pack(side="right", fill="y")
+        self.details.configure(yscrollcommand=detail_scroll.set)
         self.details.pack(side="left", fill="x", expand=True)
 
         actions = ttk.Frame(box)
@@ -221,7 +259,9 @@ class SampleLibrary(tk.Toplevel):
         text = "Select a sample to see its notes and file path."
         action = "Open sample"
         if entry:
-            text = "\n".join(filter(None, (entry.project, entry.notes, problem, str(entry.path))))
+            setup = saved_setup(entry.path) if entry.kind == "job" and not problem else ""
+            text = "\n".join(filter(None, (problem, OPEN_HELP[entry.kind], setup,
+                                          entry.project, entry.notes, str(entry.path))))
             action = {"reference": "View reference", "image": "Open artwork",
                       "job": "Open editable job"}[entry.kind]
             if not problem and entry.kind != "job" and entry.path.suffix.lower() not in PHOTO_ONLY:
@@ -234,6 +274,7 @@ class SampleLibrary(tk.Toplevel):
         self.details.configure(state="normal")
         self.details.delete("1.0", "end")
         self.details.insert("1.0", text)
+        self.details.yview_moveto(0)
         self.details.configure(state="disabled")
         self.open_button.configure(text=action, state="normal" if entry and not problem else "disabled")
         self.copy_button.configure(state="normal" if entry else "disabled")

@@ -54,7 +54,7 @@ class App(PlaceMixin, LaserMixin):
         self.piece_key = self.mat.piece or "custom"
         self.piece = copy.deepcopy(PIECES[self.piece_key])
         self.piece_user_set = False
-        self._before_exact = None
+        self._before_art_exact = self._before_exact = None
         self._opened_placement = None
         self._pair = None
         self.art_w = None
@@ -182,6 +182,9 @@ class App(PlaceMixin, LaserMixin):
                    command=lambda: self.open_picture(keep_layout=True)).pack(anchor="w", pady=(6, 0))
         ttk.Button(f, text="Open saved Studio picture job...", command=self.open_saved_job).pack(anchor="w", pady=(6, 0))
         ttk.Button(f, text="Samples & Jobs...", command=self.open_sample_library).pack(anchor="w", pady=(6, 0))
+        wrap_label(f, "To repeat a sample's settings, choose a Saved job. An Image input uses the current "
+                      "material. A Reference opens in your photo viewer.",
+                   style="Small.TLabel").pack(anchor="w", pady=(2, 0))
         self.pic_info = wrap_label(f, "No picture yet.")
         self.pic_info.pack(anchor="w", pady=(8, 4))
         box = ttk.LabelFrame(f, text="Is it the right way up?", style="Card.TLabelframe")
@@ -284,7 +287,7 @@ class App(PlaceMixin, LaserMixin):
             if self._before_exact is not None:
                 self.piece, self.piece_key, self.piece_user_set = self._before_exact[:3]
                 self.fit_var.set("whole")
-            self._before_exact = None
+            self._before_art_exact = self._before_exact = None
             self._pair = None
             self.proportions_var.set(True)
             self.dx = self.dy = 0.0
@@ -382,7 +385,7 @@ class App(PlaceMixin, LaserMixin):
             self.picture_path = picture
             self.rotate, self.mirror = 0, False
             self.source_provenance = provenance
-            self._before_exact = None
+            self._before_art_exact = self._before_exact = None
             self._opened_placement = self.placement_summary(job, report, planner.Placement(job.piece, **placement))
             self._pair = None
             self.grid_spec = self.gfile = None
@@ -415,6 +418,8 @@ class App(PlaceMixin, LaserMixin):
                 f'\nSaved marks: {marks}. Row spacing: {job.geom.y_pitch:.3f} mm.\n' + self.picture_recipe(job) +
                 '\nLoaded job values override preset defaults; subsequent edits rebuild the job. '
                 f'Piece: {presets.piece_choice_label(self.piece)}. Saved placement is retained.' +
+                ('\nThis older job treated transparency as white. Open its original picture for an unpowered transparent background.'
+                 if provenance.get('legacy_alpha') else '') +
                 ('\nLegacy material defaults used: ' + ', '.join(provenance['defaults_used']) if provenance['defaults_used'] else ''))
         finally:
             self._loading = False

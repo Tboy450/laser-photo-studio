@@ -432,6 +432,18 @@ def user_presets_path() -> Path:
     return DATA_DIR / "my-presets.json"
 
 
+def describe_recipe(m: Material, pass_count: int) -> str:
+    if m.style == "layers":
+        power = "/".join(f"{value / 10:g}" for value in m.tone_power) + "% by layer"
+    elif m.style == "grayscale":
+        power = f"{m.power_min / 10:g}–{m.power / 10:g}%"
+    else:
+        power = f"{m.power / 10:g}%"
+    direction = "left to right" if m.scan_direction == "forward" else "alternating"
+    return (f"Effective power and speed: {power} at {m.feed:g} mm/min. "
+            f"{STYLES[m.style]['name']}, {direction}, {pass_count} pass(es).")
+
+
 def matching_recipe(material: Material, materials: list) -> Material | None:
     """Reuse a stored recipe without confusing picture adjustments with material settings."""
     separate = {'key', 'name', 'badge', 'summary', 'notes', 'based_on', 'piece', 'test_power', 'test_speed',

@@ -121,7 +121,18 @@ class PlaceMixin:
         m = ttk.LabelFrame(f, text="Margins and no-burn zones", style="Card.TLabelframe")
         m.pack(fill="x", pady=4)
         mr = ttk.Frame(m)
+        self.edge_margins = mr
         mr.pack(fill="x")
+        self.circle_rim = ttk.Frame(m)
+        self.rim_var = tk.StringVar()
+        ttk.Label(self.circle_rim, text="Unprinted rim all around (mm)").pack(side="left")
+        rim = ttk.Spinbox(self.circle_rim, from_=0, to=100, increment=.1, width=7,
+                          textvariable=self.rim_var, command=self._piece_edited)
+        rim.pack(side="left", padx=6)
+        for event in ("<Return>", "<FocusOut>"):
+            rim.bind(event, lambda _event: self._piece_edited())
+        self.rim_note = ttk.Label(self.circle_rim)
+        self.rim_note.pack(side="left")
         self.margin_vars = []
         for i, label in enumerate(("Left", "Bottom", "Right", "Top")):
             ttk.Label(mr, text=label).grid(row=i // 2, column=(i % 2) * 2, sticky="w", pady=1)
@@ -226,9 +237,18 @@ class PlaceMixin:
     def _exact_toggled(self, size=None):
         old_zero = planner.piece_rect(self.piece)[:2]
         if self.protect_piece_outline() or self.fit_var.get() == "art-exact":
-            self.fit_var.set("art-exact" if self.exact_var.get() else "whole")
-            if size is not None:
-                self.art_w = size[0]
+            if self.exact_var.get():
+                if self.fit_var.get() != "art-exact":
+                    self._before_art_exact = (self.fit_var.get(), self.art_w)
+                    if self.fit_var.get() == "marks":
+                        self.art_w = (self.job.geom.art_w if self.job and not self.layout_pending else None)
+                self.fit_var.set("art-exact")
+                if size is not None:
+                    self.art_w = size[0]
+            else:
+                fit, self.art_w = self._before_art_exact or ("whole", self.art_w)
+                self.fit_var.set(fit)
+                self._before_art_exact = None
             self.piece_user_set = True
             self.sync_place_fields()
             self.changed()
@@ -287,6 +307,7 @@ class PlaceMixin:
             self._exact_toggled(size)
 
     def set_piece(self, key, user=True):
+        self._before_art_exact = None
         self._before_exact = None
         if self.fit_var.get() in ("exact", "art-exact"):
             self.fit_var.set("whole")
@@ -308,6 +329,7 @@ class PlaceMixin:
             self.use_car(d)
 
     def use_car(self, values):
+        self._before_art_exact = None
         self._before_exact = None
         if self.fit_var.get() in ("exact", "art-exact"):
             self.fit_var.set("whole")
@@ -340,9 +362,11 @@ class PlaceMixin:
             self.saved_btn.state(["!disabled"] if self.file_has_size else ["disabled"])
             self.exact_note.configure(text=(
                 "Set Requested width under Picture size. Exact image size keeps the image proportions, rim, "
-                "job zero and placement. The usable face can limit the size." if self.protect_piece_outline() or art_exact else
-                "Outside dimensions describe your piece. Exact image size makes them the image dimensions and "
-                "removes margins. Keep proportions on to avoid stretching."))
+                "job zero and placement. The usable face can limit the size. Turning Exact off restores your "
+                "previous sizing choice." if self.protect_piece_outline() or art_exact else
+                "Exact image size creates a rectangular image box with zero margins and a lower-left job zero. "
+                "Use Whole picture to keep the piece "
+                "and its margins. Keep proportions on to avoid stretching."))
             self.piece_dimensions["w"][0].configure(text="Outside diameter" if circle else
                                                     "Image width" if exact else "Outside width")
             self.piece_dimensions["h"][0].configure(text="Image height" if exact else "Outside height")
@@ -359,6 +383,19 @@ class PlaceMixin:
                 sp.state(["!disabled"] if pc.get("origin") == "spot" else ["disabled"])
             for v, val in zip(self.margin_vars, pc.get("margins", (0, 0, 0, 0))):
                 v.set(f"{val:g}")
+            margins = pc.get("margins", (0, 0, 0, 0))
+            if circle:
+                self.edge_margins.pack_forget()
+                if not self.circle_rim.winfo_manager():
+                    self.circle_rim.pack(fill="x", before=self.circle_rim.master.pack_slaves()[0])
+                uniform = len(set(margins)) == 1
+                self.rim_var.set(f"{margins[0]:g}" if uniform else "")
+                self.rim_note.configure(text=(f"Usable diameter {pc['w'] - 2*margins[0]:g} mm" if uniform
+                                              else "Unequal saved margins. Enter one rim to refit."))
+            else:
+                self.circle_rim.pack_forget()
+                if not self.edge_margins.winfo_manager():
+                    self.edge_margins.pack(fill="x", before=self.edge_margins.master.pack_slaves()[0])
             self.ko_list.delete(0, "end")
             for k in pc.get("keepouts", []):
                 if k.get("kind") == "circle":
@@ -432,12 +469,21 @@ class PlaceMixin:
                               for limit, v, label in zip((pc["w"], pc["h"]), self.spot_vars, ("zero X", "zero Y"))]
             pc["margins"] = tuple(number(v, label + " margin") for v, label in
                                   zip(self.margin_vars, ("left", "bottom", "right", "top")))
+            if pc["shape"] == "circle":
+                rim = (number(self.rim_var, "the circular rim") if self.piece.get("shape") == "circle"
+                       else max(pc["margins"]))
+                if 2 * rim >= pc["w"]:
+                    raise ValueError("The rim must leave a positive usable diameter.")
+                pc["margins"] = (rim,) * 4
             if self.fit_var.get() == "exact":
                 pc.update(shape="rect", corner=0.0, margins=(0.0, 0.0, 0.0, 0.0))
         except ValueError as exc:
             self.sync_place_fields()
             self.say(f"{exc} Restored the previous piece dimensions and placement.", "warn")
             return
+        if pc["shape"] == "circle" and self.piece.get("shape") != "circle" and len(set(self.piece.get("margins", ()))) > 1:
+            self.say(f"The circle uses the largest previous edge margin, {pc['margins'][0]:g} mm, "
+                     "all around. Edit Unprinted rim to change it.", "ok")
         self.piece = pc
         self.piece_user_set = True
         self.sync_place_fields()
@@ -951,17 +997,7 @@ class PlaceMixin:
 
     @staticmethod
     def picture_recipe(job):
-        m = job.material
-        if m.style == "layers":
-            power = "/".join(f"{value / 10:g}" for value in m.tone_power) + "% by layer"
-        elif m.style == "grayscale":
-            power = f"{m.power_min / 10:g}–{m.power / 10:g}%"
-        else:
-            power = f"{m.power / 10:g}%"
-        style = presets.STYLES[m.style]["name"]
-        direction = "left to right" if m.scan_direction == "forward" else "alternating"
-        return (f"Effective power and speed: {power} at {m.feed:g} mm/min. "
-                f"{style}, {direction}, {len(job.passes)} pass(es).")
+        return presets.describe_recipe(job.material, len(job.passes))
 
     @staticmethod
     def placement_summary(job, report, placement):

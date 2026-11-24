@@ -742,33 +742,41 @@ def compile_job(job: JobPlan, start=(0.0, 0.0)) -> JobPlan:
 
 
 def build_job(picture: Image.Image, mat: Material, placement: Placement, look: dict | None = None,
-              name: str = "job") -> JobPlan:
+              name: str = "job", *, legacy_round_margins: bool = False) -> JobPlan:
     """Picture -> JobPlan with cells decided (call compile_job for commands)."""
     look = dict(look or {})
-    def picture_grid(geom):
-        return imaging.to_grid(
+    if placement.piece.get("shape") == "circle":
+        rim = placement.piece.get("margins", (0,) * 4)
+        if (len(rim) != 4 or any(not 0 <= v < placement.piece["w"] / 2 for v in rim)
+                or (not legacy_round_margins and len(set(rim)) != 1)):
+            raise ValueError("In Size, enter one unprinted rim for this circular piece. "
+                             "The usable diameter is the outside diameter minus twice the rim.")
+    def plan_picture(geom, allowed):
+        gray = imaging.to_grid(
             picture, geom.cols, geom.rows, geom.crop,
             autolevel=look.get("autolevel", mat.autolevel), brightness=look.get("brightness", mat.brightness),
             contrast=look.get("contrast", mat.contrast), gamma=look.get("gamma", mat.gamma),
             negative=look.get("negative", mat.negative), sharpen=look.get("sharpen", mat.sharpen),
             black_point=look.get("black_point", mat.black_point), white_point=look.get("white_point", mat.white_point))
+        alpha = imaging.grid_alpha(picture, geom.cols, geom.rows, geom.crop)
+        printable = allowed if alpha is None else allowed & (alpha > 0)
+        job = plan_cells(gray, mat, geom, printable, name, placement.piece)
+        job.allowed = allowed  # Registration compares the stock face, independently of each layer's artwork.
+        return job
 
     if placement.fit == "marks":
-        return build_mark_sized_job(picture.size, mat, placement, picture_grid, name)
+        return build_mark_sized_job(picture.size, mat, placement, plan_picture)
     geom = layout(picture.size, placement, mat.pitch)
-    gray = picture_grid(geom)
-    allowed = allowed_cells(geom, placement.piece)
-    return plan_cells(gray, mat, geom, allowed, name, placement.piece)
+    return plan_picture(geom, allowed_cells(geom, placement.piece))
 
 
-def build_mark_sized_job(image_size, mat, placement, picture_grid, name):
+def build_mark_sized_job(image_size, mat, placement, plan_picture):
     """Fit the powered artwork, budgeting resolution on the marks instead of the blank canvas."""
     stock = placement.piece
     ref = layout(image_size, replace(placement, fit="art-exact", art_w=None), mat.pitch)
 
     def unmasked(g):
-        gray = picture_grid(g)
-        return plan_cells(gray, mat, g, np.ones(gray.shape, dtype=bool), name, stock)
+        return plan_picture(g, np.ones((g.rows, g.cols), dtype=bool))
 
     reference = unmasked(ref).powered_cell_bounds()
     if reference is None:

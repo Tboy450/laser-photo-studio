@@ -73,6 +73,12 @@ def read(folder):
     if image_info.get('sha256') and jobs.sha256(picture) != image_info['sha256']:
         raise ValueError('The saved editable picture changed; restore the original saved copy.')
     raw = imaging.load_picture(picture)
+    policy = image_info.get("transparency")
+    if policy not in (None, "unpowered"):
+        raise ValueError("Unsupported saved transparency setting.")
+    legacy_alpha = "A" in raw.getbands() and policy is None
+    if legacy_alpha:
+        raw = imaging.load_picture(picture, flatten_on_white=True)
     # Older releases capped the axes independently. Preserve their exact checked
     # commands when the recorded grid is the legacy one.
     if placement['fit'] == 'whole' and placement.get('art_w'):
@@ -86,7 +92,7 @@ def read(folder):
             if (old.cols, old.rows) == grid:
                 placement = legacy
     job = planner.build_job(raw, mat, planner.Placement(copy.deepcopy(doc['piece']), **placement),
-                            look=look, name=doc['name'])
+                            look=look, name=doc['name'], legacy_round_margins=True)
     planner.compile_job(job)
     report = verify.verify_job(job)
     if not report['ok'] or len(job.passes) != len(doc['passes']):
@@ -101,7 +107,7 @@ def read(folder):
     defaults = sorted({f.name for f in fields(presets.Material)} - set(doc['material']))
     provenance = dict(folder=str(folder.resolve()), source=doc.get('source_provenance') or
                       dict(original_picture=doc.get('picture_file'), saved_picture_sha256=jobs.sha256(picture)),
-                      defaults_used=defaults, reference=doc.get('based_on_job'),
+                      defaults_used=defaults, legacy_alpha=legacy_alpha, reference=doc.get('based_on_job'),
                       saved_source_transform=doc.get('saved_source_transform'),
                       original_material=copy.deepcopy(doc['material']),
                       keep_proportions=bool(doc.get('keep_proportions', False)))
