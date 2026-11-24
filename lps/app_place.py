@@ -1092,13 +1092,19 @@ class PlaceMixin:
             messagebox.showerror("Cannot compare pass", str(exc), parent=self.root)
             return
         self._pair = (path, fingerprint, partner)
+        self._pair_review_required = False
+        self.saved.pop(self.gen, None)
         self.update_check_panel()
 
     def clear_pair(self):
         self._pair = None
+        self._pair_review_required = False
+        self.saved.pop(self.gen, None)
         self.update_check_panel()
 
     def pair_blocker(self, recheck=False):
+        if self._pair_review_required:
+            return "The paired artwork needs a fresh comparison. Choose Compare another pass in Check."
         if self._pair is None:
             return ""
         if not self.verified_layout() or self.job.gray is None or self.grid_spec:
@@ -1121,7 +1127,7 @@ class PlaceMixin:
         ok = bool(rep and rep["ok"] and self.compiled_gen == self.gen)
         self.btn_pair.state(["!disabled"] if ok and self.picture is not None and not self.grid_spec and not self.gfile
                             else ["disabled"])
-        self.btn_clear_pair.state(["!disabled"] if self._pair else ["disabled"])
+        self.btn_clear_pair.state(["!disabled"] if self._pair or self._pair_review_required else ["disabled"])
         for b in (self.btn_save, self.btn_export):
             b.state(["!disabled"] if ok else ["disabled"])
         self.btn_package.state(["!disabled"] if ok and self.picture is not None and not self.grid_spec and not self.gfile
@@ -1135,7 +1141,9 @@ class PlaceMixin:
         lines = [("OK - " if rep["ok"] else "PROBLEM - ") + verify.summary_text(rep)]
         lines.append(self.placement_review_text(job, rep))
         pair_problem = self.pair_blocker()
-        if self._pair:
+        if self._pair_review_required:
+            lines.insert(0, "Start is blocked. " + pair_problem)
+        elif self._pair:
             pairing = [f"Paired pass: {self._pair[2].name}."]
             pairing.append("Pair mismatch — Start is blocked.\n" + pair_problem if pair_problem else
                            "Pair geometry matches. Keep the same physical zero and lid position for both passes.")
@@ -1184,7 +1192,8 @@ class PlaceMixin:
                          rotate=self.rotate, mirror=self.mirror),
                      saved_source_transform=dict(file=str(self.picture_path) if self.picture_path else None,
                          rotate=self.rotate, mirror=self.mirror),
-                     keep_proportions=self.proportions_var.get())
+                     keep_proportions=self.proportions_var.get(),
+                     pair_check_required=bool(self._pair or self._pair_review_required))
         if self._repeat_reference and job.gray is not None and not self.grid_spec:
             extra["based_on_job"] = str(self._repeat_reference[0])
         previews = {"1 LOOKS LIKE - finished piece": simulate.mark_spots(simulate.appearance(job), job),

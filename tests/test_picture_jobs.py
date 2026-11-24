@@ -921,7 +921,7 @@ class PictureJobUI(unittest.TestCase):
         a.tree.selection_set("m:glass")
         self.root.update()
         self.assertEqual(a._pending_material, "glass")
-        self.assertEqual(a.tree.selection(), ("job:material",))
+        self.assertEqual(a.tree.selection(), ("m:glass",))
         self.assertEqual(a.gen, gen)
         self.assertIn("image", a.completed_checks)
         self.assertEqual(a.build_params(), original)
@@ -951,6 +951,64 @@ class PictureJobUI(unittest.TestCase):
         self.assertEqual(a.v_sharpen.get(), a.mat.sharpen)
         self.assertIn("Picture changes:", a.placement_review_text(a.job, a.report))
         self.assertTrue(a.look_frames[1].winfo_manager())
+
+    def test_selected_recipe_can_change_exposure_without_resampling_a_registered_mask(self):
+        a = self.a
+        target = next(m for m in presets.BUILTIN if m.key == "slate").copy(pitch=.10, power=800, feed=140)
+        a.materials = [target]
+        current = target.copy(style="floyd", pitch=.15, power=500, feed=2400)
+        stock = presets.PIECES["tin51face"]
+        position = dict(fit="whole", art_w=51, dx=0, dy=0)
+        picture = Image.new("L", (340, 340), 255)
+        ImageDraw.Draw(picture).ellipse((30, 75, 288, 265), outline=0, width=4)
+        original = planner.compile_job(planner.build_job(picture, current, planner.Placement(stock, **position)))
+        folder = jobs.save_job(original, verify.verify_job(original), picture=picture,
+                               extra=dict(placement=position))
+        self.assertTrue(a.open_saved_job(folder))
+        self.assertEqual(a.piece_key, "tin51face")
+        a.goto(1)
+        self.root.geometry("900x575+4200+50")
+        self.root.deiconify()
+        self.root.update()
+        row = "m:" + target.key
+        a.tree.see(row)
+        self.root.update()
+        x, y, w, h = a.tree.bbox(row)
+        for event in ("<ButtonPress-1>", "<ButtonRelease-1>"):
+            a.tree.event_generate(event, x=x+32, y=y+h//2)
+        self.root.update()
+        self.assertEqual(a.tree.selection(), (row,))
+        self.assertIn("340 × 340 → 510 × 510", a.preset_impact.cget("text"))
+        self.assertIn("2400 mm/min", a.active_recipe.cget("text"))
+        self.assertLess(a.apply_exposure.winfo_rooty() + a.apply_exposure.winfo_height(),
+                        self.root.winfo_rooty() + self.root.winfo_height())
+        a.tree.focus_force()
+        a.tree.event_generate("<Return>")
+        self.root.update()
+        self.assertEqual(self.root.focus_get(), a.apply_exposure)
+        a.apply_exposure.event_generate("<KeyPress-space>")
+        a.apply_exposure.event_generate("<KeyRelease-space>")
+        self.root.update()
+        self.pump()
+        self.compile()
+        self.assertEqual((a.mat.feed, a.mat.power, a.mat.pitch, a.mat.style), (140, 800, .15, "floyd"))
+        self.assertEqual(a.build_params()[1], planner.Placement(a.piece, **position))
+        self.assertFalse(picture_jobs.registration_conflicts(original, a.job))
+        np.testing.assert_array_equal(original.passes[0].cells > 0, a.job.passes[0].cells > 0)
+        a.tree.selection_set(row)
+        self.root.update()
+        a.require_pair.set(True)
+        a.apply_full_preset.invoke()
+        self.pump()
+        self.compile()
+        self.assertEqual(a.job.geom.cols, 510)
+        self.assertIn("fresh comparison", a.pair_blocker())
+        saved = a.save_current_job(quiet=True)
+        self.assertTrue(a.open_saved_job(saved))
+        self.assertIn("fresh comparison", a.pair_blocker())
+        with patch("lps.app_place.filedialog.askopenfilename", return_value=str(folder/"job.json")):
+            a.choose_pair()
+        self.assertIn("Raster grids differ", a.pair_blocker())
 
     def test_repeat_reference_survives_replacement_and_identifies_intentional_speed_test(self):
         a = self.a

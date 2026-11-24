@@ -22,8 +22,8 @@ from .sample_library import SampleLibrary
 from .sample_view import SampleStrip
 from .ui_common import COLORS, THEMES, ScrollFrame, apply_theme, badge, badge_colors, link, paint, wrap_label
 
-GROUPS = (("PROVEN", "Proven on your U20"), ("START", "Starting points - test first"),
-          ("EXPERIMENTAL", "Experimental - test first"), ("MINE", "My presets"))
+GROUPS = (("MINE", "My presets"), ("PROVEN", "Proven on your U20"),
+          ("START", "Starting points - test first"), ("EXPERIMENTAL", "Experimental - test first"))
 STYLE_KEYS = list(STYLES)
 
 
@@ -57,6 +57,7 @@ class App(PlaceMixin, LaserMixin):
         self._before_art_exact = self._before_exact = None
         self._opened_placement = None
         self._pair = None
+        self._pair_review_required = False
         self.art_w = None
         self.dx = self.dy = 0.0
         self.grid_spec = None
@@ -289,6 +290,7 @@ class App(PlaceMixin, LaserMixin):
                 self.fit_var.set("whole")
             self._before_art_exact = self._before_exact = None
             self._pair = None
+            self._pair_review_required = False
             self.proportions_var.set(True)
             self.dx = self.dy = 0.0
             self.art_w = None
@@ -332,6 +334,7 @@ class App(PlaceMixin, LaserMixin):
             selection = 'job:material'
         self._fill_tree()
         self.tree.selection_set(selection)
+        self.tree.focus(selection)
         self.tree.see(selection)
         self._show_material()
 
@@ -388,6 +391,7 @@ class App(PlaceMixin, LaserMixin):
             self._before_art_exact = self._before_exact = None
             self._opened_placement = self.placement_summary(job, report, planner.Placement(job.piece, **placement))
             self._pair = None
+            self._pair_review_required = provenance.get('pair_check_required', False)
             self.grid_spec = self.gfile = None
             self.piece = copy.deepcopy(job.piece)
             self.piece_key = presets.matching_piece_key(self.piece) or 'custom'
@@ -452,23 +456,38 @@ class App(PlaceMixin, LaserMixin):
     # ================================================================ step 2
     def _page_material(self, f):
         ttk.Label(f, text="2. Material & print style", style="H1.TLabel").pack(anchor="w")
-        wrap_label(f, "To repeat a print, open its saved job in step 1. With a picture open, select a preset "
-                      "below to see what it would change.",
-                   style="Small.TLabel").pack(anchor="w", pady=(0, 6))
-        self.tree = ttk.Treeview(f, show="tree", height=12, selectmode="browse")
-        self.tree.pack(fill="x")
+        self.active_recipe = wrap_label(f, "", style="Small.TLabel")
+        self.active_recipe.pack(anchor="w", fill="x", pady=(0, 3))
+        ttk.Label(f, text="Choose a preset to review").pack(anchor="w")
+        self.preset_list = ttk.Frame(f)
+        self.preset_list.pack(fill="x")
+        self.tree = ttk.Treeview(self.preset_list, show="tree", height=6, selectmode="browse")
+        scroll = ttk.Scrollbar(self.preset_list, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="x", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._tree_pick)
         self._fill_tree()
-        self.material_choice = ttk.LabelFrame(f, text="Proposed preset")
+        self.material_choice = ttk.LabelFrame(f, text="Selected preset")
+        self.apply_exposure = ttk.Button(self.material_choice, command=self._apply_exposure)
+        self.apply_exposure.pack(anchor="w", padx=5, pady=(3, 0))
+        self.tree.bind("<Return>", self._focus_preset_action)
+        self.tree.bind("<Escape>", lambda _: self._dismiss_material_choice())
+        self.preset_impact = wrap_label(self.material_choice, "", style="Small.TLabel")
+        self.preset_impact.pack(fill="x", padx=5)
+        self.require_pair = tk.BooleanVar(value=False)
+        self.pair_option = ttk.Checkbutton(self.material_choice, text="Require a companion-layer check after rebuilding",
+                                           variable=self.require_pair)
+        self.pair_option.pack(anchor="w", padx=5)
         self.material_diff = wrap_label(self.material_choice, "", style="Small.TLabel")
-        self.material_diff.pack(fill="x", padx=5, pady=4)
-        ttk.Button(self.material_choice, text="Apply print settings only",
+        ttk.Button(self.material_choice, text="Apply preset print settings and rebuild image",
                    command=lambda: self._apply_material_choice(False)).pack(anchor="w", padx=5)
         self.apply_full_preset = ttk.Button(self.material_choice, text="Apply full preset",
                                            command=lambda: self._apply_material_choice(True))
         self.apply_full_preset.pack(anchor="w", padx=5)
         ttk.Button(self.material_choice, text="Keep current settings",
                    command=self._dismiss_material_choice).pack(anchor="w", padx=5, pady=(0, 4))
+        self.material_diff.pack(fill="x", padx=5, pady=4)
         card = ttk.LabelFrame(f, text="About this setting", style="Card.TLabelframe")
         card.pack(fill="x", pady=8)
         self.m_badge = badge(card, "PROVEN", "")
@@ -598,7 +617,7 @@ class App(PlaceMixin, LaserMixin):
     def _fill_tree(self):
         self.tree.delete(*self.tree.get_children())
         if self._job_material_snapshot is not None and self._snapshot_preset_key is None:
-            self.tree.insert('', 'end', iid='job:material', text='Current job settings (' + self.mat.look + ')')
+            self.tree.insert('', 'end', iid='job:material', text='Job recipe in use')
         for kind, title in GROUPS:
             items = [m for m in self.materials if m.badge == kind]
             if not items:
@@ -609,6 +628,9 @@ class App(PlaceMixin, LaserMixin):
 
     def _tree_pick(self, _=None):
         sel = self.tree.selection()
+        if not self._loading and self._pending_material and sel != ('m:' + self._pending_material,):
+            self._pending_material = None
+            self.material_choice.pack_forget()
         if sel and sel[0].startswith("m:") and not self._loading and (
                 sel[0][2:] != (self._snapshot_preset_key or self.mat.key) or
                 (self._job_material_snapshot is not None and self._snapshot_preset_key is None)):
@@ -616,12 +638,27 @@ class App(PlaceMixin, LaserMixin):
             if self.picture is None or self.grid_spec or self.gfile:
                 self.select_material(key)
                 return
-            # Keep the active row selected until the operator applies the proposed values.
-            active = ('job:material' if self._job_material_snapshot and not self._snapshot_preset_key
-                      else 'm:' + (self._snapshot_preset_key or self.mat.key))
-            self.tree.selection_set(active)
             target = next(m for m in self.materials if m.key == key)
-            current, _, look = self.build_params()
+            current, placement, look = self.build_params()
+            exposure = presets.exposure_settings(current, target)
+            power = presets.print_settings(target)["Power"]
+            action = (f"Use {power} at {target.feed:g} mm/min" if len(exposure) > 1 else
+                      f"Use speed only: {target.feed:g} mm/min")
+            self.material_choice.configure(text="Selected: " + target.name)
+            self.apply_exposure.configure(text=action + " · keep artwork and grid")
+            impact = []
+            if len(exposure) == 1:
+                impact.append("The presets use different power levels. Speed only keeps the current shading.")
+            if current.pitch != target.pitch or current.style != target.style:
+                impact.append(f"Rebuilding uses {target.pitch:g} mm rows and {STYLES[target.style]['name']}.")
+                if placement.fit != "marks":
+                    old = planner.layout(self.picture.size, placement, current.pitch)
+                    new = planner.layout(self.picture.size, placement, target.pitch)
+                    impact.append(f"On this piece: {old.cols} × {old.rows} → {new.cols} × {new.rows} cells.")
+                else:
+                    impact.append("Studio recalculates the engraved bounds in Check.")
+            self.preset_impact.configure(text=" ".join(impact) or "Rebuilding uses the preset's other print settings.")
+            self.require_pair.set(bool(self._pair or self._pair_review_required))
             changes = presets.settings_changes(presets.print_settings(current), presets.print_settings(target))
             proposed_look = {k: getattr(target, k) for k in look}
             if self.picture_path and self.picture_path.stem.upper().endswith("IMPORT"):
@@ -630,19 +667,49 @@ class App(PlaceMixin, LaserMixin):
             suggested_piece = self._preset_piece(target)
             piece_change = (self._can_suggest_piece() and suggested_piece in PIECES and
                             suggested_piece != self.piece_key)
-            placement_note = (f"Print only keeps the current piece. Full preset uses {PIECES[suggested_piece]['name']}."
-                              if piece_change else "Both choices keep the current piece and placement.")
+            placement_note = (f"Only the full preset changes the piece to {PIECES[suggested_piece]['name']}."
+                              if piece_change else "The current piece and placement stay in place.")
             self.apply_full_preset.configure(text="Apply full preset including suggested piece" if piece_change else
                                                   "Apply print and picture settings")
             self.material_diff.configure(text=f"{target.name} (preview surface: {target.look})\nPrint: " + (", ".join(changes) or "Same settings")
                 + "\nPicture: " + (", ".join(photo) or "Same adjustments")
                 + "\n" + placement_note)
             self._pending_material = key
-            self.material_choice.pack(fill="x", after=self.tree, pady=4)
+            self.material_choice.pack(fill="x", after=self.preset_list, pady=4)
 
     def _dismiss_material_choice(self):
+        pending = self._pending_material
         self._pending_material = None
         self.material_choice.pack_forget()
+        if pending:
+            active = ('job:material' if self._job_material_snapshot and not self._snapshot_preset_key
+                      else 'm:' + (self._snapshot_preset_key or self.mat.key))
+            if self.tree.exists(active):
+                self.tree.selection_set(active)
+                self.tree.focus(active)
+                self.tree.see(active)
+
+    def _focus_preset_action(self, _event):
+        if self._pending_material:
+            self.apply_exposure.focus_set()
+        return "break"
+
+    def _apply_exposure(self):
+        if not self._pending_material:
+            return
+        if self._picture_job_in_use():
+            self.say("Finish the active operation before changing the print settings.", "warn")
+            return
+        target = next(m for m in self.materials if m.key == self._pending_material)
+        current, _, _ = self.build_params()
+        changes = presets.exposure_settings(current, target)
+        copied = "speed and power" if len(changes) > 1 else "speed"
+        self._adopt_material_snapshot(current.copy(
+            **changes, name=f"Current artwork with {copied} from {target.name}",
+            summary=f"Only {copied} taken from {target.name}. Picture processing and size retained."))
+        self.changed()
+        self.say(f"Applied {copied} from {target.name}. "
+                 "Picture processing, row spacing and placement were kept.", "ok")
 
     def _apply_material_choice(self, include_picture):
         key = self._pending_material
@@ -651,6 +718,7 @@ class App(PlaceMixin, LaserMixin):
         if self._picture_job_in_use():
             self.say("Finish the active operation before changing the print settings.", "warn")
             return
+        self._pair_review_required = bool(self._pair or self._pair_review_required or self.require_pair.get())
         self.select_material(key, keep_piece=not include_picture, keep_picture=not include_picture)
 
     @staticmethod
@@ -675,6 +743,7 @@ class App(PlaceMixin, LaserMixin):
         try:
             if self.tree.exists(f"m:{key}") and self.tree.selection() != (f"m:{key}",):
                 self.tree.selection_set(f"m:{key}")
+                self.tree.focus(f"m:{key}")
                 self.tree.see(f"m:{key}")
             if self._can_suggest_piece() and not keep_piece:
                 default_piece = self._preset_piece(m)
@@ -691,10 +760,12 @@ class App(PlaceMixin, LaserMixin):
 
     def _show_material(self):
         m = self.mat
-        self.m_name.configure(text=(self.base_mat.name if self._snapshot_preset_key else
-            'Current job settings (' + m.look + ')') if self._job_material_snapshot is not None else m.name)
+        active = presets.print_settings(m)
+        self.active_recipe.configure(text=f"In use: {active['Power']} at {m.feed:g} mm/min · "
+                                          f"{m.pitch:g} mm rows · {active['Style']} · {m.look} surface")
         base = self.base_mat
         adjusted = bool(presets.settings_changes(presets.print_settings(base), presets.print_settings(m)))
+        self.m_name.configure(text=base.name if self._snapshot_preset_key and not adjusted else m.name)
         historical = m.badge == "PROVEN"
         evidence = ("Edited print settings" if adjusted else "Saved job settings" if self._job_material_snapshot
                     else "Preset based on a 0.10 mm test" if historical else BADGES[m.badge])
@@ -889,6 +960,8 @@ class App(PlaceMixin, LaserMixin):
         self._before_exact = self._opened_placement = None
         self._repeat_reference = None
         self.grid_spec = d
+        self._pair = None
+        self._pair_review_required = False
         self.picture_path = Path("test-grid.png")
         self.dx = self.dy = 0.0
         self.pic_info.configure(text="Test grid (no picture)")
@@ -925,6 +998,8 @@ class App(PlaceMixin, LaserMixin):
         self._before_exact = self._opened_placement = None
         self._repeat_reference = None
         self.grid_spec = c
+        self._pair = None
+        self._pair_review_required = False
         self.mat = self.base_mat = ladder.lid_material(self.mat, c.get("material", ""))
         self._show_material()
         self.piece_key = "custom"
@@ -949,7 +1024,9 @@ class App(PlaceMixin, LaserMixin):
         self._before_exact = self._opened_placement = None
         self._repeat_reference = None
         self.grid_spec = d
-        self.mat = self.base_mat = ladder.lid_material(self.mat, d.get("material", ""))   # the lid, not step 2's pick
+        self._pair = None
+        self._pair_review_required = False
+        self.mat = self.base_mat = ladder.lid_material(self.mat, d.get("material", ""))
         self._show_material()
         self.piece_key = "custom"
         self.piece = ladder.lid_piece(d["diameter"], d["safe"])

@@ -565,7 +565,8 @@ class LaserMixin:
                     grid=copy.deepcopy(self.grid_spec), job_folder=str(self.saved[self.gen]) if self.gen in self.saved else None,
                     external_file=self.gfile.get("path") if self.gfile else None,
                     check_mode=self.check_mode, job_name=self.job.name if self.job else None,
-                    keep_proportions=self.proportions_var.get(), source_provenance=copy.deepcopy(self.source_provenance))
+                    keep_proportions=self.proportions_var.get(), source_provenance=copy.deepcopy(self.source_provenance),
+                    pair_check_required=bool(self._pair or self._pair_review_required))
 
     def remember_setup(self):
         if self.worker and self.connected and self.origin_set:
@@ -597,6 +598,8 @@ class LaserMixin:
         self.picture_path = Path(picture) if picture else None
         self.picture_raw = raw
         self.source_provenance = copy.deepcopy(ctx.get('source_provenance'))
+        self._pair = None
+        self._pair_review_required = bool(ctx.get("pair_check_required", False))
         self.rotate, self.mirror = ctx.get("rotate", 0), ctx.get("mirror", False)
         self.picture = imaging.orient(raw, self.rotate, self.mirror) if raw is not None else None
         self.grid_spec = ctx.get("grid")

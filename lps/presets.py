@@ -338,6 +338,8 @@ PIECES = {
     "lid76": dict(name="Jar lid 3 in (flat face 49 mm)", shape="circle", w=76.2, h=76.2, origin="center",
                   margins=(13.6, 13.6, 13.6, 13.6), corner=0.0, keepouts=[]),
     "tin50": lid_piece(50.8, 45.72, "Reflective tin lid 2 in (45.72 mm face, centre zero)"),
+    "tin51face": dict(lid_piece(52.3875, 51.0, "Tin lid 2 1/16 in (51 mm modeled face, centre zero)"),
+                      margins=((52.3875 - 51.0) / 2,) * 4),
     "coaster100": dict(name="Square 100.6 x 100.6 mm (slate)", shape="rect", w=100.6, h=100.6,
                        origin="lower-left", margins=(5.8, 5.8, 5.8, 5.8), corner=0.0, keepouts=[]),
     "tile108": dict(name="Tile 4.25 in (108 mm)", shape="rect", w=108.0, h=108.0, origin="lower-left",
@@ -480,6 +482,35 @@ def print_settings(m: Material) -> dict:
     if m.style == "halftone":
         values["Halftone spacing"] = f"{m.halftone_cell:g} mm"
     return values
+
+
+def exposure_settings(current: Material, target: Material) -> dict:
+    """Copy only compatible exposure values, preserving which tones can fire."""
+    def channels(m):
+        if m.style == "layers":
+            return ("tone_power", "thin_cap")
+        if m.style == "grayscale":
+            return ("power_min", "power")
+        return ("power",)
+    changes = {"feed": target.feed}
+    keys = channels(current)
+    if keys != channels(target):
+        return changes
+    for key in keys:
+        a, b = getattr(current, key), getattr(target, key)
+        old = a if isinstance(a, (tuple, list)) else (a,)
+        new = b if isinstance(b, (tuple, list)) else (b,)
+        if [v > 0 for v in old] != [v > 0 for v in new]:
+            return changes
+    if current.style == "grayscale":
+        # The planner rounds fifteen power levels to integer S values.
+        for level in range(1, 16):
+            def fires(m):
+                return round(m.power_min + level / 15 * (m.power - m.power_min)) > 0
+            if fires(current) != fires(target):
+                return changes
+    changes.update({key: getattr(target, key) for key in keys})
+    return changes
 
 
 def settings_changes(before: dict, after: dict) -> list[str]:
