@@ -1056,6 +1056,8 @@ class PlaceMixin:
             if jig and jig.get("datum"):
                 zero = "pocket 1's centre" if jig["datum"][0] == "slot1" else "the jig centre"
                 current += f"\nPocket {jig['pocket']+1}. Use {zero} for every layer's shared job zero."
+                if jig.get("run_list"):
+                    current += f"\nRun list: {Path(jig['run_list']['file']).stem} · row {jig['run_list']['row']+1}."
             if self._repeat_reference:
                 folder, original, original_look = self._repeat_reference
                 changes = presets.settings_changes(presets.print_settings(original), presets.print_settings(job.material))

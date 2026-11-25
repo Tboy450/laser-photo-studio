@@ -134,7 +134,7 @@ class Project:
                   slot.enabled, slot.done, [vars(item) for item in self.layers.get(index, [])]]
         return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 
-    def prepare(self, path, index, layer_number):
+    def prepare(self, path, index, layer_number, *, run_list=None):
         if self.layout.slots[index].done:
             raise ValueError("This pocket is marked complete.")
         if self.read(path).placement_key(index) != self.placement_key(index):
@@ -153,6 +153,8 @@ class Project:
         datum = [layout.zero, layout.rows, layout.cols, layout.pitch_x, layout.pitch_y, layout.stagger_x]
         ref = dict(file=str(Path(path).resolve()), pocket=index, key=self.placement_key(index), datum=datum,
                    commands=command_digest(job))
+        if run_list is not None:
+            ref.update(run_list=run_list, layer_digest=layer.digest)
         return jobs.save_job(job, report, picture=image, extra=dict(
             placement=rotated_placement(source, placement, rotation), look=look,
             keep_proportions=provenance["keep_proportions"],
@@ -168,7 +170,7 @@ class Project:
                 and math.dist(here, self.layout.centre(i)) < diameter - 1e-7]
 
 
-def validate_placement(ref, job, window=None):
+def validate_placement(ref, job, window=None, resume_folder=None):
     path, index = Path(ref["file"]), ref["pocket"]
     project = Project.read(path)
     if (window is not None and window.winfo_exists() and window.file == path and
@@ -176,6 +178,9 @@ def validate_placement(ref, job, window=None):
         raise ValueError("This pocket has changed in the jig editor. Save and reopen the selected layer in Check.")
     if project.placement_key(index) != ref["key"]:
         raise ValueError("The saved pocket changed. Open its current layer from Tin jig.")
+    if "run_list" in ref:
+        from .jig_runlist import check_row
+        check_row(ref, project, resume_folder)
     for layer in project.layers[index]:
         layer.verify_files()
     if command_digest(job) != ref["commands"]:

@@ -162,6 +162,73 @@ class JigProjectTests(unittest.TestCase):
         self.assertFalse(window.checked)
         self.assertEqual(window.project.layers[4],[layer])
 
+    def test_run_list_through_check_and_saved_runner_history(self):
+        from lps.jig_runlist import RunList
+        from lps.fakegrbl import FakeController, FakeWire
+        from lps.runner import Runner
+        project = jig_project.Project(tinjig.flush_layout())
+        pair = [self.source("first"), self.source("second")]
+        project.layers = {i: pair.copy() for i in project.layout.enabled()}
+        path = self.root / "nine.lpsjig"
+        project.save(path)
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            app = App(root, SimpleNamespace(demo=True, picture=None, perimeter=None))
+            app.open_tin_jig()
+            jig = app._jig_window
+            jig.file, jig.project = path, project
+            with patch.object(jobs, "JOBS_DIR", self.root / "prepared"), patch.object(jobs, "LOCK_FILE", self.root / "lock"):
+                jig.open_run_list()
+                win = jig._run_list
+                with patch("tkinter.messagebox.askyesno", return_value=True):
+                    win.new()
+                batch = win.batch
+                self.assertEqual(len(batch.entries), 18)
+                self.assertEqual(win.rows.set("1", "state"), "Waiting for earlier layer")
+                win.prepare(True)
+                self.assertEqual(app.nb.index("current"), 3)
+                folder = app.save_current_job(quiet=True)
+                ref = jobs.read_json(folder/"job.json")["jig_reference"]
+                self.assertEqual(ref["run_list"]["row"], 0)
+                self.assertEqual(batch.records(), {})  # Preparing alone never completes a layer.
+                spec = dict(start_pass=0, start_index=0, lead=[], expected_start=[0., 0.],
+                            pause_between=False, park=[0., 0.])
+                jobs.write_json(folder/"run.json", dict(spec, demo=True))
+                jobs.write_json(folder/"state.json", dict(phase="complete", demo=True))
+                self.assertEqual(batch.records(), {})
+                jobs.write_json(folder/"run.json", dict(spec, demo=False))
+                jobs.write_json(folder/"state.json", dict(phase="dropout", demo=False))
+                win.refresh()
+                self.assertIn("dropout", win.rows.set("0", "state"))
+                self.assertEqual(win.rows.set("1", "state"), "Review pocket run")
+                with self.assertRaisesRegex(ValueError, "dropout"):
+                    jig_project.validate_placement(ref,app.job)
+                jig_project.validate_placement(ref, app.job, resume_folder=folder)
+                c = FakeController(speedup=5000)
+                c.take_output()
+                self.assertEqual(Runner(folder,wire=FakeWire(c),settle=0).run(), "complete")
+                jig.open_run_list()
+                win = jig._run_list
+                self.assertEqual(win.batch.batch, batch.batch)
+                self.assertEqual(win.rows.set("0","state"), "Finished")
+                self.assertEqual(win.rows.set("1","state"), "Ready")
+                with self.assertRaisesRegex(ValueError, "Finished"):
+                    jig_project.validate_placement(ref, app.job, resume_folder=folder)
+                win.prepare(True)
+                self.assertEqual(app.source_provenance["jig_reference"]["run_list"]["row"], 1)
+                project.layout.nudge([0], .3, 0)
+                project.save(path)
+                self.assertEqual(batch.status(1,project,batch.records()), "Placement changed after printing")
+                self.assertEqual(batch.status(2,project,batch.records()), "Ready")
+                fresh = RunList.create(path)
+                self.assertFalse(fresh.records())
+                self.assertEqual(fresh.status(0,project,{}), "Ready")
+        finally:
+            for event in root.tk.call("after","info"):
+                root.tk.call("after","cancel",event)
+            root.destroy()
+
     def test_normal_checker_and_simulated_sender_use_only_selected_pocket(self):
         from lps.fakegrbl import FakeController, FakeWire, coverage
         from lps.runner import Runner

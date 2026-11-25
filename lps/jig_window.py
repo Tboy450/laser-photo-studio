@@ -61,10 +61,20 @@ class JigWindow(tk.Toplevel):
         carton.pack(fill="x", pady=2)
         ttk.Button(carton, text="Copy layers to empty pockets", command=self.fill_empty).pack(side="left")
         ttk.Button(carton, text="Check jig travel", command=lambda: self.check(whole=True)).pack(side="left", padx=2)
+        ttk.Button(carton, text="Run list…", command=self.open_run_list).pack(side="left", padx=2)
         ttk.Button(carton, text="Open selected layer in Check", command=self.open_selected).pack(side="right")
         ttk.Label(footer, textvariable=self.status, wraplength=720, justify="left").pack(anchor="w", pady=4)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.refresh()
+
+    def open_run_list(self):
+        from .jig_runlist_window import RunListWindow
+        if (self.dirty or self.file is None) and not self.save():
+            return
+        old = getattr(self, "_run_list", None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        self._run_list = RunListWindow(self)
 
     def close(self):
         if self.may_replace():

@@ -1155,12 +1155,12 @@ class LaserMixin:
             return [outlines.rounded_box_path(rect, piece.get("corner", 0.0))]
         return []
 
-    def _jig_placement_ok(self, ref, job):
+    def _jig_placement_ok(self, ref, job, resume_folder=None):
         if ref is None:
             return True
         from .jig_project import validate_placement
         try:
-            validate_placement(ref, job, getattr(self, "_jig_window", None))
+            validate_placement(ref, job, getattr(self, "_jig_window", None), resume_folder)
             return True
         except Exception as exc:
             messagebox.showinfo("Check jig placement", str(exc), parent=self.root)
@@ -1294,7 +1294,9 @@ class LaserMixin:
             except Exception as exc:
                 messagebox.showinfo("Check jig placement", str(exc), parent=self.root)
                 return
-            if not self._jig_placement_ok(descriptor["jig_reference"], placed):
+            jig_ref = descriptor["jig_reference"]
+            recovery = {"resume_folder": folder} if not fresh_context and "run_list" in jig_ref else {}
+            if not self._jig_placement_ok(jig_ref, placed, **recovery):
                 return
         if jobs.active_runner():
             messagebox.showerror("Busy", "Another job is already running.")
