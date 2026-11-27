@@ -7,6 +7,7 @@ shrinking layers, thin-feature detection by connected components, and Zhang-Suen
 from __future__ import annotations
 
 import os
+import math
 import subprocess
 import tempfile
 from pathlib import Path
@@ -59,9 +60,14 @@ def _on_white(im: Image.Image) -> Image.Image:
     return im
 
 
-def load_picture(path) -> Image.Image:
-    """Open any picture as 8-bit grayscale on a white background, honouring the phone's EXIF rotation."""
-    return _on_white(_open_any(path)).convert("L")
+def load_picture(path, *, flatten_on_white=False) -> Image.Image:
+    """Keep transparency with the grayscale source so Negative cannot expose empty space."""
+    im = _open_any(path)
+    if flatten_on_white:
+        return _on_white(im).convert("L")
+    if "A" in im.getbands() or "transparency" in im.info:
+        return im.convert("RGBA").convert("LA")
+    return im.convert("L")
 
 
 def load_color(path) -> Image.Image:
@@ -91,20 +97,70 @@ def tone_lut(brightness: float = 0, contrast: float = 0, gamma: float = 1.0, neg
     return [int(round(x)) for x in np.clip(v, 0, 255)]
 
 
+def saved_size_mm(path) -> tuple | None:
+    """The real size stored in a picture file (from its DPI), or None. 72 and 96 are just screen defaults."""
+    try:
+        with Image.open(path) as im:
+            dpi, (w, h) = im.info.get("dpi"), im.size
+            orientation = im.getexif().get(274, 1)
+        # PNG stores integer pixels/metre, so an ordinary 96 DPI tag can decode as 96.012.
+        if not dpi or len(dpi) < 2 or not all(math.isfinite(v) and v > 96.1 for v in dpi[:2]):
+            return None
+        size = round(w / float(dpi[0]) * 25.4, 2), round(h / float(dpi[1]) * 25.4, 2)
+        return size[::-1] if orientation in (5, 6, 7, 8) else size
+    except Exception:
+        return None
+
+
+def auto_level_points(im: Image.Image, crop=None):
+    if crop is not None:
+        im = im.crop(tuple(int(round(c)) for c in crop))
+    alpha = im.getchannel("A") if "A" in im.getbands() else None
+    hist = np.asarray(im.convert('L').histogram(mask=alpha), dtype=np.int64)
+    cut = int(hist.sum() // 100)
+    lo = int(np.searchsorted(hist.cumsum(), cut, side='right'))
+    hi = 255 - int(np.searchsorted(hist[::-1].cumsum(), cut, side='right'))
+    return (lo, hi) if hi > lo else (0, 255)
+
+
+def grid_alpha(im, cols, rows, crop=None):
+    if "A" not in im.getbands():
+        return None
+    alpha = im.getchannel("A")
+    if crop is not None:
+        alpha = alpha.crop(tuple(int(round(c)) for c in crop))
+    return np.asarray(alpha.resize((cols, rows), Image.Resampling.BOX))
+
+
 def to_grid(im: Image.Image, cols: int, rows: int, crop=None, *, autolevel=False, brightness=0, contrast=0,
-            gamma=1.0, negative=False, sharpen=0) -> np.ndarray:
+            gamma=1.0, negative=False, sharpen=0, black_point=0, white_point=255) -> np.ndarray:
     """Resize the picture to the burn grid (one cell per row/column pitch) and apply the look settings.
     Returns float32 lightness 0 (black) .. 255 (white)."""
     if crop is not None:
         im = im.crop(tuple(int(round(c)) for c in crop))
+    alpha = grid_alpha(im, cols, rows)
+    source_alpha = im.getchannel("A") if alpha is not None else None
+    im = im.convert("L") if im.mode != "L" else im
     if autolevel:
-        im = ImageOps.autocontrast(im, cutoff=1)
+        im = ImageOps.autocontrast(im, cutoff=1, mask=source_alpha)
+    if not 0 <= black_point < white_point <= 255:
+        raise ValueError('Black point must be below White point (0..255).')
+    if (black_point, white_point) != (0, 255):
+        scale = 255.0 / (white_point - black_point)
+        offset = -black_point * scale
+        im = im.point([max(0, min(255, int(x * scale + offset))) for x in range(256)])
     im = im.point(tone_lut(brightness, contrast, gamma, False))
+    if source_alpha is not None:
+        # Composite after adjusting tones. The uncovered background must map to laser-off
+        # under either polarity, including in the filter's neighbourhood at soft edges.
+        im = Image.composite(im, Image.new("L", im.size, 0 if negative else 255), source_alpha)
     im = im.resize((max(1, cols), max(1, rows)), Image.Resampling.LANCZOS)
     if sharpen > 0:
         im = im.filter(ImageFilter.UnsharpMask(radius=1.2, percent=int(sharpen), threshold=2))
     a = np.asarray(im, dtype=np.float32)
-    return 255.0 - a if negative else a
+    if negative:
+        a = 255.0 - a
+    return a if alpha is None else np.where(alpha > 0, a, 255.0)
 
 
 def tone_levels(a: np.ndarray, cuts=(110, 78, 48), widen_gaps: bool = True) -> np.ndarray:

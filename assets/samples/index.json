@@ -1,6 +1,6 @@
 {
  "version": 1,
- "built": "2026-11-01",
+ "built": "2026-11-03",
  "samples": {
   "pine-ladder": {
    "file": "pine-ladder.jpg",
@@ -126,9 +126,9 @@
    "file": "card-eng.jpg",
    "kind": "result",
    "title": "Engineering card, 4 x 2 in",
-   "caption": "Classic dots, 50% (S500), 2500 mm/min, 10 lines/mm, one pass - converted in LaserGRBL with exactly these settings, 10 min 37 s. Bright silver on black.",
+   "caption": "Classic dots, 50% (S500), 2500 mm/min, 10 lines/mm, one pass. Recorded run: 10 min 37 s. Bright silver on black.",
    "date": "2026-11-01",
-   "source": "C:/Users/Heemi/Downloads/Mobile Devices/20261101_050846.heic"
+   "source": "Phone Photos/2026-11-01/20261101_050846.heic"
   },
   "card-heart": {
    "file": "card-heart.jpg",
@@ -137,6 +137,54 @@
    "caption": "Same settings on the 2 x 4 in heart card: the script and fine dots come out bright silver. (Taken during the resumed run after a USB dropout.)",
    "date": "2026-11-01",
    "source": "anodized-cards-2026-11-01/recovery/20261101_033016.jpg"
+  },
+  "card-goku": {
+   "file": "card-goku.jpg",
+   "kind": "result",
+   "title": "Goku 'Kamehameha' card",
+   "caption": "Run from this app: Classic dots, 60% (S600), 2400 mm/min, 0.1 mm rows, one pass, Negative on. 93 x 46.5 mm of art, 17 minutes, no errors. Even, bright silver with the fine hair and beam lines kept. (Made with your own copy of this preset, 'Black anodized aluminum - photo dots'. The G-code is 'goku black card.nc' in Documents\\01 Projects\\Laser & CNC.)",
+   "date": "2026-11-01",
+   "source": "Finished Pieces/Goku Kamehameha anodized card 20261101_201127.heic"
+  },
+  "hw-art": {
+   "file": "hw-art.jpg",
+   "kind": "source",
+   "title": "Hot Wheels roof art",
+   "caption": "Two racing stripes and the running horse for a yellow Mustang roof, 82.55 x 26.5 mm. The stripes were meant to be FILLED, with gaps left for the windshield and rear window. Those gaps only work if the art is lined up with the car's centerline and windows.",
+   "date": "2026-11-02",
+   "source": "Hot Wheels (what not to do)/grok_1793609202885.jpg"
+  },
+  "hw-setup": {
+   "file": "hw-setup.jpg",
+   "kind": "lesson",
+   "title": "What went wrong: lining up a car",
+   "caption": "The car under the laser head. A small, curved, painted roof is hard to line up by eye, and LaserGRBL's Frame only traces the outer box of the job - it doesn't show where the windows or the car's centerline are. Check those points with the 1% dot before burning.",
+   "date": "2026-11-03",
+   "source": "Hot Wheels (what not to do)/20261103_005544.heic"
+  },
+  "hw-top": {
+   "file": "hw-top.jpg",
+   "kind": "lesson",
+   "title": "What went wrong: outlines, off-centre",
+   "caption": "Only the OUTLINES burned: LaserGRBL's Vectorize turns shapes into their edges, so the stripes never filled. The stripes sit to one side of the centerline and at an angle, and lines run across the windshield and rear window. Placement was lost when the job was regenerated, and 'Image Proportion' was unlocked, so the size could change too.",
+   "date": "2026-11-03",
+   "source": "Hot Wheels (what not to do)/20261103_015041.heic"
+  },
+  "hw-front": {
+   "file": "hw-front.jpg",
+   "kind": "lesson",
+   "title": "What went wrong: horse on the nose",
+   "caption": "The horse landed too far forward, onto the nose of the car, and it is outlines only. Before this, a raster (picture) import had burned the whole rectangle around the art. The app's own job for this car used the BLACK ANODIZED preset (wrong material: paint marks dark, not silver) and was stopped after 22 seconds; the marks on the car came from LaserGRBL.",
+   "date": "2026-11-03",
+   "source": "Hot Wheels (what not to do)/20261103_015035.heic"
+  },
+  "hw-side": {
+   "file": "hw-side.jpg",
+   "kind": "lesson",
+   "title": "What went wrong: side view",
+   "caption": "From the side: thin outline strokes over the bonnet and roof instead of solid stripes. On a painted car the laser takes the paint off as dark lines; solid stripes need a job that scans rows across the shape (a fill), not one that traces its edges.",
+   "date": "2026-11-03",
+   "source": "Hot Wheels (what not to do)/20261103_015020.heic"
   },
   "lid-ladder-chart": {
    "file": "lid-ladder-chart.jpg",
@@ -193,6 +241,31 @@
    "caption": "Lines at 45-57%: a tad light, and one side of the 45% border didn't etch fully. 45% has little margin above the 'too light' point.",
    "date": "2026-10-28",
    "source": "saiyan-can/goku-kamehameha-lid/photos/1000047168.jpg"
+  },
+  "red-hill-speed-floor": {
+   "file": "red-hill-speed-floor.jpg",
+   "kind": "test",
+   "date": "2026-11-13",
+   "title": "Reflective lid: commanded speed versus timing",
+   "caption": "14 speed-test stripes on a used reflective lid. The recorded low-feed plateau is inferred from controller telemetry/timing. Exact coating and wipe state are unknown; see Test record.",
+   "evidence": {
+    "state": "Physical test",
+    "basis": "Saved job timing/status trace plus operator photo; timing interpretation is an inference.",
+    "job": "2026-11-13_043712_red-hill-speed-floor-lines; tests/speed-floor-lines-2026-11-13/RESULTS-2026-11-13.md",
+    "substrate": "Reflective scrap lid, previously used for a ladder; exact alloy/coating/thickness unconfirmed.",
+    "surface": "Wipe state and sanding for this photo not recorded.",
+    "focus": "",
+    "power_pct": "100%; S1000 scale",
+    "commanded_feed": "50, 44, 33; then 22 through 12",
+    "motion_evidence": "Saved timing/position reports suggest ~23.6 mm/min floor for the slow rows; not independent motion measurement. Fast references approximately follow commanded feeds.",
+    "row_pitch": "0.10 mm (~254 lines/in); visible stripes are 1 mm apart",
+    "mode": "M4; positive-X raster rows",
+    "passes": "14 passes, one stripe per pass; each stripe contains two scan rows",
+    "dwell": "N/A: raster moves",
+    "result": "Operator reported even gold-bronze lines that looked similar. Slow passes took about 116.34-116.36 seconds.",
+    "limitations": "Physical test of one used lid, not a repeatable production recipe or firmware diagnosis. Wipe state unknown."
+   },
+   "source": "speed-floor-lines-2026-11-13/photos/speed-floor-20261113_050422.jpg"
   }
  },
  "sets": {
@@ -250,13 +323,20 @@
    "items": [
     "card-eng-source",
     "card-eng",
-    "card-heart"
+    "card-goku",
+    "card-heart",
+    "hw-top",
+    "hw-front",
+    "hw-art",
+    "hw-setup",
+    "hw-side"
    ],
-   "note": "No ladder test on anodized yet: these settings come from the card jobs. Try a spare card or a test grid before changing them."
+   "note": "No ladder test on anodized yet: these settings come from the card jobs. Try a spare card or a test grid before changing them. The Hot Wheels photos show a job from this preset made for a painted car - the wrong material - and what went wrong there."
   },
   "anodized-crisp": {
    "items": [
     "card-eng",
+    "card-goku",
     "card-heart"
    ],
    "note": "These show the proven classic dots at the same power and speed. Crisp (Stucki) dots haven't been burned yet."
@@ -269,9 +349,12 @@
     "lid-test-marks",
     "lid-source",
     "lid-gv",
-    "lid-kame"
+    "lid-kame",
+    "hw-top",
+    "hw-front",
+    "red-hill-speed-floor"
    ],
-   "note": "Photo halftones on lids are untested. These are the lid tests and the line-art lids (made with LINE settings)."
+   "note": "Photo halftones on lids are untested. These are the lid tests and the line-art lids (made with LINE settings). The Hot Wheels car is painted metal like the lids: see what went wrong there. The reflective-lid speed test is different stock and is not evidence for this halftone recipe."
   }
  }
 }

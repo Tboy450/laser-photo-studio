@@ -4,10 +4,12 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
-from lps import jobs, machine, planner, presets, verify
+from lps import jobs, machine, planner, presets, recovery, verify
 from lps.fakegrbl import FakeController, FakeWire, coverage
 from lps.runner import Runner
 from tests.test_core import small_job
@@ -60,6 +62,51 @@ class RunnerBase(unittest.TestCase):
 
 
 class FullRuns(RunnerBase):
+    def test_attempt_controls_survive_burst_and_emergency_has_priority(self):
+        _, folder = self.make()
+        original = jobs.read_json(folder / 'run.json')
+        with patch.object(jobs.subprocess, 'Popen'):
+            jobs.launch_runner(folder, original)
+        run = Runner(folder, wire=FakeWire(self.ctrl()))
+        # Windows wall time may return the same value for every click in a burst.
+        with patch.object(jobs.time, 'time_ns', return_value=1):
+            for command in ('pause', 'continue', 'estop', 'resume'):
+                jobs.send_control(folder, command)
+        self.assertEqual(run.check_control(), 'estop')
+        self.assertTrue(run.estop_req)
+        self.assertEqual([jobs.take_control(run.control_queue) for _ in range(3)], ['pause', 'continue', 'resume'])
+        jobs.send_control(folder, 'pause')
+        with patch.object(jobs.subprocess, 'Popen'):
+            jobs.launch_runner(folder, original)
+        new = Runner(folder, wire=FakeWire(self.ctrl()))
+        self.assertIsNone(new.check_control())
+
+    def test_photo_wait_idle_does_not_spend_the_next_commands_ack_timeout(self):
+        _, folder = self.make(pause_between=True)
+        runner = Runner(folder)
+        runner.g = machine.Grbl(SimpleNamespace(write=lambda _data: None))
+        runner.state["phase"] = "waiting_photo"
+        runner.g.last_ack_at = 10
+        with patch("lps.runner.time.monotonic", return_value=40):
+            runner.last_status_at = 40
+            runner.watch()
+            runner.state["phase"] = "running"
+            runner.g.send("M5 S0")
+            runner.watch()
+        with patch("lps.runner.time.monotonic", return_value=56):
+            runner.last_status_at = 56
+            with self.assertRaisesRegex(machine.ControllerError, "No acknowledgement"):
+                runner.watch()
+
+    def test_resume_keeps_saved_position_in_stream_before_first_write(self):
+        job, folder = self.make(start_index=8)
+        resume = Runner(folder)
+        resume._progress()
+        self.assertEqual(resume.state["sent"], 8)
+        self.assertEqual(resume.state["pass_total"], len(job.passes[0].commands))
+        self.assertGreater(resume.state["progress"], 0.0)
+        self.assertEqual(resume.state["completed"], [])
+
     def test_complete_job_burns_every_cell_exactly_once(self):
         job, folder = self.make()
         c = self.ctrl()
@@ -71,6 +118,33 @@ class FullRuns(RunnerBase):
         self.assert_clean(c)
         self.assertAlmostEqual(c.phys[0], 0.0, places=3)   # parked at the origin
         self.assertEqual(c.modal["spindle"], "M5")
+
+    def test_job_from_a_picked_start_point(self):
+        job = small_job("anodized-dots", 24.0, 16.0, origin="spot", spot=[10.0, 6.0])
+        rep = verify.verify_job(job)
+        self.assertTrue(rep["ok"])
+        folder = jobs.save_job(job, rep, folder=self.root / "job-spot")
+        jobs.write_json(folder / "run.json", dict(start_pass=0, start_index=0, lead=[], expected_start=[0.0, 0.0],
+                                                  pause_between=False, park=[0.0, 0.0]))
+        c = self.ctrl()
+        self.assertEqual(self.run_job(folder, FakeWire(c)), "complete")
+        np.testing.assert_allclose(coverage(c, job.geom), expected_counts(job), atol=1e-6)
+        self.assert_clean(c)
+        self.assertAlmostEqual(c.phys[0], 0.0, places=3)   # parked back on the picked spot
+
+    def test_picture_moves_with_the_head(self):
+        c = self.ctrl()
+        g = machine.Grbl(FakeWire(c))
+        g.open(settle=0.0)
+        machine.set_origin_here(g, 4.0, 3.0)                  # 'the dot is here': nothing moves
+        self.assertEqual(c.phys[:2], [0.0, 0.0])
+        st = machine.jog_keep_position(g, 2.5, -1.0, 3000)    # head moves, keeps its X/Y
+        self.assertAlmostEqual(st.wpos[0], 4.0, places=2)
+        self.assertAlmostEqual(st.wpos[1], 3.0, places=2)
+        self.assertAlmostEqual(c.phys[0], 2.5, places=3)
+        self.assertAlmostEqual(c.phys[1], -1.0, places=3)
+        g.close()
+        self.assert_clean(c)
 
     def test_photo_pause_between_layers(self):
         job, folder = self.make(pause_between=True)
@@ -123,6 +197,19 @@ class FullRuns(RunnerBase):
 
 
 class Recovery(RunnerBase):
+    def test_held_position_near_end_finishes_stroke_in_both_directions(self):
+        for start, end, held in ((0, 1, .981), (1, 0, .019)):
+            body = ["M5 S0", f"G1 X{start:.3f} Y0.000 F600 S0", "M4 S0",
+                    f"G1 X{end:.3f} Y0.000 F2500 S500", "M5 S0"]
+            point = [held, 0.]
+            self.assertEqual(recovery.locate(body, point), (3, body[3]))
+            self.assertEqual(recovery.locate(body, [end, 0]), (4, None))
+            lead = recovery.resume_spec(body, 0, 3, point, partial=body[3])["lead"]
+            self.assertEqual(recovery.held_resume_lead(lead, point, [*point, 0]),
+                             ["M5 S0", "M4 S0", body[3]])
+            self.assertEqual(recovery.held_resume_lead(lead, point, [held + .001, 0]), lead)
+            self.assertEqual(recovery.held_resume_lead(lead, point, None), lead)
+
     def _resume(self, folder, c, wire_state=None):
         st = jobs.read_json(folder / "state.json")
         spec = dict(st["resume"])

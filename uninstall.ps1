@@ -1,9 +1,9 @@
-# Laser Photo Studio 1.0 - uninstall: removes the desktop icons and the File Explorer previews for .nc files.
-# Your jobs, photos and presets (Documents\Laser Photo Studio) are kept. install.ps1 puts everything back.
+# Laser Photo Studio uninstall removes the Start menu shortcuts and File Explorer previews for .nc files.
+# Jobs, photos and presets in Local AppData are kept.
 $ErrorActionPreference = 'Stop'
-$desk = [Environment]::GetFolderPath('Desktop')
+$programs = [Environment]::GetFolderPath('Programs')
 foreach ($n in 'Laser Photo Studio', 'Laser Perimeter Check') {
-    Remove-Item -LiteralPath (Join-Path $desk "$n.lnk") -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $programs "$n.lnk") -ErrorAction SilentlyContinue
 }
 $clsid = '{983206E5-1402-47E4-957D-D1E57EAD5DF9}'
 Remove-Item -LiteralPath "HKCU:\Software\Classes\CLSID\$clsid" -Recurse -ErrorAction SilentlyContinue
@@ -22,4 +22,4 @@ foreach ($ext in '.nc', '.gcode', '.gc', '.ngc') {
 Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved' -Name $clsid -ErrorAction SilentlyContinue
 Add-Type -Namespace LaserPhotoStudio -Name Shell -MemberDefinition '[DllImport("shell32.dll")] public static extern void SHChangeNotify(int e, uint f, IntPtr a, IntPtr b);'
 [LaserPhotoStudio.Shell]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
-Write-Output 'Removed the desktop icons and the .nc previews. Your jobs and presets are kept.'
+Write-Output 'Removed the Start menu shortcuts and the .nc previews. Your jobs and presets are kept.'
